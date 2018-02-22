@@ -88,7 +88,7 @@ public class DefaultScriptableWorkflowStep implements ScriptableWorkflowStep {
 	
 	@Override
 	public String getJavascript() {
-		return script;
+		return script.replaceAll("\\\"", "\\\\\"");
 	}
 	
 	@Override

@@ -57,16 +57,7 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 import qupath.lib.common.GeneralTools;
-import qupath.lib.plugins.parameters.BooleanParameter;
-import qupath.lib.plugins.parameters.ChoiceParameter;
-import qupath.lib.plugins.parameters.DoubleParameter;
-import qupath.lib.plugins.parameters.EmptyParameter;
-import qupath.lib.plugins.parameters.IntParameter;
-import qupath.lib.plugins.parameters.NumericParameter;
-import qupath.lib.plugins.parameters.Parameter;
-import qupath.lib.plugins.parameters.ParameterChangeListener;
-import qupath.lib.plugins.parameters.ParameterList;
-import qupath.lib.plugins.parameters.StringParameter;
+import qupath.lib.plugins.parameters.*;
 
 /**
  * A panel for displaying a list of parameters suitably to aid with creating JavaFX GUIs.
@@ -141,8 +132,10 @@ public class ParameterPanelFX {
 				addEmptyParameter((EmptyParameter)p);
 			else if (p instanceof ChoiceParameter)
 				addChoiceParameter((ChoiceParameter)p);
-			else if (p instanceof BooleanParameter) {
+			else if (p instanceof BooleanParameter)
 				addBooleanParameter((BooleanParameter)p);
+			else if (p instanceof TextParameter) {
+			    addTextParameter((TextParameter)p);
 			}
 		}
 	}
@@ -212,6 +205,26 @@ public class ParameterPanelFX {
 
 	private void addStringParameter(StringParameter param) {
 		addParamComponent(param, param.getPrompt(), getTextField(param, 25));
+	}
+
+	private void addTextParameter(TextParameter param) {
+		// Create text area
+		final TextArea textArea = new TextArea();
+		textArea.setPrefRowCount(20);
+		textArea.setPrefSize(200, 200);
+		textArea.setWrapText(true);
+		textArea.setFont(Font.font("Courier"));
+		if (param.getValue() != null)
+			textArea.setText((param.getValue()));
+        textArea.textProperty().addListener((v, o, n) -> {
+            if (n != null && param.setValue((n))) {
+                fireParameterChangedEvent(param, false);
+            }
+        });
+		BorderPane panelMacro = new BorderPane();
+		panelMacro.setCenter(textArea);
+		addParamComponent(param, param.getPrompt(), panelMacro);
+
 	}
 
 	private void addEmptyParameter(EmptyParameter param) {

@@ -64,7 +64,7 @@ public class SimplePluginWorkflowStep implements ScriptableWorkflowStep, Externa
 	public SimplePluginWorkflowStep(final String name, final Class<? extends PathPlugin<?>> pluginClass, final String arg, final String scriptBefore, final String scriptAfter) {
 		this.name = name;
 		this.pluginClass = pluginClass.getName();
-		this.arg = arg;
+		this.arg = encodeBreaks(arg);
 		this.scriptBefore = scriptBefore;
 		this.scriptAfter = scriptAfter;
 	}
@@ -118,11 +118,12 @@ public class SimplePluginWorkflowStep implements ScriptableWorkflowStep, Externa
 			append(pluginClass).
 			append("', ").
 			append("'").
-			append(arg).
+			append(arg.replace("\\\"", "\\\\\"")).
 			append("'").
 			append(");");
 		if (scriptAfter != null)
 			sb.append(scriptAfter);
+
 		return sb.toString();
 	}
 
@@ -147,7 +148,22 @@ public class SimplePluginWorkflowStep implements ScriptableWorkflowStep, Externa
 		scriptBefore = (String)in.readObject();
 		scriptAfter = (String)in.readObject();
 	}
-	
-	
+
+	/**
+	 * Simple method to replace the newlines, tabs and eventual carriage returns with printable versions
+	 * This is to avoid having multiline strings breaking the Create Workflow or Create Script tools
+	 * @param arg
+	 * @return
+	 */
+	private String encodeBreaks(String arg) {
+		if(arg==null) return arg;
+		// Basically replace any single backslash with an escaped double backslash
+		arg = arg.replaceAll("\n", "\\\\\\n");
+		arg = arg.replaceAll("\r", "\\\\\\r");
+		arg = arg.replaceAll("\t", "\\\\\\t");
+		return arg;
+	}
+
+
 
 }

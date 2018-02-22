@@ -27,6 +27,9 @@ import java.io.ObjectStreamException;
 import java.util.Collections;
 import java.util.Map;
 
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.plugins.PathPlugin;
 import qupath.lib.plugins.workflow.ScriptableWorkflowStep;
@@ -53,7 +56,7 @@ public class DefaultPluginWorkflowStep implements ScriptableWorkflowStep {
 	private String arg;
 	private String scriptBefore; // Script to insert before plugin is called (including any newlines etc)
 	private String scriptAfter; // Script to insert after plugin is called
-
+	private Logger logger =  LoggerFactory.getLogger(DefaultPluginWorkflowStep.class);
 	
 	public DefaultPluginWorkflowStep(final String name, final Class<? extends PathPlugin<?>> pluginClass, final String arg) {
 		this(name, pluginClass, arg, null, null);
@@ -112,11 +115,14 @@ public class DefaultPluginWorkflowStep implements ScriptableWorkflowStep {
 			append(pluginClass.getName()).
 			append("', ").
 			append("'").
-			append(arg).
+			append(arg.replaceAll("\\\"", "\\\\\"")).
 			append("'").
 			append(");");
 		if (scriptAfter != null)
 			sb.append(scriptAfter);
+		logger.warn("String: "+arg);
+		logger.warn("Escaped String: "+arg.replaceAll("\\\"", "\\\\\""));
+
 		return sb.toString();
 	}
 	

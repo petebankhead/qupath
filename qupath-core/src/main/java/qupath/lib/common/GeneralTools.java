@@ -40,6 +40,7 @@ import java.util.Scanner;
 import java.util.Locale.Category;
 import java.util.regex.Pattern;
 
+import com.google.gson.GsonBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -158,7 +159,7 @@ public class GeneralTools {
 	/**
 	 * Convert a String array to a single string, with a specified separator string.
 	 * @param array
-	 * @param nDecimalPlaces
+	 * @param separator
 	 * @return
 	 */
 	public static String arrayToString(final Object[] array, final String separator) {
@@ -234,7 +235,7 @@ public class GeneralTools {
 	 * Format a value with a maximum number of decimal places, using the default Locale.
 	 * 
 	 * @param value
-	 * @param nDecimalPlaces
+	 * @param maxDecimalPlaces
 	 * @return
 	 */
 	public synchronized static String formatNumber(final double value, final int maxDecimalPlaces) {
@@ -245,7 +246,7 @@ public class GeneralTools {
 	 * Format a value with a maximum number of decimal places, using a specified Locale.
 	 * 
 	 * @param value
-	 * @param nDecimalPlaces
+	 * @param maxDecimalPlaces
 	 * @return
 	 */
 	public synchronized static String formatNumber(final Locale locale, final double value, final int maxDecimalPlaces) {
@@ -275,7 +276,7 @@ public class GeneralTools {
 		if (s == null)
 			return Collections.emptyMap();
 		Type type = new TypeToken<Map<String, String>>() {}.getType();
-		return new Gson().fromJson(s, type);
+		return new GsonBuilder().setLenient().create().fromJson(s, type);
 	}
 
 	
@@ -324,7 +325,7 @@ public class GeneralTools {
 	/**
 	 * Read the entire contents of an InputStream into a single String.
 	 * 
-	 * @param path
+	 * @param stream
 	 * @return
 	 * @throws IOException
 	 */

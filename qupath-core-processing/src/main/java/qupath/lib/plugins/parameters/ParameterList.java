@@ -32,6 +32,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -180,7 +182,16 @@ public class ParameterList implements Serializable {
 		params.put(key, new StringParameter(prompt, defaultValue, helpText));
 		return this;
 	}
-	
+
+	public ParameterList addTextParameter(String key, String prompt, String defaultValue, String helpText) {
+		params.put(key, new TextParameter(prompt, defaultValue, helpText));
+		return this;
+	}
+
+	public ParameterList addTextParameter(String key, String prompt, String defaultValue) {
+		return addTextParameter(key, prompt, defaultValue, null);
+	}
+
 	public <S> ParameterList addChoiceParameter(String key, String prompt, S defaultValue, S[] choices) {
 		return addChoiceParameter(key, prompt, defaultValue, choices, null);
 	}
@@ -304,6 +315,13 @@ public class ParameterList implements Serializable {
 			return ((StringParameter)p).getValueOrDefault();
 		return defaultValue;
 	}
+
+	String getTextParameterValue(String key, String defaultValue) {
+		Parameter<?> p = params.get(key);
+		if (p instanceof TextParameter)
+			return ((TextParameter)p).getValueOrDefault();
+		return defaultValue;
+	}
 	
 	Object getChoiceParameterValue(String key, Object defaultValue) {
 		Parameter<?> p = params.get(key);
@@ -324,11 +342,15 @@ public class ParameterList implements Serializable {
 	public Integer getIntParameterValue(String key) {
 		return getIntParameterValue(key, null);
 	}
-	
+
 	public String getStringParameterValue(String key) {
 		return getStringParameterValue(key, null);
 	}
-	
+
+	public String getTextParameterValue(String key) {
+		return getTextParameterValue(key, null);
+	}
+
 	public Object getChoiceParameterValue(String key) {
 		return getChoiceParameterValue(key, null);
 	}
@@ -444,11 +466,13 @@ public class ParameterList implements Serializable {
 	 * 
 	 * Note that the current Locale will not be applied to format numbers, and a decimal point will always be used.
 	 * 
-	 * @param params
+	 * @param map
 	 * @param delimiter
 	 * @return
 	 */
 	public static String getParameterListJSON(final Map<String, ?> map, final String delimiter) {
+		return new GsonBuilder().disableHtmlEscaping().create().toJson(map);
+		/*
 		StringBuilder sb = new StringBuilder();
 		int counter = 0;
 		sb.append("{");
@@ -466,13 +490,17 @@ public class ParameterList implements Serializable {
 			else if (value instanceof Number) {
 //				sb.append(NumberFormat.getInstance().format(value));
 				sb.append(value.toString());
-			} else
-				sb.append("\"").append(value).append("\"");
+			} else {
+				logger.warn("String is: " + value);
+				logger.warn("String is now: " + value.toString().replaceAll("\"", "\\\\\""));
+				sb.append("\"").append(value.toString().replaceAll("\"", "\\\"")).append("\"");
+			}
 			if (counter < map.size())
 				sb.append(",");
 		}
 		sb.append("}");
 		return sb.toString();
+		*/
 	}
 	
 //	/**

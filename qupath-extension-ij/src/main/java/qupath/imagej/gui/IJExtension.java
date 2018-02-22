@@ -73,6 +73,7 @@ import qupath.imagej.images.writers.TIFFWriterIJ;
 import qupath.imagej.images.writers.ZipWriterIJ;
 import qupath.imagej.objects.ROIConverterIJ;
 import qupath.imagej.plugins.ImageJMacroRunner;
+import qupath.imagej.plugins.ImageJMacroRunnerB;
 import qupath.imagej.superpixels.DoGSuperpixelsPlugin;
 import qupath.imagej.superpixels.SLICSuperpixelsPlugin;
 import qupath.lib.analysis.objects.TileClassificationsToAnnotationsPlugin;
@@ -473,13 +474,15 @@ public class IJExtension implements QuPathExtension {
 		
 		Menu menuAutomate = qupath.getMenu("Extensions>ImageJ", true);
 		Action actionMacroRunner = qupath.createPluginAction("ImageJ macro runner", new ImageJMacroRunner(qupath), null);
+		Action actionMacroRunnerB = qupath.createPluginAction("New ImageJ macro runner", ImageJMacroRunnerB.class, null, false);
 		QuPathGUI.addMenuItems(menuAutomate,
 				QuPathGUI.createMenuItem(QuPathGUI.createCommandAction(commandExtractRegionCustom, "Send region to ImageJ", PathIconFactory.createNode(QuPathGUI.iconSize, QuPathGUI.iconSize, PathIconFactory.PathIcons.EXTRACT_REGION), null)),
 				QuPathGUI.createMenuItem(QuPathGUI.createCommandAction(screenshotCommand, "Send snapshot to ImageJ", PathIconFactory.createNode(QuPathGUI.iconSize, QuPathGUI.iconSize, PathIconFactory.PathIcons.SCREENSHOT), null)),
 				null,
 				miSetPluginsPath,
 				null,
-				actionMacroRunner
+				actionMacroRunner,
+				actionMacroRunnerB
 				);
 		
 		qupath.getDefaultDragDropListener().addFileDropHandler((viewer, list) -> {
