@@ -219,6 +219,7 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 			if (anyPoints) {
 				MeasurementBuilder<?> builder = new NumPointsMeasurementBuilder();
 				builderMap.put(builder.getName(), builder);
+				features.add(builder.getName());
 			}
 			// Add spatial measurements, if needed
 			if (anyAreas) {
@@ -1034,9 +1035,15 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 		public double getCentroid(ROI roi) {
 			if (roi == null || type == null)
 				return Double.NaN;
-			return type == CentroidType.X
-					? roi.getCentroidX() * pixelWidthMicrons()
-					: roi.getCentroidY() * pixelHeightMicrons();
+			if (hasPixelSizeMicrons()) {
+				return type == CentroidType.X
+						? roi.getCentroidX() * pixelWidthMicrons()
+						: roi.getCentroidY() * pixelHeightMicrons();
+			} else {
+				return type == CentroidType.X
+						? roi.getCentroidX()
+						: roi.getCentroidY();
+			}
 		}
 
 		@Override

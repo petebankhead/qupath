@@ -1275,7 +1275,7 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 			return pathClasses;
 		} catch (Exception e) {
 			logger.error("Error loading classes", e);
-			return null;
+			return Collections.emptyList();
 		}
 	}
 
@@ -4050,11 +4050,8 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 			toolbar.getItems().add(qupath.getActionToggleButton(GUIActions.SHOW_OBJECTS, true, overlayOptions.getShowObjects()));
 			toolbar.getItems().add(qupath.getActionToggleButton(GUIActions.FILL_OBJECTS, true, overlayOptions.getFillObjects()));
 
-			final Slider sliderOpacity = new Slider(0, 20, (int)(overlayOptions.getOpacity()*20));
-			sliderOpacity.valueProperty().addListener(e -> {
-					double value = sliderOpacity.getValue() / (sliderOpacity.getMax() - sliderOpacity.getMin());
-					overlayOptions.setOpacity((float)value);
-			});
+			final Slider sliderOpacity = new Slider(0, 1, 1);
+			sliderOpacity.valueProperty().bindBidirectional(overlayOptions.opacityProperty());
 			sliderOpacity.setTooltip(new Tooltip("Overlay opacity"));
 			toolbar.getItems().add(sliderOpacity);
 			
