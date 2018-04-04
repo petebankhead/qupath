@@ -181,6 +181,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	private double yCenter = 0;
 	private double downsampleFactor = 1.0;
 	private double rotation = 0;
+	private boolean flipHorizontal = false;
+	private boolean flipVertical = false;
+
 	private BooleanProperty zoomToFit = new SimpleBooleanProperty(false);
 	// Affine transform used to apply rotation
 	private AffineTransform transform = new AffineTransform();
@@ -229,7 +232,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	
 	private double borderLineWidth = 5;
 	private javafx.scene.paint.Color borderColor;
-	
+
 	public Pane getView() {
 		if (canvas == null) {
 			setupCanvas();
@@ -246,8 +249,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		addViewerListener(new QuPathViewerListener() {
 
 			@Override
-			public void imageDataChanged(QuPathViewer viewer, ImageData<BufferedImage> imageDataOld,
-					ImageData<BufferedImage> imageDataNew) {
+			public void imageDataChanged(QuPathViewer viewer, ImageData<BufferedImage> imageDataOld, ImageData<BufferedImage> imageDataNew) {
 				paintCanvas();
 			}
 
@@ -648,7 +650,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		return doFasterRepaint;
 	}
 
-	
+
 	public Point2D getMousePosition() {
 		if (mouseX >= 0 && mouseX <= canvas.getWidth() && mouseY >= 0 && mouseY <= canvas.getWidth())
 			return new Point2D.Double(mouseX, mouseY);
@@ -2344,6 +2346,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		transform.setToIdentity();
 		transform.translate(getWidth()*.5, getHeight()*.5);
 		transform.scale(1.0/downsampleFactor, 1.0/downsampleFactor);
+		if (flipHorizontal) {
+			transform.scale(1.0, -1.0);
+		}
+		if (flipVertical) {
+			transform.scale(-1.0, 1.0);
+		}
+
 		transform.translate(-xCenter, -yCenter);
 		if (rotation != 0)
 			transform.rotate(rotation, xCenter, yCenter);
@@ -2355,6 +2364,19 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			e.printStackTrace();
 		}
 	}
+
+	public void setFlipped(boolean isFlipHorizontal, boolean isFlipVertical) {
+		if (this.flipHorizontal == isFlipHorizontal && this.flipVertical == isFlipVertical)
+			return;
+		this.flipHorizontal = isFlipHorizontal;
+		this.flipVertical = isFlipVertical;
+		imageUpdated = true;
+		updateAffineTransform();
+		repaint();
+	}
+
+	public boolean isFlipHorizontal() { return this.flipHorizontal; }
+	public boolean isFlipVertical() { return this.flipVertical; }
 
 	/**
 	 * Set the rotation; angle in radians.

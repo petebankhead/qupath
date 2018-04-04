@@ -322,7 +322,8 @@ public class ImageJMacroRunner extends AbstractPlugin<BufferedImage> {
 				if (params.getBooleanParameterValue("getOverlay") && impResult.getOverlay() != null) {
 					List<PathObject> childObjects = QUPath_Send_Overlay_to_QuPath.createPathObjectsFromROIs(imp, impResult.getOverlay().toArray(), imageData.getServer(), downsampleFactor, exportAsDetection, true, -1, region.getZ(), region.getT());
 					if (!childObjects.isEmpty()) {
-						pathObject.addPathObjects(childObjects);
+						//pathObject.addPathObjects(childObjects);
+						imageData.getHierarchy().addPathObjects(childObjects, true);
 						changes = true;
 					}
 //					for (Roi roi : impResult.getOverlay().toArray()) {

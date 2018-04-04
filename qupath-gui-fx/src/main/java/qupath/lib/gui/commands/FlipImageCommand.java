@@ -23,22 +23,18 @@
 
 package qupath.lib.gui.commands;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.commands.interfaces.PathCommand;
 import qupath.lib.gui.helpers.PanelToolsFX;
@@ -46,6 +42,10 @@ import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.objects.TMACoreObject;
 import qupath.lib.objects.hierarchy.TMAGrid;
 import qupath.lib.roi.interfaces.ROI;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Very basic rotation slider.
@@ -55,99 +55,65 @@ import qupath.lib.roi.interfaces.ROI;
  * @author Pete Bankhead
  *
  */
-public class RotateImageCommand implements PathCommand {
+public class FlipImageCommand implements PathCommand {
 
-	final private static Logger logger = LoggerFactory.getLogger(RotateImageCommand.class);
+	final private static Logger logger = LoggerFactory.getLogger(FlipImageCommand.class);
 
 	final private QuPathGUI qupath;
 
 	private Stage dialog;
-	private Slider slider;
+	private CheckBox flipHorizontal;
+	private CheckBox flipVertical;
 
-	public RotateImageCommand(QuPathGUI qupath) {
+	public FlipImageCommand(QuPathGUI qupath) {
 		this.qupath = qupath;
 	}
 
 	private void makeDialog() {
 		dialog = new Stage();
 		dialog.initOwner(qupath.getStage());
-		dialog.setTitle("Rotate view");
+		dialog.setTitle("Flip view");
 
 		BorderPane pane = new BorderPane();
 
-		final Label label = new Label("0 degrees");
+		final Label label = new Label("Choose Flip Direction");
 		label.setTextAlignment(TextAlignment.CENTER);
 		QuPathViewer viewerTemp = qupath.getViewer();
-		slider = new Slider(-90, 90, viewerTemp == null ? 0 : Math.toDegrees(viewerTemp.getRotation()));
-		slider.setMajorTickUnit(10);
-		slider.setMinorTickCount(5);
-		slider.setShowTickMarks(true);
-		slider.valueProperty().addListener((v, o, n) -> {
-			QuPathViewer viewer = qupath.getViewer();
+		flipHorizontal = new CheckBox("Flip Horizontally");
+		flipVertical = new CheckBox("Flip Vertically");
+		QuPathViewer viewer = qupath.getViewer();
+		// Set defaults
+		flipHorizontal.setSelected(viewer.isFlipHorizontal());
+		flipVertical.setSelected(viewer.isFlipVertical());
+
+		flipHorizontal.selectedProperty().addListener((v, o, n) -> {
 			if (viewer == null)
 				return;
-			double rotation = slider.getValue();
-			label.setText(String.format("%.1f degrees", rotation));
-			viewer.setRotation(Math.toRadians(rotation));
-			viewer.getImageData().setProperty("rotation",Math.toRadians(rotation) );
+			boolean isFlipHorizontal = flipHorizontal.selectedProperty().getValue();
+			boolean isFlipVertical = flipVertical.selectedProperty().getValue();
+			viewer.setFlipped(isFlipHorizontal, isFlipVertical);
+			viewer.getImageData().setProperty("flipHorizontal",isFlipHorizontal );
+			viewer.getImageData().setProperty("flipVertical",isFlipVertical );
 		});
 
-		Button btnReset = new Button("Reset");
-		btnReset.setOnAction(e -> slider.setValue(0));
-
-		Button btnTMAAlign = new Button("Straighten TMA");
-		btnTMAAlign.setOnAction(e -> {
-
-			QuPathViewer viewer = qupath.getViewer();
+		flipVertical.selectedProperty().addListener((v, o, n) -> {
 			if (viewer == null)
 				return;
-			TMAGrid tmaGrid = viewer.getHierarchy().getTMAGrid();
-			if (tmaGrid == null || tmaGrid.getGridWidth() < 2)
-				return;
-			// Determine predominent angle
-			List<Double> angles = new ArrayList<>();
-			for (int y = 0; y < tmaGrid.getGridHeight(); y++) {
-				for (int x = 1; x < tmaGrid.getGridWidth(); x++) {
-					TMACoreObject core1 = tmaGrid.getTMACore(y, x-1);
-					TMACoreObject core2 = tmaGrid.getTMACore(y, x);
-					if (core1.isMissing() || core2.isMissing())
-						continue;
-					ROI roi1 = core1.getROI();
-					ROI roi2 = core2.getROI();
-					double angle = Double.NaN;
-					if (roi1 != null && roi2 != null) {
-						double dx = roi2.getCentroidX() - roi1.getCentroidX();
-						double dy = roi2.getCentroidY() - roi1.getCentroidY();
-						angle = Math.atan2(dy, dx);
-						//								angle = Math.atan(dy / dx);
-					}
-					if (!Double.isNaN(angle)) {
-						logger.debug("Angle :" + angle);
-						angles.add(angle);
-					}
-				}
-			}
-			// Compute median angle
-			if (angles.isEmpty())
-				return;
-			Collections.sort(angles);
-			double angleMedian = Math.toDegrees(angles.get(angles.size()/2));
-			slider.setValue(angleMedian);
-
-			logger.debug("Median angle: " + angleMedian);
-
+			boolean isFlipHorizontal = flipHorizontal.selectedProperty().getValue();
+			boolean isFlipVertical = flipVertical.selectedProperty().getValue();
+			viewer.setFlipped(isFlipHorizontal, isFlipVertical);
+			viewer.getImageData().setProperty("flipHorizontal",isFlipHorizontal );
+			viewer.getImageData().setProperty("flipVertical",isFlipVertical );
 		});
 
 		GridPane panelButtons = PanelToolsFX.createColumnGridControls(
-				btnReset,
-				btnTMAAlign
+				flipHorizontal,
+				flipVertical
 				);
 		panelButtons.setPrefWidth(300);
 		
-		slider.setPadding(new Insets(5, 0, 10, 0));
 
 		pane.setTop(label);
-		pane.setCenter(slider);
 		pane.setBottom(panelButtons);
 		pane.setPadding(new Insets(10, 10, 10, 10));
 
