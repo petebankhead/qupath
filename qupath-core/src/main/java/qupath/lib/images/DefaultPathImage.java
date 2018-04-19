@@ -29,7 +29,7 @@ import qupath.lib.regions.ImageRegion;
 import qupath.lib.regions.RegionRequest;
 
 /**
- * An implementation of PathImage<BufferedImage>.
+ * An implementation of PathImage&lt;BufferedImage&gt;.
  * 
  * @author Pete Bankhead
  *
