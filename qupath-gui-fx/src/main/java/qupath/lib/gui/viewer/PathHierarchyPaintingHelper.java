@@ -67,6 +67,7 @@ import qupath.lib.objects.PathObjectConnections;
 import qupath.lib.objects.PathTileObject;
 import qupath.lib.objects.TMACoreObject;
 import qupath.lib.objects.classes.PathClass;
+import qupath.lib.objects.classes.PathClassFactory;
 import qupath.lib.objects.helpers.PathObjectColorToolsAwt;
 import qupath.lib.objects.helpers.PathObjectTools;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
@@ -109,7 +110,7 @@ public class PathHierarchyPaintingHelper {
 
 	/**
 	 * Create a thumbnail image, with the overlay painted.
-	 * If a BufferedImage is supplied, it will be used if it has the required width & height - otherwise a new one will be generated.
+	 * If a BufferedImage is supplied, it will be used if it has the required width &amp; height - otherwise a new one will be generated.
 	 * 
 	 * @param overlayOptions
 	 * @param serverWidth
@@ -387,7 +388,7 @@ public class PathHierarchyPaintingHelper {
 								paintROI(cell.getNucleusROI(), g, colorStroke, stroke, colorFill, downsample);
 							painted = true;
 						} else {
-							if ((overlayOptions.getFillAnnotations() && pathObject.isAnnotation()) || (pathObject.isTMACore() && overlayOptions.getShowTMACoreLabels()))
+							if ((overlayOptions.getFillAnnotations() && pathObject.isAnnotation() && pathObject.getPathClass() != PathClassFactory.getRegionClass()) || (pathObject.isTMACore() && overlayOptions.getShowTMACoreLabels()))
 								paintROI(pathROI, g, colorStroke, stroke, ColorToolsAwt.getMoreTranslucentColor(colorStroke), downsample);
 							else
 								paintROI(pathROI, g, colorStroke, stroke, colorFill, downsample);
@@ -662,7 +663,7 @@ public class PathHierarchyPaintingHelper {
 	public static Stroke getCachedStroke(final double thickness) {
 		if (thickness == Math.rint(thickness))
 			return getCachedStroke((int)thickness);
-		return getCachedStroke(new Float(thickness));
+		return getCachedStroke(Float.valueOf((float)thickness));
 	}
 	
 	
@@ -670,7 +671,7 @@ public class PathHierarchyPaintingHelper {
 	 * Paint the handles onto a Graphics object, if we have a suitable (non-point) ROI.
 	 * 
 	 * @param g2d
-	 * @param handleSize The width & height of the shape used to draw the handles
+	 * @param handleSize The width &amp; height of the shape used to draw the handles
 	 * @param colorStroke
 	 * @param colorFill
 	 */
@@ -683,7 +684,7 @@ public class PathHierarchyPaintingHelper {
 		 * Paint the handles onto a Graphics object.
 		 * 
 		 * @param g2d
-		 * @param handleSize The width & height of the shape used to draw the handles
+		 * @param handleSize The width &amp; height of the shape used to draw the handles
 		 * @param colorStroke
 		 * @param colorFill
 		 */

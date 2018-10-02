@@ -54,7 +54,6 @@ import qupath.imagej.processing.SimpleThresholding;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.PathImage;
-import qupath.lib.images.stores.ImageRegionStore;
 import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathRootObject;
@@ -77,7 +76,7 @@ import qupath.lib.roi.interfaces.ROI;
 /**
  * Very basic global thresholding command to identify tissue regions.
  * 
- * Uses fixed approach to downsampling images & global threshold applied to RGB images only.
+ * Uses fixed approach to downsampling images &amp; global threshold applied to RGB images only.
  * 
  * TODO: Provide choice of channels to threshold
  * TODO: Support 16-bit data
@@ -91,14 +90,9 @@ public class SimpleTissueDetection2 extends AbstractDetectionPlugin<BufferedImag
 	
 	private ParameterList params;
 
-	private String lastResults = null;		
+	private String lastResults = null;
 	
 	public SimpleTissueDetection2() {
-		this(null);
-	}
-	
-	
-	public SimpleTissueDetection2(final ImageRegionStore<BufferedImage> regionStore) {
 		
 		params = new ParameterList().
 				addIntParameter("threshold", "Threshold", 127, null, 0, 255, "Global threshold to use - defined in the range 0-255");

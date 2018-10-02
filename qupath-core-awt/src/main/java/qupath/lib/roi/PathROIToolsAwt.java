@@ -167,7 +167,7 @@ public class PathROIToolsAwt {
 	 * 
 	 * In the input shape is an Ellipse2D then an EllipseROI will be returned.
 	 * 
-	 * @param area
+	 * @param shape
 	 * @param c
 	 * @param z
 	 * @param t
@@ -294,7 +294,7 @@ public class PathROIToolsAwt {
 	 * However this may change in the future.
 	 * A
 	 * 
-	 * TODO: Consider comparing channels, time-points & z-slices.
+	 * TODO: Consider comparing channels, time-points &amp; z-slices.
 	 */
 	public static boolean containsShape(final Shape shape1, final Shape shape2) {
 		PathIterator iterator = shape2.getPathIterator(null);
@@ -315,7 +315,7 @@ public class PathROIToolsAwt {
 	 * However this may change in the future.
 	 * A
 	 * 
-	 * TODO: Consider comparing channels, time-points & z-slices.
+	 * TODO: Consider comparing channels, time-points &amp; z-slices.
 	 */
 	public static boolean containsShape(final PathShape shape1, final PathShape shape2) {
 		return containsShape(getShape(shape1), getShape(shape2));

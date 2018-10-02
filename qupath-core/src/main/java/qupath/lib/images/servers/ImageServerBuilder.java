@@ -23,7 +23,10 @@
 
 package qupath.lib.images.servers;
 
+import java.util.Map;
+
 import qupath.lib.images.servers.FileFormatInfo.ImageCheckType;
+import qupath.lib.regions.RegionRequest;
 
 /**
  * Helper class for creating ImageServers from a given path - which may be a file path or URL.
@@ -61,11 +64,12 @@ public interface ImageServerBuilder<T> {
 	public float supportLevel(String path, ImageCheckType info, Class<?> cls);
 	
 	/**
-	 * Attempt to create ImageServer<T> from the specified path.
+	 * Attempt to create {@code ImageServer<T>} from the specified path.
 	 * @param path
+	 * @param cache
 	 * @return
 	 */
-	public ImageServer<T> buildServer(String path) throws Exception;
+	public ImageServer<T> buildServer(String path, Map<RegionRequest, T> cache) throws Exception;
 	
 	/**
 	 * Get a human-readable name for the kind of ImageServer this builds.

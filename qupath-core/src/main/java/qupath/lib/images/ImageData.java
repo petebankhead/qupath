@@ -47,7 +47,7 @@ import qupath.lib.plugins.workflow.WorkflowStep;
 /**
  * Class that brings together the main data in connection with the analysis of a single image.
  * 
- * Currently, this is really the server (to access the image & its pixels) and the object hierarchy that represents detections.
+ * Currently, this is really the server (to access the image &amp; its pixels) and the object hierarchy that represents detections.
  * In addition, there is an ImageType - as some options may change depending on this.
  * One particularly significant example is that of Brightfield images in pathology, for which stain vectors are often required for
  * effective stain separation.
@@ -151,7 +151,6 @@ public class ImageData<T> implements WorkflowListener, PathObjectHierarchyListen
 	 * Create a new ImageData with ImageType.UNKNOWN and a new PathObjectHierarchy.
 	 * 
 	 * @param server
-	 * @param hierarchy
 	 */
 	public ImageData(ImageServer<T> server) {
 		this(server, new PathObjectHierarchy());
@@ -347,7 +346,7 @@ public class ImageData<T> implements WorkflowListener, PathObjectHierarchyListen
      * 
      * @return
      * 
-     * @see setLastSavedPath
+     * @see #setLastSavedPath
      */
     public boolean isChanged() {
     		return changes;

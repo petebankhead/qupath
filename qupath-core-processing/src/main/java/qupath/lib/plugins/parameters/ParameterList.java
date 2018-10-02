@@ -37,7 +37,7 @@ import org.slf4j.LoggerFactory;
 
 
 /**
- * A collection of Parameters, which can be used for analysis & queried to construct appropriate GUIs.
+ * A collection of Parameters, which can be used for analysis &amp; queried to construct appropriate GUIs.
  * 
  * Each Parameter requires a key to be associated with it.
  * 
@@ -444,7 +444,7 @@ public class ParameterList implements Serializable {
 	 * 
 	 * Note that the current Locale will not be applied to format numbers, and a decimal point will always be used.
 	 * 
-	 * @param params
+	 * @param map
 	 * @param delimiter
 	 * @return
 	 */

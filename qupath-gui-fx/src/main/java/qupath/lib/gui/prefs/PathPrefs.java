@@ -223,7 +223,7 @@ public class PathPrefs {
 	 * 
 	 * Setting this will attempt to set -Xmx by means of UserJvmOptionsService.
 	 * 
-	 * If successful, any value <= 0 will result in the -Xmx option being removed 
+	 * If successful, any value &lt;= 0 will result in the -Xmx option being removed
 	 * (i.e. reverting to the default).  Otherwise, -Xmx will be set to the value that is 
 	 * specified or 100M, whichever is larger.
 	 * 
@@ -317,7 +317,7 @@ public class PathPrefs {
 	/**
 	 * Get scroll speed scaled into a proportion, i.e. 100% becomes 1.
 	 * 
-	 * This also enforces a range check to ensure if is finite and > 0.
+	 * This also enforces a range check to ensure if is finite and &gt; 0.
 	 * 
 	 * @return
 	 */
@@ -415,21 +415,47 @@ public class PathPrefs {
 		}
 		return commandBarDisplay;
 	}
+	
+	
+	private static BooleanProperty doCreateLogFilesProperty = createPersistentPreference("requestCreateLogFiles", true);
+
+	/**
+	 * Request a log file to be generated.  Requires the <code>userPathProperty()</code> to be set to a directory.
+	 * 
+	 * @return
+	 */
+	public static BooleanProperty doCreateLogFilesProperty() {
+		return doCreateLogFilesProperty;
+	}
 		
 	
-	private static StringProperty extensionsPath = createPersistentPreference("extensionsPath", (String)null); // Base directory containing extensions
+	private static StringProperty userPath = createPersistentPreference("userPath", (String)null); // Base directory containing extensions
 
 	
-	public static StringProperty extensionsPathProperty() {
-		return extensionsPath;
+	public static StringProperty userPathProperty() {
+		return userPath;
+	}
+	
+	public static String getUserPath() {
+		return userPath.get();
 	}
 	
 	public static String getExtensionsPath() {
-		return extensionsPath.get();
+		String userPath = getUserPath();
+		if (userPath == null)
+			return null;
+		return new File(userPath, "extensions").getAbsolutePath();
+	}
+	
+	public static String getLoggingPath() {
+		String userPath = getUserPath();
+		if (userPath == null)
+			return null;
+		return new File(userPath, "logs").getAbsolutePath();
 	}
 
-	public static void setExtensionsPath(final String path) {
-		extensionsPath.set(path);
+	public static void setUserPath(final String path) {
+		userPath.set(path);
 	}
 	
 	
@@ -723,8 +749,8 @@ public class PathPrefs {
 	
 	
 	/**
-	 * An image with width & height < maxNonWholeTiledImageLength() should not be tiled -
-	 * rather, the entirely image should always be read & used
+	 * An image with width &amp; height &lt; maxNonWholeTiledImageLength() should not be tiled -
+	 * rather, the entirely image should always be read &amp; used
 	 * @return
 	 */
 	public static int maxNonWholeTiledImageLength() {

@@ -23,7 +23,6 @@
 
 package qupath.opencv;
 
-import org.opencv.core.Core;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,28 +48,7 @@ public class OpenCVExtension implements QuPathExtension {
 	
 	final private static Logger logger = LoggerFactory.getLogger(OpenCVExtension.class);
 	
-	/**
-	 * Attempt to load the native library.
-	 * 
-	 * @return true if the library is successfully loaded, false otherwise
-	 */
-	public static boolean loadNativeLibrary() {
-		try {
-			System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
-			return true;
-		} catch (Throwable e) {
-			// Ok to catch anything, since we can recover... we just can't load the extension
-			logger.error("Unable to load OpenCV libraries!", e);
-		}
-		return false;
-	}
-	
-	
 	public static void addQuPathCommands(final QuPathGUI qupath) {
-		
-		// Load the native library
-		if (!loadNativeLibrary())
-			return;
 
 		Menu menuTMA = qupath.getMenu("TMA", true);
 		QuPathGUI.addMenuItems(
@@ -81,22 +59,22 @@ public class OpenCVExtension implements QuPathExtension {
 		Menu menuFeatures = qupath.getMenu("Analyze>Calculate features", true);
 		QuPathGUI.addMenuItems(
 				menuFeatures,
-				qupath.createPluginAction("Add Delaunay cluster features (experimental)", DelaunayClusteringPlugin.class, null, false)
+				qupath.createPluginAction("Add Delaunay cluster features (experimental)", DelaunayClusteringPlugin.class, null)
 				);
 
 		Menu menuRegions = qupath.getMenu("Analyze>Region identification", true);
 		QuPathGUI.addMenuItems(
 				menuRegions,
 //				QuPathGUI.createCommandAction(new TissueSegmentationCommand(qupath), "Tissue identification (OpenCV, experimental)"),
-				qupath.createPluginAction("Create cytokeratin annotations (TMA, experimental)", DetectCytokeratinCV.class, null, false)
+				qupath.createPluginAction("Create cytokeratin annotations (TMA, experimental)", DetectCytokeratinCV.class, null)
 				);
 
 		Menu menuCellAnalysis = qupath.getMenu("Analyze>Cell analysis", true);
 		QuPathGUI.addMenuItems(
 				menuCellAnalysis,
 				new SeparatorMenuItem(),
-				qupath.createPluginAction("Watershed nucleus detection (OpenCV, experimental)", WatershedNucleiCV.class, null, false),
-				qupath.createPluginAction("Fast cell counts (brightfield)", CellCountsCV.class, null, false)
+				qupath.createPluginAction("Watershed nucleus detection (OpenCV, experimental)", WatershedNucleiCV.class, null),
+				qupath.createPluginAction("Fast cell counts (brightfield)", CellCountsCV.class, null)
 				);
 
 		Menu menuClassify = qupath.getMenu("Classify", true);

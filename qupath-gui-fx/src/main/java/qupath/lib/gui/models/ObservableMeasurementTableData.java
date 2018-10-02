@@ -1394,7 +1394,7 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 		private Map<PathClass, Integer> counts = new HashMap<>();
 		
 		/**
-		 * @param pathObject The parent object.  PathClasses will be counted for descendant detection objects only.
+		 * @param parentObject the parent object.  PathClasses will be counted for descendant detection objects only.
 		 */
 		DetectionPathClassCounts(final PathObject parentObject) {
 			for (PathObject child : PathObjectTools.getFlattenedObjectList(parentObject, null, true)) {
@@ -1551,6 +1551,10 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 		else if (builder instanceof NumericMeasurementBuilder)
 			return ((NumericMeasurementBuilder)builder).getStringValue(pathObject, decimalPlaces);
 		
+		if (pathObject == null) {
+			logger.warn("Requested measurement {} for null object! Returned empty String.", column);
+			return "";
+		}
 		double val = pathObject.getMeasurementList().getMeasurementValue(column);
 		if (Double.isNaN(val))
 			return "NaN";

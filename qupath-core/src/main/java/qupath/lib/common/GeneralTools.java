@@ -32,14 +32,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.Locale.Category;
-import java.util.regex.Pattern;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -158,7 +155,7 @@ public class GeneralTools {
 	/**
 	 * Convert a String array to a single string, with a specified separator string.
 	 * @param array
-	 * @param nDecimalPlaces
+	 * @param separator
 	 * @return
 	 */
 	public static String arrayToString(final Object[] array, final String separator) {
@@ -234,7 +231,7 @@ public class GeneralTools {
 	 * Format a value with a maximum number of decimal places, using the default Locale.
 	 * 
 	 * @param value
-	 * @param nDecimalPlaces
+	 * @param maxDecimalPlaces
 	 * @return
 	 */
 	public synchronized static String formatNumber(final double value, final int maxDecimalPlaces) {
@@ -244,8 +241,9 @@ public class GeneralTools {
 	/**
 	 * Format a value with a maximum number of decimal places, using a specified Locale.
 	 * 
+	 * @param locale
 	 * @param value
-	 * @param nDecimalPlaces
+	 * @param maxDecimalPlaces
 	 * @return
 	 */
 	public synchronized static String formatNumber(final Locale locale, final double value, final int maxDecimalPlaces) {
@@ -324,7 +322,7 @@ public class GeneralTools {
 	/**
 	 * Read the entire contents of an InputStream into a single String.
 	 * 
-	 * @param path
+	 * @param stream
 	 * @return
 	 * @throws IOException
 	 */

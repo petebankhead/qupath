@@ -30,7 +30,6 @@ import java.text.DecimalFormat;
 
 import qupath.lib.awt.color.ColorToolsAwt;
 import qupath.lib.awt.color.ColorTransformerAWT;
-import qupath.lib.color.ColorDeconvolution;
 import qupath.lib.color.ColorDeconvolutionHelper;
 import qupath.lib.color.ColorDeconvolutionStains;
 import qupath.lib.color.ColorTransformer;
@@ -163,7 +162,7 @@ public interface ChannelDisplayInfo {
 	public abstract boolean isAdditive();
 
 	/**
-	 * Returns true if rescaling according to min & max display levels is applied, false if the full display range is used.
+	 * Returns true if rescaling according to min &amp; max display levels is applied, false if the full display range is used.
 	 * 
 	 * @return
 	 */
@@ -186,7 +185,7 @@ public interface ChannelDisplayInfo {
 	 * @param img
 	 * @param x
 	 * @param y
-	 * @param rgb
+	 * @param useColorLUT
 	 * @return
 	 */
 	public abstract int getRGB(BufferedImage img, int x, int y, boolean useColorLUT);
@@ -195,9 +194,8 @@ public interface ChannelDisplayInfo {
 	 * Get the RGB values that would be used to display all the pixels of an image
 	 * 
 	 * @param img
-	 * @param x
-	 * @param y
 	 * @param rgb
+	 * @param useColorLUT
 	 * @return
 	 */
 	public abstract int[] getRGB(BufferedImage img, int[] rgb, boolean useColorLUT);
@@ -218,10 +216,8 @@ public interface ChannelDisplayInfo {
 	 * May throw an UnsupportedOperationException if isAdditive() returns false;
 	 * 
 	 * @param img
-	 * @param x
-	 * @param y
 	 * @param rgb
-	 * @return
+	 * @param useColorLUT
 	 */
 	public void updateRGBAdditive(BufferedImage img, int[] rgb, boolean useColorLUT);
 	
@@ -413,7 +409,7 @@ public interface ChannelDisplayInfo {
 		@Override
 		public int getRGB(BufferedImage img, int x, int y, boolean useColorLUT) {
 			int[] arr = new int[]{img.getRGB(x, y)};
-			return ColorDeconvolution.colorDeconvolveReconvolveRGBArray(arr, imageDisplay.getImageData().getColorDeconvolutionStains(), stainsTarget, discardResidual, arr)[0];
+			return ColorTransformerAWT.colorDeconvolveReconvolveRGBArray(arr, imageDisplay.getImageData().getColorDeconvolutionStains(), stainsTarget, discardResidual, arr)[0];
 		}
 
 		@Override
@@ -421,7 +417,7 @@ public interface ChannelDisplayInfo {
 			int[] buffer = RGBDirectChannelInfo.getRGBIntBuffer(img);
 			if (buffer == null)
 				buffer = img.getRGB(0, 0, img.getWidth(), img.getHeight(), null, 0, img.getWidth());
-			return ColorDeconvolution.colorDeconvolveReconvolveRGBArray(buffer, imageDisplay.getImageData().getColorDeconvolutionStains(), stainsTarget, discardResidual, rgb, getScaleToByte(), -getOffset());
+			return ColorTransformerAWT.colorDeconvolveReconvolveRGBArray(buffer, imageDisplay.getImageData().getColorDeconvolutionStains(), stainsTarget, discardResidual, rgb, getScaleToByte(), -getOffset());
 		}
 
 		@Override
@@ -695,7 +691,7 @@ public interface ChannelDisplayInfo {
 			// Rescale only if we must
 			float offset = getOffset();
 			float scale = getScaleToByte();
-			ColorTransformerAWT.transformImage(buffer, rgb, ColorTransformer.ColorTransformMethod.OD_Normalized, offset, scale, false);
+			ColorTransformerAWT.transformRGB(buffer, rgb, ColorTransformer.ColorTransformMethod.OD_Normalized, offset, scale, false);
 			return rgb;
 		}
 
@@ -807,20 +803,23 @@ public interface ChannelDisplayInfo {
 		
 		private ColorTransformMethod method;
 
-		public RBGColorDeconvolutionInfo(ImageDisplay imageDisplay, int stainNumber) {
+		public RBGColorDeconvolutionInfo(ImageDisplay imageDisplay, ColorTransformMethod method) {
 			super(8);
 			this.imageDisplay = imageDisplay;
-			this.stainNumber = stainNumber;
-			setMinMaxAllowed(0f, 3f);
-			setMinDisplay(0);
-			setMaxDisplay(1.5f);
-		}
-
-		public RBGColorDeconvolutionInfo(ImageDisplay imageDisplay, int stainNumber, ColorTransformMethod method) {
-			super(8);
-			this.imageDisplay = imageDisplay;
-			this.stainNumber = stainNumber;
 			this.method = method;
+			switch (method) {
+				case Stain_1:
+					stainNumber = 1;
+					break;
+				case Stain_2:
+					stainNumber = 2;
+					break;
+				case Stain_3:
+					stainNumber = 3;
+					break;
+				default:
+					stainNumber = -1;
+			}
 			setMinMaxAllowed(0f, 3f);
 			setMinDisplay(0);
 			setMaxDisplay(1.5f);
@@ -848,7 +847,7 @@ public interface ChannelDisplayInfo {
 				return 0f;
 			int rgb = img.getRGB(x, y);
 			if (method == null)
-				return ColorDeconvolution.colorDeconvolveRGBPixel(rgb, stains, stainNumber-1);
+				return ColorTransformerAWT.colorDeconvolveRGBPixel(rgb, stains, stainNumber-1);
 			else if (method == ColorTransformMethod.Optical_density_sum) {
 				int r = ColorTools.red(rgb);
 				int g = ColorTools.green(rgb);
@@ -856,9 +855,8 @@ public interface ChannelDisplayInfo {
 				return (float)(ColorDeconvolutionHelper.makeOD(r, stains.getMaxRed()) +
 						ColorDeconvolutionHelper.makeOD(g, stains.getMaxGreen()) + 
 						ColorDeconvolutionHelper.makeOD(b, stains.getMaxBlue()));
-			}
-			else
-				return ColorTransformer.getPixelValue(rgb, method);
+			} else
+				return ColorTransformer.getPixelValue(rgb, method, stains);
 		}
 
 		@Override
@@ -872,10 +870,7 @@ public interface ChannelDisplayInfo {
 			int[] buffer = RGBDirectChannelInfo.getRGBIntBuffer(img);
 			if (buffer == null)
 				buffer = img.getRGB(x, y, w, h, null, 0, w);
-			if (method == null)
-				return ColorDeconvolution.colorDeconvolveRGBArray(buffer, stains, stainNumber-1, array);
-			else
-				return ColorTransformer.getTransformedPixels(buffer, method, array, stains);
+			return ColorTransformer.getTransformedPixels(buffer, method, array, stains);
 		}
 
 		@Override
@@ -928,9 +923,13 @@ public interface ChannelDisplayInfo {
 	/**
 	 * ChannelInfo intended for use with a single or multichannel image (possibly fluorescence)
 	 * where the pixel's value is used to scale a single color according to a specified display range.
-	 * If the pixel's value is >= maxDisplay, the pure color is used.
-	 * If the pixel's value is <= minDisplay, the black is used.
+	 *
+	 * If the pixel's value is &gt;= maxDisplay, the pure color is used.
+	 *
+	 * If the pixel's value is &lt;= minDisplay, the black is used.
+	 *
 	 * Otherwise, a scaled version of the color is used
+	 *
 	 * The end result is like having a lookup table (LUT) that stretches from black to the 'pure' color specified,
 	 * but without actually generating the LUT.
 	 * 

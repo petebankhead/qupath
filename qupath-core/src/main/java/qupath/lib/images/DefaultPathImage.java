@@ -21,25 +21,22 @@
  * #L%
  */
 
-package qupath.lib.awt.images;
-
-import java.awt.image.BufferedImage;
+package qupath.lib.images;
 
 import qupath.lib.common.GeneralTools;
-import qupath.lib.images.PathImage;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.regions.ImageRegion;
 import qupath.lib.regions.RegionRequest;
 
 /**
- * An implementation of PathImage<BufferedImage>.
+ * An implementation of {@code PathImage<BufferedImage>}.
  * 
  * @author Pete Bankhead
  *
  */
-public class PathBufferedImage implements PathImage<BufferedImage> {
+public class DefaultPathImage<T> implements PathImage<T> {
 	
-	private BufferedImage img = null;
+	private T img = null;
 	private RegionRequest request;
 	private double pixelWidthMicrons, pixelHeightMicrons;
 	
@@ -47,14 +44,11 @@ public class PathBufferedImage implements PathImage<BufferedImage> {
 	 * The bounds are the coordinates in the original image space (in pixels) from which this image was extracted.
 	 * This is useful for whole slide images, from which this may be a downsampled part.
 	 * 
-	 * @param path
+	 * @param server
+	 * @param request
 	 * @param img
-	 * @param bounds
-	 * @param downsampleFactor
-	 * @param pixelWidthMicrons
-	 * @param pixelHeightMicrons
 	 */
-	public PathBufferedImage(ImageServer<BufferedImage> server, RegionRequest request, BufferedImage img) {
+	public DefaultPathImage(ImageServer<T> server, RegionRequest request, T img) {
 		this.img = img;
 		this.request = request;
 		this.pixelWidthMicrons = server.getPixelWidthMicrons() * request.getDownsample();
@@ -67,18 +61,8 @@ public class PathBufferedImage implements PathImage<BufferedImage> {
 	}
 
 	@Override
-	public BufferedImage getImage() {
+	public T getImage() {
 		return img;
-	}
-
-	@Override
-	public int getWidth() {
-		return img.getWidth();
-	}
-
-	@Override
-	public int getHeight() {
-		return img.getHeight();
 	}
 
 	@Override
@@ -92,7 +76,7 @@ public class PathBufferedImage implements PathImage<BufferedImage> {
 	}
 
 	@Override
-	public BufferedImage getImage(boolean cache) {
+	public T getImage(boolean cache) {
 		return img;
 	}
 

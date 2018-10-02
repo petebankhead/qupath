@@ -811,7 +811,8 @@ public class PathAnnotationPanel implements PathObjectSelectionListener, ImageDa
 				selected.add(pathObject);
 		}
 		if (selected.isEmpty()) {
-			model.clearSelection();
+			if (!model.isEmpty())
+				model.clearSelection();
 			changingSelection = false;
 			return;
 		}
@@ -845,7 +846,10 @@ public class PathAnnotationPanel implements PathObjectSelectionListener, ImageDa
 			changingSelection = false;
 			return;
 		}
-		model.selectIndices(inds[0], inds);
+		if (inds.length == 1)
+			model.select(inds[0]);
+		else if (inds.length > 1)
+			model.selectIndices(inds[0], inds);
 		
 		changingSelection = false;
 	}

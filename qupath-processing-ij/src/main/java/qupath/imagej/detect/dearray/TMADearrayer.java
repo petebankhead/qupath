@@ -37,7 +37,6 @@ import java.util.List;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.gui.OvalRoi;
-import ij.gui.PointRoi;
 import ij.gui.PolygonRoi;
 import ij.gui.ProfilePlot;
 import ij.gui.Roi;
@@ -363,7 +362,7 @@ public class TMADearrayer {
 		Collections.sort(pointRow, new Comparator<Point>() {
 			@Override
 			public int compare(Point p1, Point p2) {
-				return new Integer(p1.x).compareTo(p2.x);
+				return Integer.valueOf(p1.x).compareTo(p2.x);
 			}
 		});
 			
@@ -398,7 +397,7 @@ public class TMADearrayer {
 		Collections.sort(points, new Comparator<Point>() {
 			@Override
 			public int compare(Point p1, Point p2) {
-				return new Integer(p1.y).compareTo(p2.y);
+				return Integer.valueOf(p1.y).compareTo(p2.y);
 			}
 		});
 		

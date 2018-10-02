@@ -49,7 +49,6 @@ import qupath.lib.objects.classes.PathClassFactory;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.objects.hierarchy.TMAGrid;
 import qupath.lib.regions.ImageRegion;
-import qupath.lib.roi.AreaROI;
 import qupath.lib.roi.ROIHelpers;
 import qupath.lib.roi.interfaces.PathArea;
 import qupath.lib.roi.interfaces.PathPoints;
@@ -391,8 +390,8 @@ public class PathObjectTools {
 	 * Test whether the ROI associated with one object can completely the ROI of a second object.
 	 * Returns false if either ROI is null.
 	 * 
-	 * @param parentROI
-	 * @param childROI
+	 * @param parentObject
+	 * @param childObject
 	 * @return
 	 */
 	public static boolean containsObject(PathObject parentObject, PathObject childObject) {
@@ -474,7 +473,7 @@ public class PathObjectTools {
 	}
 
 	/**
-	 * Get the TMA core that contains the specified x & y coordinate, or null if no core is available for the coordinates give.
+	 * Get the TMA core that contains the specified x &amp; y coordinate, or null if no core is available for the coordinates give.
 	 * 
 	 * @param hierarchy
 	 * @param x
@@ -613,7 +612,7 @@ public class PathObjectTools {
 	/**
 	 * From a collection of available objects, extract those that are instances of specified supported classes.
 	 * 
-	 * @param hierarchy
+	 * @param availableObjects
 	 * @param supportedClasses
 	 * @return
 	 */

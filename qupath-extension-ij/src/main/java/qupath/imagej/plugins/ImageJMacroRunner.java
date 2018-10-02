@@ -76,7 +76,7 @@ import qupath.lib.roi.interfaces.ROI;
 import qupathj.QUPath_Send_Overlay_to_QuPath;
 
 /**
- * QuPath plugin for running ImageJ macros & returning detected regions.
+ * QuPath plugin for running ImageJ macros &amp; returning detected regions.
  * 
  * TODO: Support script recording.
  * 
@@ -200,7 +200,7 @@ public class ImageJMacroRunner extends AbstractPlugin<BufferedImage> {
 
 
 
-	static void runMacro(final ParameterList params, final ImageData<BufferedImage> imageData, final ImageDisplay imageDisplay, final PathObject pathObject, final String macroText) {
+	public static void runMacro(final ParameterList params, final ImageData<BufferedImage> imageData, final ImageDisplay imageDisplay, final PathObject pathObject, final String macroText) {
 //		if (!SwingUtilities.isEventDispatchThread()) {
 //			SwingUtilities.invokeLater(() -> runMacro(params, imageData, imageDisplay, pathObject, macroText));
 //			return;

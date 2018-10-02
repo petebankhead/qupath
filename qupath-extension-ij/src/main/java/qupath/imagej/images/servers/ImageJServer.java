@@ -32,11 +32,8 @@ import java.awt.image.DataBufferFloat;
 import java.awt.image.DataBufferUShort;
 import java.awt.image.Raster;
 import java.awt.image.SampleModel;
-import java.awt.image.WritableRaster;
-import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -55,12 +52,10 @@ import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import ij.process.LUT;
 import ij.process.ShortProcessor;
-import qupath.lib.awt.images.PathBufferedImage;
+import qupath.lib.awt.color.model.ColorModelFactory;
 import qupath.lib.common.ColorTools;
 import qupath.lib.common.GeneralTools;
-import qupath.lib.images.PathImage;
 import qupath.lib.images.servers.AbstractImageServer;
-import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.regions.RegionRequest;
 
@@ -74,18 +69,15 @@ public class ImageJServer extends AbstractImageServer<BufferedImage> {
 	
 	final private static Logger logger = LoggerFactory.getLogger(ImageJServer.class);
 	
-	private String path;
+	private ImageServerMetadata originalMetadata;
+	
 	private ImagePlus imp;
 	
 	private static List<String> micronList = Arrays.asList("micron", "microns", "um", GeneralTools.micrometerSymbol());
 	
-	private ImageServerMetadata originalMetadata;
-	private ImageServerMetadata userMetadata;
-	
 	private ColorModel colorModel;
 	
 	public ImageJServer(final String path) throws IOException {
-		this.path = path;
 		if (path.toLowerCase().endsWith(".tif") || path.toLowerCase().endsWith(".tiff")) {
 			imp = IJ.openVirtual(path);
 		}
@@ -106,6 +98,7 @@ public class ImageJServer extends AbstractImageServer<BufferedImage> {
 			}
 		}
 		
+		boolean isRGB = imp.getType() == ImagePlus.COLOR_RGB;
 		originalMetadata = new ImageServerMetadata.Builder(path,
 				imp.getWidth(),
 				imp.getHeight()).
@@ -114,7 +107,10 @@ public class ImageJServer extends AbstractImageServer<BufferedImage> {
 				setSizeZ(imp.getNSlices()).
 				setSizeT(imp.getNFrames()).
 				setTimeUnit(timeUnit).
+				setRGB(isRGB).
+				setBitDepth(isRGB ? 8 : imp.getBitDepth()).
 				setZSpacingMicrons(zMicrons).
+				setPreferredDownsamples(1.0). // TODO: Consider an in-memory image pyramid for large images
 				setPreferredTileSize(imp.getWidth(), imp.getHeight()).
 //				setMagnification(pxlInfo.mag). // Don't know magnification...?
 				build();
@@ -146,29 +142,9 @@ public class ImageJServer extends AbstractImageServer<BufferedImage> {
 		return Double.NaN;
 	}
 	
-
-	@Override
-	public double[] getPreferredDownsamples() {
-		// TODO: Consider creating an in-memory pyramid for very large images - or at least store a low resolution version?
-		return new double[]{1};
-	}
-
-	@Override
-	public boolean isRGB() {
-		return imp.getType() == ImagePlus.COLOR_RGB;
-	}
-
 	@Override
 	public double getTimePoint(int ind) {
 		return imp.getCalibration().frameInterval * ind;
-	}
-
-	@Override
-	public PathImage<BufferedImage> readRegion(RegionRequest request) {
-		BufferedImage img = readBufferedImage(request);
-		if (img == null)
-			return null;
-		return new PathBufferedImage(this, request, img);
 	}
 
 	@Override
@@ -246,11 +222,11 @@ public class ImageJServer extends AbstractImageServer<BufferedImage> {
 			SampleModel model;
 			if (colorModel == null) {
 				if (ip instanceof ByteProcessor)
-					colorModel = new SimpleColorModel(8);
+					colorModel = ColorModelFactory.getDummyColorModel(8);
 				else if (ip instanceof ShortProcessor)
-					colorModel = new SimpleColorModel(16);
+					colorModel = ColorModelFactory.getDummyColorModel(16);
 				else
-					colorModel = new SimpleColorModel(32);
+					colorModel = ColorModelFactory.getDummyColorModel(32);
 			}
 			
 			if (ip instanceof ByteProcessor) {
@@ -295,43 +271,8 @@ public class ImageJServer extends AbstractImageServer<BufferedImage> {
 	}
 
 	@Override
-	public List<String> getSubImageList() {
-		return Collections.emptyList();
-	}
-
-	@Override
-	public List<String> getAssociatedImageList() {
-		return Collections.emptyList();
-	}
-
-	@Override
-	public BufferedImage getAssociatedImage(String name) {
-		return null;
-	}
-
-	@Override
 	public String getDisplayedImageName() {
 		return imp.getTitle();
-	}
-
-	@Override
-	public boolean containsSubImages() {
-		return false;
-	}
-
-	@Override
-	public boolean usesBaseServer(ImageServer<?> server) {
-		return this == server;
-	}
-
-	@Override
-	public File getFile() {
-		return new File(path);
-	}
-
-	@Override
-	public int getBitsPerPixel() {
-		return isRGB() ? 8 : imp.getBitDepth();
 	}
 
 	@Override
@@ -349,74 +290,12 @@ public class ImageJServer extends AbstractImageServer<BufferedImage> {
 			int ind = lut.getMapSize()-1;
 			return lut.getRGB(ind);
 		}
-		return getDefaultChannelColor(channel);
+		return super.getDefaultChannelColor(channel);
 	}
-
-	@Override
-	public ImageServerMetadata getMetadata() {
-		return userMetadata == null ? originalMetadata : userMetadata;
-	}
-
-	@Override
-	public void setMetadata(ImageServerMetadata metadata) {
-		if (!originalMetadata.isCompatibleMetadata(metadata))
-			throw new RuntimeException("Specified metadata is incompatible with original metadata for " + this);
-		userMetadata = metadata;
-	}
-
+	
 	@Override
 	public ImageServerMetadata getOriginalMetadata() {
 		return originalMetadata;
 	}
 	
-	
-	
-	/**
-	 * An extremely tolerant ColorModel that assumes everything should be shown in black.
-	 * QuPath takes care of display elsewhere, so this is just needed to avoid any trouble with null pointer exceptions.
-	 */
-	static class SimpleColorModel extends ColorModel {
-		
-		SimpleColorModel(final int nBits) {
-			super(nBits);
-		}
-
-		@Override
-		public int getRed(int pixel) {
-			return 0;
-		}
-
-		@Override
-		public int getGreen(int pixel) {
-			return 0;
-		}
-
-		@Override
-		public int getBlue(int pixel) {
-			return 0;
-		}
-
-		@Override
-		public int getAlpha(int pixel) {
-			return 0;
-		}
-		
-		@Override
-		public boolean isCompatibleRaster(Raster raster) {
-			// We accept everything...
-			return true;
-		}
-		
-		@Override
-		public ColorModel coerceData(WritableRaster raster, boolean isAlphaPremultiplied) {
-			// Don't do anything
-			return null;
-		}
-		
-		
-	};
-	
-	
-	
-
 }

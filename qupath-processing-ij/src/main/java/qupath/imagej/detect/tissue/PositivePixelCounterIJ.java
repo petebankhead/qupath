@@ -41,8 +41,9 @@ import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
 import qupath.imagej.objects.PathImagePlus;
 import qupath.imagej.objects.ROIConverterIJ;
-import qupath.lib.color.ColorDeconvolution;
 import qupath.lib.color.ColorDeconvolutionStains;
+import qupath.lib.color.ColorTransformer;
+import qupath.lib.color.ColorTransformer.ColorTransformMethod;
 import qupath.lib.common.ColorTools;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.images.ImageData;
@@ -64,7 +65,7 @@ import qupath.lib.roi.interfaces.ROI;
 /**
  * Simple command to detect regions with positive staining.
  * 
- * For versions <= v0.1.2 this gave simple measurements that were influenced by the downsample values used.
+ * For versions &lt;= v0.1.2 this gave simple measurements that were influenced by the downsample values used.
  * Later versions make calibrated measurements and give more flexibility in terms of output.
  * 
  * @author Pete Bankhead
@@ -134,8 +135,10 @@ public class PositivePixelCounterIJ extends AbstractDetectionPlugin<BufferedImag
 			ColorProcessor cp = (ColorProcessor)imp.getProcessor();
 			int[] rgb = (int[])cp.getPixels();
 			
-			float[] pxHematoxylin = ColorDeconvolution.colorDeconvolveRGBArray(rgb, stains, 0, null);
-			float[] pxDAB = ColorDeconvolution.colorDeconvolveRGBArray(rgb, stains, 1, null);
+			float[] pxHematoxylin = ColorTransformer.getTransformedPixels(rgb, ColorTransformMethod.Stain_1, null, stains);
+			float[] pxDAB = ColorTransformer.getTransformedPixels(rgb, ColorTransformMethod.Stain_2, null, stains);
+//			float[] pxHematoxylin = ColorDeconvolution.colorDeconvolveRGBArray(rgb, stains, 0, null);
+//			float[] pxDAB = ColorDeconvolution.colorDeconvolveRGBArray(rgb, stains, 1, null);
 			
 			// Create images
 			FloatProcessor fpHematoxylin = new FloatProcessor(w, h, pxHematoxylin);

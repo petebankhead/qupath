@@ -38,7 +38,6 @@ import org.slf4j.LoggerFactory;
 import qupath.lib.common.SimpleThreadFactory;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.stores.ImageRegionStore;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 
@@ -65,14 +64,12 @@ public abstract class AbstractPluginRunner<T> implements PluginRunner<T> {
 
 	private Map<Future<Runnable>, Runnable> pendingTasks = new HashMap<>();
 	
-	private ImageRegionStore<T> regionStore;
 	private boolean batchMode = false;
 	private SimpleProgressMonitor monitor;
 	
 	private boolean tasksCancelled = false;
 	
-	protected AbstractPluginRunner(final ImageRegionStore<T> regionStore, final boolean batchMode) {
-		this.regionStore = regionStore;
+	protected AbstractPluginRunner(final boolean batchMode) {
 		this.batchMode = batchMode;
 	}
 
@@ -87,10 +84,10 @@ public abstract class AbstractPluginRunner<T> implements PluginRunner<T> {
 	/**
 	 * Set the number of threads requested to be used for the next threadpool created.
 	 * 
-	 * The request is stored as-is, but may be adjusted if it is outside a valid range, i.e. > 0 and <= available processors.
+	 * The request is stored as-is, but may be adjusted if it is outside a valid range, i.e. &gt; 0 and &lt;= available processors.
 	 * 
-	 * @see getNumThreadsRequested
-	 * @see getNumThreads
+	 * @see #getNumThreadsRequested
+	 * @see #getNumThreads
 	 * 
 	 * @param n
 	 */
@@ -105,10 +102,10 @@ public abstract class AbstractPluginRunner<T> implements PluginRunner<T> {
 	
 	/**
 	 * Get the number of threads requested.  This isn't necessarily the number that will be used for the next threadpool,
-	 * since it may be <= 0 or > the available processors.
+	 * since it may be &lt;= 0 or &gt; the available processors.
 	 * 
-	 * @see setNumThreadsRequested
-	 * @see getNumThreads
+	 * @see #setNumThreadsRequested
+	 * @see #getNumThreads
 	 * 
 	 * @return
 	 */
@@ -124,8 +121,8 @@ public abstract class AbstractPluginRunner<T> implements PluginRunner<T> {
 	 * 
 	 * This implementation may change (most likely to increase the upper limit, if it turns out to be too strict.)
 	 * 
-	 * @see setNumThreadsRequested
-	 * @see getNumThreadsRequested
+	 * @see #setNumThreadsRequested
+	 * @see #getNumThreadsRequested
 	 * 
 	 * @return
 	 */
@@ -216,8 +213,6 @@ public abstract class AbstractPluginRunner<T> implements PluginRunner<T> {
 	
 	/**
 	 * Await the completion of currently-running tasks, notifying any listener if necessary.
-	 * 
-	 * @param listener
 	 */
 	protected void awaitCompletion() {
 		try {
@@ -304,14 +299,6 @@ public abstract class AbstractPluginRunner<T> implements PluginRunner<T> {
 		String text = task == null ? "Completed" : task.getLastResultsDescription();
 		monitor.updateProgress(1, text, null);
 	}
-	
-	
-	
-	@Override
-	public ImageRegionStore<T> getRegionStore() {
-		return regionStore;
-	}
-	
 	
 	@Override
 	public boolean isCancelled() {

@@ -52,7 +52,6 @@ import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent.HierarchyEve
 import qupath.lib.regions.ImageRegion;
 import qupath.lib.roi.PointsROI;
 import qupath.lib.roi.interfaces.PathArea;
-import qupath.lib.roi.interfaces.PathShape;
 import qupath.lib.roi.interfaces.ROI;
 
 /**
@@ -213,7 +212,7 @@ public class PathObjectHierarchy implements Serializable {
 	
 	/**
 	 * Remove a collection of objects, firing a single 'hierarchy changed' event afterwards to notify listeners if anything happened
-	 * (i.e. if any of the objects really were found within the hierarchy) & removed.
+	 * (i.e. if any of the objects really were found within the hierarchy) &amp; removed.
 	 * 
 	 * @param pathObjects
 	 * @param keepChildren
@@ -589,7 +588,7 @@ public class PathObjectHierarchy implements Serializable {
 	 * 
 	 * @param pathObject
 	 * @param pathObjects
-	 * @param type
+	 * @param cls
 	 * @return
 	 */
 	public synchronized List<PathObject> getDescendantObjects(PathObject pathObject, List<PathObject> pathObjects, Class<? extends PathObject> cls) {

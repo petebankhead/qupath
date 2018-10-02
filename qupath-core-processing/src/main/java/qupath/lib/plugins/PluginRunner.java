@@ -27,14 +27,13 @@ import java.util.Collection;
 
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.stores.ImageRegionStore;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 
 /**
  * Implementing classes encapsulate the data and functionality needed to run a plugin on a single image.
  * 
- * This means access to an ImageData object (along with helper methods to access its server, hierarchy &
+ * This means access to an ImageData object (along with helper methods to access its server, hierarchy &amp;
  * selected objects), as well as the ability to run a collection of tasks - possibly in parallel.
  * 
  * This implementation may also (optionally) provide useful feedback on progress when running tasks.
@@ -52,15 +51,6 @@ public interface PluginRunner<T> {
 	ImageServer<T> getImageServer();
 	
 	boolean isCancelled();
-	
-	/**
-	 * Get an ImageRegionStore, which may be able to supply cached regions to the plugin to improve efficiency.
-	 * 
-	 * Plugins shouldn't rely on this being present, and it may return null.
-	 * 
-	 * @return
-	 */
-	ImageRegionStore<T> getRegionStore();
 
 	PathObjectHierarchy getHierarchy();
 

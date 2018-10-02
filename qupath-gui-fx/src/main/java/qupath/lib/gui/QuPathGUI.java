@@ -31,10 +31,13 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.Writer;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.lang.reflect.Constructor;
 import java.net.MalformedURLException;
@@ -47,7 +50,24 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.*;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.ServiceLoader;
+import java.util.Set;
+import java.util.WeakHashMap;
+import java.util.Optional;
 import java.util.Locale.Category;
 import java.util.Map.Entry;
 import java.util.concurrent.ExecutorCompletionService;
@@ -59,6 +79,9 @@ import java.util.jar.Manifest;
 import java.util.stream.Collectors;
 
 import javax.imageio.ImageIO;
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import javax.script.ScriptException;
 
 import org.controlsfx.control.action.Action;
 import org.controlsfx.control.action.ActionUtils;
@@ -242,6 +265,7 @@ import qupath.lib.gui.helpers.dialogs.DialogHelperFX;
 import qupath.lib.gui.helpers.dialogs.ParameterPanelFX;
 import qupath.lib.gui.icons.PathIconFactory;
 import qupath.lib.gui.icons.PathIconFactory.PathIcons;
+import qupath.lib.gui.logging.LoggingAppender;
 import qupath.lib.gui.panels.PathAnnotationPanel;
 import qupath.lib.gui.panels.PathImageDetailsPanel;
 import qupath.lib.gui.panels.PathObjectHierarchyView;
@@ -445,9 +469,21 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	public QuPathGUI(final Stage stage, final String path, final boolean isStandalone) {
 		super();
 		
+		if (PathPrefs.doCreateLogFilesProperty().get()) {
+			File fileLogging = tryToStartLogFile();
+			if (fileLogging != null) {
+				logger.info("Logging to file {}", fileLogging);
+			} else {
+				logger.warn("No directory set for log files! None will be written.");
+			}
+		}
+		
 		updateBuildString();
+		logger.info("QuPath build: {}", buildString);
 		
 		long startTime = System.currentTimeMillis();
+		
+		ImageServerProvider.setCache(imageRegionStore.getCache(), BufferedImage.class);
 		
 		this.stage = stage;
 		this.isStandalone = isStandalone;
@@ -657,17 +693,30 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 		projectScriptMenuLoader.getMenu().visibleProperty().bind(
 				Bindings.isNotNull(project).or(initializingMenus)
 				);
+		
+		StringBinding userScriptsPath = Bindings.createStringBinding(() -> {
+			String userPath = PathPrefs.getUserPath();
+			File dirScripts = userPath == null ? null : new File(userPath, "scripts");
+			if (dirScripts == null || !dirScripts.isDirectory())
+				return null;
+			return dirScripts.getAbsolutePath();
+		}, PathPrefs.userPathProperty());
+		ScriptMenuLoader userScriptMenuLoader = new ScriptMenuLoader("User scripts...", userScriptsPath, null);
+
 		menuAutomate.setOnMenuValidation(e -> {
 			sharedScriptMenuLoader.updateMenu();
 			projectScriptMenuLoader.updateMenu();
+			userScriptMenuLoader.updateMenu();
 		});
+
 		if (editor instanceof DefaultScriptEditor) {
 			addMenuItems(
 					menuAutomate,
 					null,
 					createCommandAction(new SampleScriptLoader(this), "Open sample scripts"),
 					projectScriptMenuLoader.getMenu(),
-					sharedScriptMenuLoader.getMenu()
+					sharedScriptMenuLoader.getMenu(),
+					userScriptMenuLoader.getMenu()
 					);
 		}
 		
@@ -694,7 +743,34 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 		if (!disableAutoUpdateCheck)
 			checkForUpdate(true);
 
+		
+		// Run startup script, if we can
+		try {
+			runStartupScript();			
+		} catch (Exception e) {
+			logger.error("Error running startup script", e);
+		}
 	}
+	
+	
+	/**
+	 * Try to start logging to a file.
+	 * This will only work if <code>PathPrefs.getLoggingPath() != null</code>.
+	 * 
+	 * @return the file that will (attempt to be) used for logging, or <code>null</code> if no file is to be used.
+	 */
+	private File tryToStartLogFile() {
+		String pathLogging = PathPrefs.getLoggingPath();
+		if (pathLogging != null) {
+			SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
+			String name = "qupath-" + dateFormat.format(new Date()) + ".log";
+			File fileLog = new File(pathLogging, name);
+			LoggingAppender.getInstance().addFileAppender(fileLog);
+			return fileLog;
+		}
+		return null;
+	}
+	
 	
 	
 	/**
@@ -804,8 +880,8 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	 * 
 	 * @return
 	 */
-	private File getDefaultExtensionDirectory() {
-		return new File(new File(System.getProperty("user.home"), "QuPath"), "extensions");
+	private File getDefaultQuPathUserDirectory() {
+		return new File(System.getProperty("user.home"), "QuPath");
 	}
 	
 	
@@ -926,8 +1002,8 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 		long lastUpdateCheck = PathPrefs.getUserPreferences().getLong("lastUpdateCheck", 0);
 
 		// Don't check run auto-update check again if we already checked within the last hour
-		long diffMinutes = (currentTime - lastUpdateCheck) / (60L * 60L * 1000L);
-		if (isAutoCheck && diffMinutes < 1)
+		double diffHours = (double)(currentTime - lastUpdateCheck) / (60L * 60L * 1000L);
+		if (isAutoCheck && diffHours < 1)
 			return;
 		
 		// See if we can read the current ChangeLog
@@ -1130,7 +1206,7 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 		if (dir == null) {
 			logger.info("No extension directory found!");
 			// Prompt to create an extensions directory
-			File dirDefault = getDefaultExtensionDirectory();
+			File dirDefault = getDefaultQuPathUserDirectory();
 			String msg;
 			if (dirDefault.exists()) {
 				msg = "An directory already exists at " + dirDefault.getAbsolutePath() + 
@@ -1161,15 +1237,16 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 					DisplayHelpers.showErrorMessage("Extension error", "Unable to create directory at \n" + dirDefault.getAbsolutePath());
 					return;
 				}
-				dir = dirDefault;
-				PathPrefs.setExtensionsPath(dir.getAbsolutePath());
+				PathPrefs.setUserPath(dirDefault.getAbsolutePath());
 			} else {
-				dir = getDialogHelper().promptForDirectory(dirDefault);
-				if (dir == null) {
-					logger.info("No extension directory set - extensions not installed");
+				File dirUser = getDialogHelper().promptForDirectory(dirDefault);
+				if (dirUser == null) {
+					logger.info("No QuPath user directory set - extensions not installed");
 					return;
 				}
 			}
+			// Now get the extensions directory (within the user directory)
+			dir = getExtensionDirectory();
 		}
 		// Create directory if we need it
 		if (!dir.exists())
@@ -1560,7 +1637,7 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	
 	
 	/**
-	 * Get a reference to the default drag & drop listener, so this may be added to additional windows if needed.
+	 * Get a reference to the default drag &amp; drop listener, so this may be added to additional windows if needed.
 	 * 
 	 * @return
 	 */
@@ -1997,7 +2074,7 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	 * Set selected TMA cores to have the specified 'locked' status.
 	 * 
 	 * @param hierarchy
-	 * @param setToMissing
+	 * @param setToLocked
 	 */
 	private static void setSelectedAnnotationLock(final PathObjectHierarchy hierarchy, final boolean setToLocked) {
 		if (hierarchy == null)
@@ -2028,9 +2105,8 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	/**
 	 * Update a 'set annotation class' menu for a viewer immediately prior to display
 	 * 
-	 * @param menuSet
+	 * @param menuSetClass
 	 * @param viewer
-	 * @return
 	 */
 	void updateSetAnnotationPathClassMenu(final Menu menuSetClass, final QuPathViewer viewer) {
 		updateSetAnnotationPathClassMenu(menuSetClass.getItems(), viewer, false);
@@ -2343,6 +2419,49 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	
 	
 	
+	/**
+	 * Check the user directory, and run a Groovy script called "startup.groovy" - if it exists.
+	 * @throws ScriptException 
+	 * @throws FileNotFoundException 
+	 */
+	private void runStartupScript() throws FileNotFoundException, ScriptException {
+		String pathUsers = PathPrefs.getUserPath();
+		File fileScript = pathUsers == null ? null : new File(pathUsers, "startup.groovy");
+		if (fileScript != null && fileScript.exists()) {
+			ScriptEngine engine = new ScriptEngineManager(getClassLoader()).getEngineByName("groovy");
+			engine.getContext().setWriter(new Writer() {
+				
+				@Override
+				public void write(char[] cbuf, int off, int len) throws IOException {
+					logger.info(String.valueOf(cbuf, off, len));
+				}
+				
+				@Override
+				public void flush() throws IOException {}
+				
+				@Override
+				public void close() throws IOException {}
+			});
+			engine.getContext().setErrorWriter(new Writer() {
+				
+				@Override
+				public void write(char[] cbuf, int off, int len) throws IOException {
+					logger.error(String.valueOf(cbuf, off, len));
+				}
+				
+				@Override
+				public void flush() throws IOException {}
+				
+				@Override
+				public void close() throws IOException {}
+			});
+			engine.eval(new FileReader(fileScript));
+		} else {
+			logger.debug("No startup script found");
+		}
+	}
+	
+	
 	
 	/**
 	 * Open a saved data file within a particular viewer, optionally keeping the same ImageServer as is currently open.
@@ -2525,10 +2644,10 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	/**
 	 * Create a menu, and add new menu items.
 	 * 
-	 * If null is passed as an object, a separated is added.
+	 * If null is passed as an object, a separator is added.
 	 * 
-	 * @param menu
-	 * @param objects
+	 * @param name
+	 * @param items
 	 * @return new menu
 	 */
 	public static Menu createMenu(final String name, final Object... items) {
@@ -2538,10 +2657,10 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	/**
 	 * Add menu items to an existing menu.
 	 * 
-	 * If null is passed as an object, a separated is added.
+	 * If null is passed as an object, a separator is added.
 	 * 
 	 * @param menu
-	 * @param objects
+	 * @param items
 	 * @return menu, so that this method can be nested inside other calls.
 	 */
 	public static Menu addMenuItems(final Menu menu, final Object... items) {
@@ -2854,7 +2973,7 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 				null,
 				getActionMenuItem(GUIActions.RIGID_OBJECT_EDITOR),
 				getActionMenuItem(GUIActions.SPECIFY_ANNOTATION),
-				createPluginAction("Expand annotations", DilateAnnotationPlugin.class, null, false),
+				createPluginAction("Expand annotations", DilateAnnotationPlugin.class, null),
 				getActionMenuItem(GUIActions.SELECT_ALL_ANNOTATION),
 				getActionMenuItem(GUIActions.ANNOTATION_DUPLICATE),
 				getActionMenuItem(GUIActions.TRANSFER_ANNOTATION),
@@ -2885,7 +3004,7 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 				createCommandAction(new TMAGridView(this), "TMA grid summary view"),
 //				createCommandAction(new TMAExplorer(this), "TMA explorer (experimental)"),
 				null,
-				createPluginAction("Find convex hull detections (TMA)", FindConvexHullDetectionsPlugin.class, this, false, null)
+				createPluginAction("Find convex hull detections (TMA)", FindConvexHullDetectionsPlugin.class, this, null)
 				);
 		
 		
@@ -2927,20 +3046,20 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 						"Region identification",
 						createMenu(
 								"Tiles & superpixels",
-								createPluginAction("Create tiles", TilerPlugin.class, this, false, null)
+								createPluginAction("Create tiles", TilerPlugin.class, this, null)
 								)
 						),
 				createMenu(
 						"Calculate features",
 //						new PathPluginAction("Create tiles", TilerPlugin.class, this),
-						createPluginAction("Add Intensity features (experimental)", IntensityFeaturesPlugin.class, this, true, null),
-						createPluginAction("Add Haralick texture features (legacy)", HaralickFeaturesPlugin.class, this, true, null),
+						createPluginAction("Add Intensity features (experimental)", IntensityFeaturesPlugin.class, this, null),
+						createPluginAction("Add Haralick texture features (legacy)", HaralickFeaturesPlugin.class, this, null),
 //						createPluginAction("Add Haralick texture features (feature test version)", HaralickFeaturesPluginTesting.class, this, imageRegionStore, null),
-						createPluginAction("Add Coherence texture feature (experimental)", CoherenceFeaturePlugin.class, this, true, null),
-						createPluginAction("Add Smoothed features", SmoothFeaturesPlugin.class, this, false, null),
-						createPluginAction("Add Shape features (experimental)", ShapeFeaturesPlugin.class, this, false, null),
+						createPluginAction("Add Coherence texture feature (experimental)", CoherenceFeaturePlugin.class, this, null),
+						createPluginAction("Add Smoothed features", SmoothFeaturesPlugin.class, this, null),
+						createPluginAction("Add Shape features (experimental)", ShapeFeaturesPlugin.class, this, null),
 						null,
-						createPluginAction("Add Local Binary Pattern features (experimental)", LocalBinaryPatternsPlugin.class, this, true, null)
+						createPluginAction("Add Local Binary Pattern features (experimental)", LocalBinaryPatternsPlugin.class, this, null)
 						)
 				);
 
@@ -3002,15 +3121,15 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	}
 	
 	
-	public Action createPluginAction(final String name, final Class<? extends PathPlugin> pluginClass, final String arg, final boolean includeRegionStore) {
-		return createPluginAction(name, pluginClass, this, includeRegionStore, arg);
+	public Action createPluginAction(final String name, final Class<? extends PathPlugin> pluginClass, final String arg) {
+		return createPluginAction(name, pluginClass, this, arg);
 	}
 
 	
 	
 	public Action createPluginAction(final String name, final String pluginClassName, final boolean includeRegionStore, final String arg) throws ClassNotFoundException {
 		Class<PathPlugin> cls = (Class<PathPlugin>)getClassLoader().loadClass(pluginClassName);
-		return createPluginAction(name, cls, this, includeRegionStore, arg);
+		return createPluginAction(name, cls, this, arg);
 	}
 	
 	
@@ -3047,14 +3166,13 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	 * @param name
 	 * @param pluginClass
 	 * @param qupath
-	 * @param includeRegionStore
 	 * @param arg
 	 * @return
 	 */
-	public static Action createPluginAction(final String name, final Class<? extends PathPlugin> pluginClass, final QuPathGUI qupath, final boolean includeRegionStore, final String arg) {
+	public static Action createPluginAction(final String name, final Class<? extends PathPlugin> pluginClass, final QuPathGUI qupath, final String arg) {
 		try {
 			Action action = new Action(name, event -> {
-				PathPlugin<BufferedImage> plugin = qupath.createPlugin(pluginClass, includeRegionStore);
+				PathPlugin<BufferedImage> plugin = qupath.createPlugin(pluginClass);
 				qupath.runPlugin(plugin, arg, true);
 			});
 			return action;
@@ -3100,23 +3218,13 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	 * Create a plugin from a specified class.
 	 * 
 	 * @param pluginClass
-	 * @param includeRegionStore
 	 * @return
 	 */
 	@SuppressWarnings("unchecked")
-	public PathPlugin<BufferedImage> createPlugin(final Class<? extends PathPlugin> pluginClass, final boolean includeRegionStore) {
+	public PathPlugin<BufferedImage> createPlugin(final Class<? extends PathPlugin> pluginClass) {
 		PathPlugin<BufferedImage> plugin = null;
 		try {
-			if (includeRegionStore) {
-				try {
-					Constructor<? extends PathPlugin> constructor = pluginClass.getConstructor(ImageRegionStore.class);
-					plugin = constructor.newInstance(getImageRegionStore());
-				} catch (NoSuchMethodException e) {
-					// Ideally would check properly, instead of relying on this...
-				}
-			}
-			if (plugin == null)
-				plugin = pluginClass.getConstructor().newInstance();
+			plugin = pluginClass.getConstructor().newInstance();
 		} catch (Exception e1) {
 			logger.error("Unable to construct plugin {}", pluginClass, e1);
 		}
@@ -3552,8 +3660,6 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	
 	/**
 	 * Set the cursor for all the viewers.
-	 * 
-	 * @param cursor
 	 */
 	protected void updateCursor() {
 		if (stage == null || stage.getScene() == null)
@@ -4174,7 +4280,7 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 	}
 	
 	/**
-	 * Get a String representing the QuPath version & build time.
+	 * Get a String representing the QuPath version &amp; build time.
 	 * 
 	 * @return
 	 */
@@ -4284,8 +4390,8 @@ public class QuPathGUI implements ModeWrapper, ImageDataWrapper<BufferedImage>, 
 			}
 		}
 		FileSystem fileSystemOld = URLHelpers.getCacheFileSystem();
-		if (fileSystemOld == fileSystem)
-			return;
+//		if (fileSystemOld == fileSystem)
+//			return;
 		if (fileSystemOld != null && fileSystemOld != FileSystems.getDefault()) {
 			try {
 				fileSystemOld.close();

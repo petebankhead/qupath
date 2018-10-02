@@ -49,11 +49,9 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.Vector;
 
 import javax.imageio.ImageIO;
@@ -69,8 +67,14 @@ import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.IntegerProperty;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleIntegerProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.collections.FXCollections;
+import javafx.collections.ListChangeListener.Change;
+import javafx.collections.ObservableList;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.event.EventHandler;
 import javafx.scene.Cursor;
@@ -140,7 +144,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	private Vector<QuPathViewerListener> listeners = new Vector<>();
 
-	private ImageData<BufferedImage> imageData;
+	private ObjectProperty<ImageData<BufferedImage>> imageDataProperty = new SimpleObjectProperty<>();
 
 	private DefaultImageRegionStore regionStore;
 
@@ -149,9 +153,19 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	// A PathImageServer used to wrap a PathObjectHierarchy, for faster painting when there are a lot of objects
 	private HierarchyOverlay hierarchyOverlay = null;
-	private List<PathOverlay> overlayLayers = new ArrayList<>();
-	//	private Map<Class<? extends PathOverlay>> overlayMap = new HashMap<Class<? extends PathOverlay>>PathOverlay>();
-	private Set<PathOverlay> baseOverlayLayers = new HashSet<>(); // These are fixed, and cannot be replaced
+	// An overlay to show a TMA grid
+	private TMAGridOverlay tmaGridOverlay;
+	// An overlay to show a regular grid (e.g. for counting)
+	private GridOverlay gridOverlay;
+	
+	// Overlay layers that can be edited
+	private ObservableList<PathOverlay> customOverlayLayers = FXCollections.observableArrayList();
+	
+	// Core overlay layers - these are always retained, and painted on top of any custom layers
+	private ObservableList<PathOverlay> coreOverlayLayers = FXCollections.observableArrayList();
+	
+	// List that concatenates the custom & core overlay layers in painting order
+	private ObservableList<PathOverlay> allOverlayLayers = FXCollections.observableArrayList();
 
 	// Current we have two images - one transformed & one not - because the untransformed
 	// image is needed to determine pixel values as the mouse moves over the image
@@ -315,6 +329,16 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 	
 	
+	/**
+	 * Update allOverlayLayers to make sure it contains all the required PathOverlays.
+	 */
+	private void refreshAllOverlayLayers() {
+		List<PathOverlay> temp = new ArrayList<>();
+		temp.addAll(customOverlayLayers);
+		temp.addAll(coreOverlayLayers);
+		allOverlayLayers.setAll(temp);
+	}
+	
 	
 	long lastPaint = 0;
 	private long minimumRepaintSpacingMillis = -1; // This can be used (temporarily) to prevent repaints happening too frequently
@@ -329,7 +353,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * 
 	 * @param repaintSpacingMillis
 	 * 
-	 * @see resetMinimumRepaintSpacingMillis
+	 * @see #resetMinimumRepaintSpacingMillis
 	 */
 	public void setMinimumRepaintSpacingMillis(final long repaintSpacingMillis) {
 		this.minimumRepaintSpacingMillis = repaintSpacingMillis;
@@ -514,15 +538,15 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 
-	public QuPathViewer(final ImageData<BufferedImage> imageData, DefaultImageRegionStore regionServer, OverlayOptions overlayOptions) {
-		this(imageData, regionServer, overlayOptions, new ImageDisplay(null, regionServer, PathPrefs.getShowAllRGBTransforms()));
+	public QuPathViewer(final ImageData<BufferedImage> imageData, DefaultImageRegionStore regionStore, OverlayOptions overlayOptions) {
+		this(imageData, regionStore, overlayOptions, new ImageDisplay(null, regionStore, PathPrefs.getShowAllRGBTransforms()));
 	}
 
 
-	public QuPathViewer(final ImageData<BufferedImage> imageData, DefaultImageRegionStore regionServer, OverlayOptions overlayOptions, ImageDisplay imageDisplay) {
+	public QuPathViewer(final ImageData<BufferedImage> imageData, DefaultImageRegionStore regionStore, OverlayOptions overlayOptions, ImageDisplay imageDisplay) {
 		super();
 
-		this.regionStore = regionServer;
+		this.regionStore = regionStore;
 
 		setOverlayOptions(overlayOptions);
 		
@@ -562,16 +586,24 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 		this.imageDisplay = imageDisplay;
 
-		hierarchyOverlay = new HierarchyOverlay(regionServer, overlayOptions, imageData);
+		// Prepare overlay layers
+		customOverlayLayers.addListener((Change<? extends PathOverlay> e) -> refreshAllOverlayLayers());
+		coreOverlayLayers.addListener((Change<? extends PathOverlay> e) -> refreshAllOverlayLayers());
+		allOverlayLayers.addListener((Change<? extends PathOverlay> e) -> repaint());
+		
+		hierarchyOverlay = new HierarchyOverlay(this.regionStore, overlayOptions, imageData);
+		tmaGridOverlay = new TMAGridOverlay(overlayOptions, imageData);
+		gridOverlay = new GridOverlay(overlayOptions, imageData);
 		// Set up the overlay layers
-		overlayLayers.add(new TMAGridOverlay(overlayOptions, imageData));
-		//		overlayLayers.add(new HierarchyOverlay(regionServer, overlayOptions, imageData));
-		overlayLayers.add(hierarchyOverlay);
-		overlayLayers.add(new GridOverlay(overlayOptions, imageData));
+		coreOverlayLayers.setAll(
+				tmaGridOverlay,
+				hierarchyOverlay,
+				gridOverlay
+		);
 
 		setImageData(imageData);
 
-		regionServer.addTileListener(this);
+		this.regionStore.addTileListener(this);
 
 		//		updateCursor();
 		imageUpdated = true;
@@ -614,9 +646,15 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		});
 	}
 
+	
+	
+	public ReadOnlyObjectProperty<ImageData<BufferedImage>> getImageDataProperty() {
+		return imageDataProperty;
+	}
+	
 
 	public ImageData<BufferedImage> getImageData() {
-		return imageData;
+		return imageDataProperty.get();
 	}
 
 
@@ -751,8 +789,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * This is useful whenever another component might have received the event,
 	 * but the viewer needs to 'know' when it receives the focus.
 	 * 
-	 * @param isDown
-	 * @return
+	 * @param spaceDown
 	 */
 	public void setSpaceDown(boolean spaceDown) {
 		if (this.spaceDown == spaceDown)
@@ -1079,7 +1116,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * Transform a clip shape into image coordinates for this viewer.
 	 * The resulting shape coordinates are in the image space.
 	 * 
-	 * @param clip The clip shape, or null if the entire width & height of the component should be used.
+	 * @param clip The clip shape, or null if the entire width &amp; height of the component should be used.
 	 * @return
 	 */
 	protected Shape getDisplayedClipShape(Shape clip) {
@@ -1118,7 +1155,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 
 	public ImageServer<BufferedImage> getServer() {
-		return imageData == null ? null : imageData.getServer();
+		ImageData<BufferedImage> temp = imageDataProperty.get();
+		return temp == null ? null : temp.getServer();
 	}
 
 	public boolean hasServer() {
@@ -1158,25 +1196,25 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 	public void setImageData(ImageData<BufferedImage> imageDataNew) {
-		if (this.imageData == imageDataNew)
+		if (this.imageDataProperty.get() == imageDataNew)
 			return;
 		
 		imageDataChanging.set(true);
 
 		// Remove listeners for previous hierarchy
-		ImageData<BufferedImage> imageDataOld = this.imageData;
+		ImageData<BufferedImage> imageDataOld = this.imageDataProperty.get();
 		if (imageDataOld != null) {
 			imageDataOld.getHierarchy().removePathObjectListener(this);
 			imageDataOld.getHierarchy().getSelectionModel().removePathObjectSelectionListener(this);
 		}
 
-		this.imageData = imageDataNew;
+		this.imageDataProperty.set(imageDataNew);
 		ImageServer<BufferedImage> server = imageDataNew == null ? null : imageDataNew.getServer();
 		PathObjectHierarchy hierarchy = imageDataNew == null ? null : imageDataNew.getHierarchy();
 
 		long startTime = System.currentTimeMillis();
 		if (imageDisplay != null) {
-			imageDisplay.setImageData(imageData);
+			imageDisplay.setImageData(imageDataNew);
 			//			SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
 			//
 			//				@Override
@@ -1199,20 +1237,23 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		//		featureMapWrapper = new TiledFeatureMapImageWrapper(server.getWidth(), server.getHeight());
 
 		// Notify overlays of change to ImageData
-		Iterator<PathOverlay> iter = overlayLayers.iterator();
+		Iterator<PathOverlay> iter = allOverlayLayers.iterator();
 		while (iter.hasNext()) {
 			PathOverlay overlay = iter.next();
 			if (overlay instanceof ImageDataOverlay) {
 				ImageDataOverlay overlay2 = (ImageDataOverlay)overlay;
-				if (!overlay2.supportsImageDataChange())
+				if (!overlay2.supportsImageDataChange()) {
+					// Remove any non-core overlay layers that don't support an ImageData change
+					if (!coreOverlayLayers.contains(overlay2))
+						iter.remove();
 					continue;
-				else
-					overlay2.setImageData(imageData);
+				} else
+					overlay2.setImageData(imageDataNew);
 			}
 		}
 		//		overlay.setImageData(imageData);
 
-		if (imageData != null) {
+		if (imageDataNew != null) {
 			//			hierarchyPainter = new PathHierarchyPainter(hierarchy);
 			hierarchy.addPathObjectListener(this);
 			hierarchy.getSelectionModel().addPathObjectSelectionListener(this);
@@ -1460,10 +1501,15 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			}
 
 			Color color = getSuggestedOverlayColor();
-			for (PathOverlay overlay : overlayLayers.toArray(new PathOverlay[0])) {
+			// Paint the overlay layers
+			for (PathOverlay overlay : allOverlayLayers.toArray(new PathOverlay[0])) {
 				overlay.setPreferredOverlayColor(color);
 				overlay.paintOverlay(g2d, getServerBounds(), downsampleFactor, null, paintCompletely);
 			}
+//			if (hierarchyOverlay != null) {
+//				hierarchyOverlay.setPreferredOverlayColor(color);
+//				hierarchyOverlay.paintOverlay(g2d, getServerBounds(), downsampleFactor, null, paintCompletely);
+//			}
 		}
 		
 		// Paint the selected object
@@ -1517,41 +1563,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				}
 			}
 		}
-
-//		// Paint the selected object
-//		PathObject selectedObject = getSelectedObject();
-//		// TODO: Simplify this...
-//		if (selectedObject != null && selectedObject.hasROI() && selectedObject.getROI().getZ() == getZPosition() && selectedObject.getROI().getT() == getTPosition()) {
-//			
-//			if (!selectedObject.isDetection()) {
-//				// Ensure a selected ROI can be seen clearly
-//				if (previousComposite != null)
-//					g2d.setComposite(previousComposite);
-//				g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-//			}
-//			
-//			Rectangle boundsDisplayed = shapeRegion.getBounds();
-//			
-////			PathPrefs.p
-//			ROI pathROI = selectedObject.getROI();
-//			if (PathPrefs.getPaintSelectedBounds() && !(pathROI instanceof RectangleROI)) {
-//				Rectangle boundsShape = AwtTools.getBounds(pathROI);
-//				boundsShape.setBounds(boundsShape.x-1, boundsShape.y-1, boundsShape.width+2, boundsShape.height+2);
-//				PathHierarchyPaintingHelper.paintShape(boundsShape, g2d, getSuggestedOverlayColor(), new BasicStroke((float)Math.max(downsampleFactor, 1)*2), null, downsampleFactor);
-//			}
-//			
-//			PathHierarchyPaintingHelper.paintObject(selectedObject, false, g2d, boundsDisplayed, overlayOptions, getHierarchy().getSelectionModel(), downsampleFactor);
-//			// Paint ROI handles, if required
-//			if (roiEditor.hasROI()) {
-//				Stroke strokeThick = PathHierarchyPaintingHelper.getCachedStroke(getOverlayOptions().getThickStrokeThickness() * downsampleFactor);
-//				Color color = ColorToolsAwt.getCachedColor(PathPrefs.getSelectedObjectColor());
-//				if (color == null)
-//					color = PathObjectColorToolsAwt.getDisplayedColorAWT(selectedObject);
-//				g2d.setStroke(strokeThick);
-//				double size = getROIHandleSize();
-//				PathHierarchyPaintingHelper.paintHandles(roiEditor, g2d, size, color, ColorToolsAwt.getTranslucentColor(color));
-//			}
-//		}
 
 		// Notify any listeners of shape changes
 		if (shapeChanged)
@@ -1659,7 +1670,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	/**
 	 * Flag to set if the main overlay is being shown (objects, TMA grid etc.)
-	 * @return
 	 */
 	public void setShowMainOverlay(boolean showOverlay) {
 		if (this.showMainOverlay == showOverlay)
@@ -1683,51 +1693,17 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @return
 	 */
 	public List<PathOverlay> getOverlayLayers() {
-		return Collections.unmodifiableList(overlayLayers);
+		return FXCollections.unmodifiableObservableList(allOverlayLayers);
 	}
-
+	
 	/**
-	 * Get an overlay that is an instance of a specified class.  If multiple overlays exist, the first one will be returned.
-	 * If none exist on the current overlay, null is returned.
-	 * @param cls
+	 * Get direct access to the custom overlay list.
 	 * @return
 	 */
-	public PathOverlay getOverlayLayer(final Class<? extends PathOverlay> cls) {
-		for (PathOverlay overlay : overlayLayers) {
-			if (overlay.getClass().isAssignableFrom(cls))
-				return overlay;
-		}
-		return null;
+	public ObservableList<PathOverlay> getCustomOverlayLayers() {
+		return customOverlayLayers;
 	}
-
-
-	public void addOverlay(PathOverlay overlayNew) {
-		overlayLayers.add(overlayNew);
-		repaint();
-	}
-
-	public void insertOverlay(int ind, PathOverlay overlayNew) {
-		overlayLayers.add(ind, overlayNew);
-		repaint();
-	}
-
-	/**
-	 * Remove an overlay layer.  Note that not all overlay layers can be removed
-	 * (i.e. the ones present on startup are fixed).
-	 * @param overlayToRemove
-	 * @return True if the overlay was removed, false otherwise (either because it
-	 * was fixed, or because it was not present on the current overlay layer list anyway).
-	 */
-	public boolean removeOverlay(PathOverlay overlayToRemove) {
-		if (baseOverlayLayers.contains(overlayToRemove))
-			return false;
-		if (overlayLayers.remove(overlayToRemove)) {
-			repaint();
-			return true;
-		}
-		return false;
-	}
-
+	
 
 	/**
 	 * Get the handle size used to draw a ROI.
@@ -1958,7 +1934,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 	/**
-	 * Get thumbnails for all z-slices & time points
+	 * Get thumbnails for all z-slices &amp; time points
 	 * @return
 	 */
 	public List<BufferedImage> getAllThumbnails() {
@@ -2178,7 +2154,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 	/**
-	 * Get a string representing the image coordinates for a particular x & y location in the viewer component.
+	 * Get a string representing the image coordinates for a particular x &amp; y location in the viewer component.
 	 * 
 	 * @param x
 	 * @param y
@@ -2304,7 +2280,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 
 	public PathObjectHierarchy getHierarchy() {
-		return imageData == null ? null : imageData.getHierarchy();
+		ImageData<BufferedImage> temp = imageDataProperty.get();
+		return temp == null ? null : temp.getHierarchy();
 	}
 
 	public void addViewerListener(QuPathViewerListener listener) {
@@ -2539,8 +2516,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	
 	@Override
 	public String toString() {
-		if (imageData != null)
-			return getClass().getSimpleName() + " - " + imageData.getServerPath();
+		ImageData<BufferedImage> temp = imageDataProperty.get();
+		if (temp != null)
+			return getClass().getSimpleName() + " - " + temp.getServerPath();
 		return getClass().getSimpleName() + " - no server";
 	}
 

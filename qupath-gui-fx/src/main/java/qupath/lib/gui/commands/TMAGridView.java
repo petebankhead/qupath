@@ -24,8 +24,6 @@
 package qupath.lib.gui.commands;
 
 import java.awt.image.BufferedImage;
-import java.text.DecimalFormat;
-import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -90,7 +88,6 @@ import qupath.lib.gui.helpers.PaintingToolsFX;
 import qupath.lib.gui.models.ObservableMeasurementTableData;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.stores.ImageRegionStore;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.TMACoreObject;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
@@ -233,9 +230,14 @@ public class TMAGridView implements PathCommand, ImageDataChangeListener<Buffere
 	
 
 	private void initializeData(ImageData<BufferedImage> imageData) {
-		this.imageData = imageData;
-		if (imageData != null)
-			imageData.getHierarchy().addPathObjectListener(this);
+		if (this.imageData != imageData) {
+			if (this.imageData != null)
+				this.imageData.getHierarchy().removePathObjectListener(this);
+			this.imageData = imageData;
+			if (imageData != null) {
+				imageData.getHierarchy().addPathObjectListener(this);
+			}
+		}
 		
 		if (imageData == null || imageData.getHierarchy().getTMAGrid() == null) {
 			model.setImageData(null, Collections.emptyList());
@@ -247,8 +249,6 @@ public class TMAGridView implements PathCommand, ImageDataChangeListener<Buffere
 		List<TMACoreObject> cores = imageData.getHierarchy().getTMAGrid().getTMACoreList();
 
 		ImageServer<BufferedImage> server = imageData.getServer();
-		ImageRegionStore<BufferedImage> regionStore = qupath.getImageRegionStore();
-//						cache.clear();
 						
 		CountDownLatch latch = new CountDownLatch(cores.size());
 		for (TMACoreObject core : cores) {
@@ -261,7 +261,7 @@ public class TMAGridView implements PathCommand, ImageDataChangeListener<Buffere
 						return;
 					}
 
-					BufferedImage img = regionStore.getImage(server, request, 30000, true);
+					BufferedImage img = server.readBufferedImage(request);
 					if (img == null) {
 						logger.debug("Request {} returned null", request);
 						latch.countDown();
@@ -521,7 +521,7 @@ public class TMAGridView implements PathCommand, ImageDataChangeListener<Buffere
 
 	@Override
 	public void hierarchyChanged(PathObjectHierarchyEvent event) {
-		if (imageData != null && imageData.getHierarchy() == event.getHierarchy() && stage != null && stage.isShowing()) {
+		if (!event.isChanging() && imageData != null && imageData.getHierarchy() == event.getHierarchy() && stage != null && stage.isShowing()) {
 			// This is some fairly aggressive updating...
 			initializeData(imageData);
 		}

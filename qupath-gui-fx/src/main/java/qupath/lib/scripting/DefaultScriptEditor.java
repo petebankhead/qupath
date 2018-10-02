@@ -26,9 +26,7 @@ package qupath.lib.scripting;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.io.Writer;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -63,7 +61,6 @@ import javafx.beans.binding.StringBinding;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.ReadOnlyBooleanProperty;
-import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.StringProperty;
 import javafx.beans.value.ObservableValue;
@@ -102,6 +99,7 @@ import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Region;
 import javafx.scene.text.Font;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Modality;
@@ -119,8 +117,6 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerProvider;
 import qupath.lib.images.servers.RotatedImageServer;
-import qupath.lib.images.stores.ImageRegionStore;
-import qupath.lib.images.stores.ImageRegionStoreFactory;
 import qupath.lib.io.PathIO;
 import qupath.lib.projects.Project;
 import qupath.lib.projects.ProjectImageEntry;
@@ -1227,7 +1223,6 @@ public class DefaultScriptEditor implements ScriptEditor {
 			
 			int counter = 0;
 			for (ProjectImageEntry<?> entry : imagesToProcess) {
-				ImageRegionStore<BufferedImage> regionStore = null;
 				try {
 					// Stop
 					if (isQuietlyCancelled() || isCancelled()) {
@@ -1241,9 +1236,6 @@ public class DefaultScriptEditor implements ScriptEditor {
 					
 					// Create a new region store if we need one
 					System.gc();
-//					regionStore = ImageRegionStoreFactory.createImageRegionStore(Runtime.getRuntime().freeMemory()/4);
-					regionStore = qupath == null ? ImageRegionStoreFactory.createImageRegionStore(Runtime.getRuntime().freeMemory()/4) : qupath.getImageRegionStore();
-					QPEx.setSharedRegionStore(regionStore);
 
 					File fileEntry = QuPathGUI.getImageDataFile(project, entry);
 //					// TODO: Check rotate flag!
@@ -1275,11 +1267,6 @@ public class DefaultScriptEditor implements ScriptEditor {
 					imageData.getServer().close();
 				} catch (Exception e) {
 					logger.error("Error running batch script: {}", e);
-				} finally {
-//					// Close & reset the region store
-//					if (regionStore != null)
-//						regionStore.close();
-					QPEx.setSharedRegionStore(null);
 				}
 			}
 			updateProgress(imagesToProcess.size(), imagesToProcess.size());
@@ -1385,7 +1372,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 	 * This either inserts getTabString() at the current caret position (if no text is selected, 
 	 * or either indents or removes the indentation from all selected rows if a selection is made.
 	 * 
-	 * @param component
+	 * @param textArea
 	 * @param shiftDown
 	 */
 	void handleTabPress(final ScriptEditorControl textArea, final boolean shiftDown) {
@@ -1451,7 +1438,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 	 * Handle the press of the / key, with/without shift.
 	 * This either inserts comments or uncomments the selected lines, if possible.
 	 * 
-	 * @param component
+	 * @param textArea
 	 */
 	void handleLineComment(final ScriptEditorControl textArea) {
 		String commentString = getCurrentLineCommentString();
@@ -1626,7 +1613,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 			console = getNewConsole();
 			ContextMenu popup = new ContextMenu();
 			popup.getItems().add(ActionUtils.createMenuItem(new Action("Clear console", e -> console.setText(""))));
-			console.getControl().setContextMenu(popup);
+			console.setPopup(popup);
 			
 			splitEditor = new SplitPane();
 			splitEditor.setOrientation(Orientation.VERTICAL);
@@ -1886,7 +1873,9 @@ public class DefaultScriptEditor implements ScriptEditor {
 		
 		public boolean isRedoable();
 		
-		public Control getControl();
+		public Region getControl();
+		
+		public void setPopup(ContextMenu menu);
 		
 		public void undo();
 		
@@ -2029,6 +2018,11 @@ public class DefaultScriptEditor implements ScriptEditor {
 		@Override
 		public void selectRange(int anchor, int caretPosition) {
 			textArea.selectRange(anchor, caretPosition);
+		}
+
+		@Override
+		public void setPopup(ContextMenu menu) {
+			textArea.setContextMenu(menu);
 		}
 		
 	}

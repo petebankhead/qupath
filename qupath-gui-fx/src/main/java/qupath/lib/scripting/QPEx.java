@@ -46,7 +46,6 @@ import qupath.lib.gui.models.ObservableMeasurementTableData;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.images.ImageData;
-import qupath.lib.images.stores.ImageRegionStore;
 import qupath.lib.io.PathAwtIO;
 import qupath.lib.io.PathIO;
 import qupath.lib.objects.PathAnnotationObject;
@@ -81,8 +80,6 @@ public class QPEx extends QP {
 	
 	final public static String PROJECT_BASE_DIR = "{%PROJECT}";
 	
-	private static ImageRegionStore<?> sharedRegionStore;
-
 	/**
 	 * Load ImageData from a file.
 	 * 
@@ -90,7 +87,7 @@ public class QPEx extends QP {
 	 * @param setBatchData If true, the <code>setBatchImageData(ImageData)</code> will be called if the loading is successful.
 	 * @return
 	 * 
-	 * @see setBatchImageData
+	 * @see #setBatchImageData
 	 */
 	public static ImageData<BufferedImage> loadImageData(final String path, final boolean setBatchData) {
 		ImageData<BufferedImage> imageData = PathIO.readImageData(new File(resolvePath(path)), null, null, BufferedImage.class);
@@ -232,16 +229,6 @@ public class QPEx extends QP {
 	}
 	
 	
-	static void setSharedRegionStore(final ImageRegionStore<?> regionStore) {
-		sharedRegionStore = regionStore;
-	}
-
-	static ImageRegionStore<?> getSharedRegionStore() {
-		return sharedRegionStore;
-	}
-
-	
-	
 	@SuppressWarnings("unchecked")
 	public static boolean runPlugin(final String className, final ImageData<?> imageData, final String args) throws InterruptedException {
 		if (imageData == null)
@@ -258,7 +245,7 @@ public class QPEx extends QP {
 			PluginRunner runner;
 			// TODO: Give potential of passing a plugin runner
 			if (isBatchMode() || imageData != getQuPath().getImageData()) {
-				runner = new CommandLinePluginRunner(getSharedRegionStore(), imageData, true);
+				runner = new CommandLinePluginRunner(imageData, true);
 			}
 			else {
 				runner = new PluginRunnerFX(getQuPath(), true);

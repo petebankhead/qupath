@@ -25,7 +25,6 @@ package qupath.lib.images.servers;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
-import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.File;
@@ -40,9 +39,6 @@ import org.openslide.OpenSlide;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import qupath.lib.awt.common.AwtTools;
-import qupath.lib.awt.images.PathBufferedImage;
-import qupath.lib.images.PathImage;
 import qupath.lib.regions.RegionRequest;
 
 /**
@@ -51,14 +47,12 @@ import qupath.lib.regions.RegionRequest;
  * @author Pete Bankhead
  *
  */
-public class OpenslideImageServer extends AbstractImageServer<BufferedImage> {
+public class OpenslideImageServer extends AbstractTileableImageServer {
 	
 	final private static Logger logger = LoggerFactory.getLogger(OpenslideImageServer.class);
 
 	private ImageServerMetadata originalMetadata;
-	private ImageServerMetadata userMetadata;
-	private double[] downsamples;
-	
+
 	private List<String> associatedImageList = null;
 	private Map<String, AssociatedImage> associatedImages = null;
 
@@ -80,9 +74,14 @@ public class OpenslideImageServer extends AbstractImageServer<BufferedImage> {
 			return defaultValue;
 		}
 	}
-
-
+	
 	public OpenslideImageServer(String path) throws IOException {
+		this(null, path);
+	}
+
+
+	public OpenslideImageServer(Map<RegionRequest, BufferedImage> cache, String path) throws IOException {
+		super(cache);
 
 		// Ensure the garbage collector has run - otherwise any previous attempts to load the required native library
 		// from different classloader are likely to cause an error (although upon first further investigation it seems this doesn't really solve the problem...)
@@ -104,25 +103,27 @@ public class OpenslideImageServer extends AbstractImageServer<BufferedImage> {
 		double pixelHeight = readNumericPropertyOrDefault(properties, "openslide.mpp-y", Double.NaN);
 		double magnification = readNumericPropertyOrDefault(properties, "openslide.objective-power", Double.NaN);
 		
+		// Loop through the series again & determine downsamples
+		int levelCount = (int)osr.getLevelCount();
+		double[] downsamples = new double[levelCount];
+		for (int i = 0; i < levelCount; i++)
+			downsamples[i] = osr.getLevelDownsample(i);
+
 		// Create metadata objects
 		originalMetadata = new ImageServerMetadata.Builder(path, width, height).
 				setSizeC(3). // Assume 3 channels (RGB)
+				setRGB(true).
+				setBitDepth(8).
 				setPreferredTileSize(tileWidth, tileHeight).
 				setPixelSizeMicrons(pixelWidth, pixelHeight).
 				setMagnification(magnification).
+				setPreferredDownsamples(downsamples).
 				build();
-
-		// Loop through the series again & determine downsamples
-		int levelCount = (int)osr.getLevelCount();
-		downsamples = new double[levelCount];
-		for (int i = 0; i < levelCount; i++)
-			downsamples[i] = osr.getLevelDownsample(i);
 		
 		/*
 		 * TODO: Determine associated image names
 		 * This works, but need to come up with a better way of returning usable servers
 		 * based on the associated images
-		 * 
 		 */
 		associatedImages = osr.getAssociatedImages();
 		associatedImageList = new ArrayList<>(associatedImages.keySet());
@@ -149,28 +150,10 @@ public class OpenslideImageServer extends AbstractImageServer<BufferedImage> {
 	}
 	
 	@Override
-	public double[] getPreferredDownsamples() {
-//		for (double d : downsamples)
-//			System.out.println(d);
-//		return downsamples.clone();
-		return downsamples;
-	}
-
-	@Override
-	public PathImage<BufferedImage> readRegion(RegionRequest request) {
-		BufferedImage img = readBufferedImage(request);
-		if (img == null)
-			return null;
-		return new PathBufferedImage(this, request, img);
-	}
-
-
-	@Override
 	public void close() {
 		if (osr != null)
 			osr.close();
 	}
-
 	
 	@Override
 	public String getServerType() {
@@ -178,29 +161,19 @@ public class OpenslideImageServer extends AbstractImageServer<BufferedImage> {
 	}
 
 	@Override
-	public boolean isRGB() {
-		return true; // Only RGB currently supported
-	}
-
-	@Override
-	public BufferedImage readBufferedImage(RegionRequest request) {
-		Rectangle region = AwtTools.getBounds(request);
-		if (region == null) {
-			region = new Rectangle(0, 0, getWidth(), getHeight());
-		}
-		
+	public BufferedImage readTile(RegionRequest request) {
 		double downsampleFactor = request.getDownsample();
-		int level = ServerTools.getClosestDownsampleIndex(getPreferredDownsamples(), downsampleFactor);
-		double downsample = downsamples[level];
-		int levelWidth = (int)(region.width / downsample + .5);
-		int levelHeight = (int)(region.height / downsample + .5);
+		double[] preferredDownsamples = getPreferredDownsamples();
+		int level = ServerTools.getClosestDownsampleIndex(preferredDownsamples, downsampleFactor);
+		double downsample = preferredDownsamples[level];
+		int levelWidth = (int)Math.round(request.getWidth() / downsample);
+		int levelHeight = (int)Math.round(request.getHeight() / downsample);
 		BufferedImage img = new BufferedImage(levelWidth, levelHeight, BufferedImage.TYPE_INT_ARGB_PRE);
-
         int data[] = ((DataBufferInt)img.getRaster().getDataBuffer()).getData();
         
         try {
 			// Create a thumbnail for the region
-			osr.paintRegionARGB(data, region.x, region.y, level, levelWidth, levelHeight);
+			osr.paintRegionARGB(data, request.getX(), request.getY(), level, levelWidth, levelHeight);
 			
 			// Previously tried to take shortcut and only repaint if needed - 
 			// but transparent pixels happened too often, and it's really needed to repaint every time
@@ -208,9 +181,9 @@ public class OpenslideImageServer extends AbstractImageServer<BufferedImage> {
 //				return img;
 			
 			// Rescale if we have to
-			int width = (int)(region.width / downsampleFactor + .5);
-			int height = (int)(region.height / downsampleFactor + .5);
-//			BufferedImage img2 = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+			int width = (int)Math.round(request.getWidth() / downsampleFactor);
+			int height = (int)Math.round(request.getHeight() / downsampleFactor);
+			
 			BufferedImage img2 = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
 			Graphics2D g2d = img2.createGraphics();
 			if (backgroundColor != null) {
@@ -221,44 +194,9 @@ public class OpenslideImageServer extends AbstractImageServer<BufferedImage> {
 			g2d.dispose();
 			return img2;
 		} catch (Exception e) {
-			e.printStackTrace();
+			logger.error("Error requesting BufferedImage", e);
 		}
 		return null;
-	}
-
-	@Override
-	public List<String> getSubImageList() {
-		return Collections.emptyList();
-	}
-
-	@Override
-	public String getDisplayedImageName() {
-		// TODO: Implement associated images for OpenSlide
-//		logger.error("Image names not implemented for OpenSlide yet...");
-		return getShortServerName();
-	}
-	
-
-	@Override
-	public boolean usesBaseServer(ImageServer<?> server) {
-		return this == server;
-	}
-
-	@Override
-	public int getBitsPerPixel() {
-		return 8; // Only 8-bit RGB images supported
-	}
-	
-	
-	@Override
-	public boolean containsSubImages() {
-		return false;
-	}
-
-
-	@Override
-	public Integer getDefaultChannelColor(int channel) {
-		return getDefaultRGBChannelColors(channel);
 	}
 
 	@Override
@@ -273,42 +211,14 @@ public class OpenslideImageServer extends AbstractImageServer<BufferedImage> {
 		try {
 			return associatedImages.get(name).toBufferedImage();
 		} catch (Exception e) {
-			e.printStackTrace();
+			logger.error("Error requesting associated image " + name, e);
 		}
 		throw new IllegalArgumentException("Unable to find sub-image with the name " + name);
 	}
-
-	@Override
-	public File getFile() {
-		File file = new File(getPath());
-		if (file.exists())
-			return file;
-		return null;
-	}
-
-
-	@Override
-	public double getTimePoint(int ind) {
-		return 0;
-	}
-
-
-	@Override
-	public ImageServerMetadata getMetadata() {
-		return userMetadata == null ? originalMetadata : userMetadata;
-	}
-
-
+	
 	@Override
 	public ImageServerMetadata getOriginalMetadata() {
 		return originalMetadata;
-	}
-
-	@Override
-	public void setMetadata(ImageServerMetadata metadata) {
-		if (!originalMetadata.isCompatibleMetadata(metadata))
-			throw new RuntimeException("Specified metadata is incompatible with original metadata for " + this);
-		userMetadata = metadata;
 	}
 
 }
