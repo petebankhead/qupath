@@ -437,7 +437,7 @@ task createPackage(dependsOn:createRuntime, type:Exec) {
     params << '--app-version' << qupathVersion.replace('-SNAPSHOT', '')
         
     // Not entirely clear this is effective...?
-    params << '--strip-native-commands'
+//    params << '--strip-native-commands' This fails in Java11 on windows
 
     // Try to find the icon
     def pathIcon = Paths.get(
