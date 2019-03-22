@@ -641,7 +641,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 	 * 
 	 * @return
 	 */
-	private String toJSON() {
+	public String toJSON() {
 		return toJSON(false);
 	}
 	
@@ -676,7 +676,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 	 * 
 	 * @param json
 	 */
-	void updateFromJSON(final String json) {
+	public void updateFromJSON(final String json) {
 		Gson gson = new Gson();
 		Type type = new TypeToken<List<JsonHelperChannelInfo>>(){}.getType();
 		List<JsonHelperChannelInfo> helperList = gson.fromJson(json, type);
