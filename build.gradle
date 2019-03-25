@@ -182,6 +182,7 @@ allprojects {
   dependencies {
     implementation group: 'ch.qos.logback', name: 'logback-classic', version:'1.2.3'
     testImplementation group: 'junit', name: 'junit', version:'4.12'
+    implementation group:'org.slf4j', name: 'slf4j-api'
   }
 }
 
