@@ -86,7 +86,7 @@ public class PolygonROI extends AbstractPathAreaROI implements ROIWithHull, Tran
 //		vertices.close();
 	}
 	
-	PolygonROI(List<Point2> points, int c, int z, int t) {
+	public PolygonROI(List<Point2> points, int c, int z, int t) {
 		super(c, z, t);
 //		vertices = VerticesFactory.createMutableVertices(points.size()+1);
 //		setPoints(points);
