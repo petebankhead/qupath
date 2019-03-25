@@ -40,10 +40,10 @@ You should then start a command prompt, find your way to the directory containin
 ./gradlew.bat createPackage -Ppackager=/path/to/jpackage
 ```
 
-for Windows, or
+for Windows
 
 ```
-./gradlew createPackage -Ppackager=/path/to/jpackage
+gradlew.bat createPackage -Ppackager=/path/to/jpackage
 ```
 
 for MacOS and Linux.
