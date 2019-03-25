@@ -23,19 +23,19 @@
 
 package qupath.lib.roi;
 
-import java.awt.Shape;
+import qupath.lib.common.GeneralTools;
+import qupath.lib.geom.Point2;
+import qupath.lib.roi.interfaces.PathArea;
+import qupath.lib.roi.interfaces.ROI;
+import qupath.lib.roi.interfaces.ROIWithHull;
+import qupath.lib.roi.interfaces.TranslatableROI;
+import qupath.lib.rois.measure.ConvexHull;
+
+import java.awt.*;
 import java.io.InvalidObjectException;
 import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.util.List;
-
-import qupath.lib.common.GeneralTools;
-import qupath.lib.geom.Point2;
-import qupath.lib.roi.interfaces.PathArea;
-import qupath.lib.roi.interfaces.ROIWithHull;
-import qupath.lib.roi.interfaces.ROI;
-import qupath.lib.roi.interfaces.TranslatableROI;
-import qupath.lib.rois.measure.ConvexHull;
 
 
 /**

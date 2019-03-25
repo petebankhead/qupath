@@ -49,7 +49,7 @@ public class PathAnnotationObject extends PathROIObject {
 		super();
 	}
 
-	PathAnnotationObject(ROI pathROI) {
+	public PathAnnotationObject(ROI pathROI) {
 		super(pathROI, null);
 	}
 	

@@ -23,11 +23,6 @@
 
 package qupath.lib.display;
 
-import java.awt.image.BufferedImage;
-import java.awt.image.ColorModel;
-import java.awt.image.IndexColorModel;
-import java.text.DecimalFormat;
-
 import qupath.lib.awt.color.ColorToolsAwt;
 import qupath.lib.awt.color.ColorTransformerAWT;
 import qupath.lib.color.ColorDeconvolutionHelper;
@@ -37,6 +32,11 @@ import qupath.lib.color.ColorTransformer.ColorTransformMethod;
 import qupath.lib.common.ColorTools;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
+
+import java.awt.image.BufferedImage;
+import java.awt.image.ColorModel;
+import java.awt.image.IndexColorModel;
+import java.text.DecimalFormat;
 
 /**
  * Interface used to control the display of single channels of image data, where

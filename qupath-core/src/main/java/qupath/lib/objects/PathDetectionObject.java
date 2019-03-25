@@ -68,7 +68,7 @@ public class PathDetectionObject extends PathROIObject {
 		super(pathROI, pathClass);
 	}
 	
-	PathDetectionObject(ROI pathROI) {
+	public PathDetectionObject(ROI pathROI) {
 		this(pathROI, null);
 	}
 	
