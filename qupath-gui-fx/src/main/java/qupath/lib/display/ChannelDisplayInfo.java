@@ -941,7 +941,7 @@ public interface ChannelDisplayInfo {
 		}
 				
 
-		void setLUTColor(int rgb) {
+		public void setLUTColor( int rgb ) {
 			setLUTColor(
 					ColorTools.red(rgb),
 					ColorTools.green(rgb),

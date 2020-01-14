@@ -209,7 +209,7 @@ public class ImageJMacroRunner extends AbstractPlugin<BufferedImage> {
 
 
 
-	static void runMacro(final ParameterList params, final ImageData<BufferedImage> imageData, final ImageDisplay imageDisplay, final PathObject pathObject, final String macroText) {
+	public static void runMacro( final ParameterList params, final ImageData<BufferedImage> imageData, final ImageDisplay imageDisplay, final PathObject pathObject, final String macroText ) {
 //		if (!SwingUtilities.isEventDispatchThread()) {
 //			SwingUtilities.invokeLater(() -> runMacro(params, imageData, imageDisplay, pathObject, macroText));
 //			return;
@@ -377,7 +377,7 @@ public class ImageJMacroRunner extends AbstractPlugin<BufferedImage> {
 	}
 
 
-	ParameterList getParameterList(final ImageData<BufferedImage> imageData) {
+	public ParameterList getParameterList( final ImageData<BufferedImage> imageData ) {
 		if (params == null)
 			params = new ParameterList()
 				.addTitleParameter("Setup")

@@ -39,7 +39,7 @@ import qupath.lib.roi.RoiTools;
  * @author Pete Bankhead
  *
  */
-class ObjectMeasurements {
+public class ObjectMeasurements {
 	
 	/**
 	 * Add basic shape measurements to a MeasurementList.
