@@ -46,6 +46,7 @@ import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjectTools;
 import qupath.lib.objects.PathObjects;
 import qupath.lib.objects.classes.PathClass;
+import qupath.lib.objects.classes.PathClassFactory;
 import qupath.lib.regions.ImagePlane;
 import qupath.lib.roi.PointsROI;
 import qupath.lib.roi.ROIs;
@@ -126,6 +127,7 @@ public class PointIO {
 				
 				StringBuilder sb = new StringBuilder();
 				sb.append("Name\t").append(pathObject.getDisplayedName()).append("\n");
+				sb.append("Class\t").append(pathObject.getPathClass()).append("\n");
 				sb.append("Color\t").append(getDisplayedColor(pathObject, defaultColor)).append("\n");
 				sb.append("Coordinates\t").append(points.getNumPoints()).append("\n");
 				out.write(sb.toString().getBytes(charset));
@@ -143,6 +145,7 @@ public class PointIO {
 		List<Point2> pointsList = new ArrayList<>();
 		Scanner scanner = new Scanner(s);
 		String name = scanner.nextLine().split("\t")[1].trim();
+		String pathClass = scanner.nextLine().split("\t")[1].trim();
 		Integer color = Integer.parseInt(scanner.nextLine().split("\t")[1]);
 		// Skip the coordinate count line...
 		int count = Integer.parseInt(scanner.nextLine().split("\t")[1]);
@@ -165,6 +168,8 @@ public class PointIO {
 		PathObject pathObject = PathObjects.createAnnotationObject(points);
 		if (name != null && name.length() > 0 && !"null".equals(name))
 			pathObject.setName(name);
+		if (pathClass != null && pathClass.length() > 0 && !"null".equals(pathClass))
+			pathObject.setPathClass(PathClassFactory.getPathClass(pathClass, color));
 		pathObject.setColorRGB(color);
 		return pathObject;
 	}
@@ -181,6 +186,4 @@ public class PointIO {
 		return sb.toString();
 	}
 	
-
-
 }
