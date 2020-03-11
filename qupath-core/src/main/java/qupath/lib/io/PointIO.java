@@ -24,19 +24,22 @@
 package qupath.lib.io;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.charset.Charset;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
-import java.util.zip.ZipOutputStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +49,7 @@ import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjectTools;
 import qupath.lib.objects.PathObjects;
 import qupath.lib.objects.classes.PathClass;
+import qupath.lib.objects.classes.PathClassFactory;
 import qupath.lib.regions.ImagePlane;
 import qupath.lib.roi.PointsROI;
 import qupath.lib.roi.ROIs;
@@ -65,9 +69,58 @@ public class PointIO {
 	 * Read a list of point annotations from a file.
 	 * @param file
 	 * @return
+	 * @throws IOException
+	 */
+	public static List<PathObject> readPointsObjectFromFile(File file) throws IOException {
+		List<PathObject> pathObjects = new ArrayList<>();
+		Map<String[], List<Point2>> pointsMap = new HashMap<>();
+		Scanner scanner = null;
+		try (FileInputStream fis = new FileInputStream(file)) {
+			scanner = new Scanner(fis);
+			
+			// Header
+			scanner.nextLine();
+					
+			while(scanner.hasNextLine())  {
+				putPointObjectFromString(scanner.nextLine(), pointsMap);
+			}
+		} finally {
+			if (scanner != null)
+				scanner.close();
+		}
+
+		for (var entry: pointsMap.entrySet()) {
+			String color = entry.getKey()[1];
+			String name = entry.getKey()[2];
+			String pathClass = entry.getKey()[3];
+			String c = entry.getKey()[4];
+			String z = entry.getKey()[5];
+			String t = entry.getKey()[6];
+			
+
+			ROI points = ROIs.createPointsROI(entry.getValue(), ImagePlane.getDefaultPlane());
+			PathObject pathObject = PathObjects.createAnnotationObject(points);
+			
+			if (name != null && name.length() > 0 && !"null".equals(name))
+				pathObject.setName(name);
+			if (pathClass != null && pathClass.length() > 0 && !"null".equals(pathClass))
+				pathObject.setPathClass(PathClassFactory.getPathClass(pathClass, Integer.parseInt(color)));
+			pathObject.setColorRGB(Integer.parseInt(color));
+			
+			if (pathObject != null)
+				pathObjects.add(pathObject);
+		}
+		return pathObjects;
+	}
+	
+	/**
+	 * Read a list of point annotations from a file. Not recommended for use (will be removed in future releases).
+	 * @param file
+	 * @return
 	 * @throws ZipException
 	 * @throws IOException
 	 */
+	@Deprecated
 	public static List<PathObject> readPointsObjectList(File file) throws ZipException, IOException {
 		List<PathObject> pathObjects = new ArrayList<>();
 		Scanner s = null;
@@ -104,41 +157,110 @@ public class PointIO {
 			return color;
 		return defaultColor;
 	}
+
 	
 	/**
-	 * Write a list of point annotations to a file.
+	 * Write a list of point annotations to a TSV file.
 	 * @param file
 	 * @param pathObjects
 	 * @param defaultColor
 	 * @throws IOException
 	 */
 	public static void writePointsObjectsList(File file, List<? extends PathObject> pathObjects, final Integer defaultColor) throws IOException {
-		try (ZipOutputStream out = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(file)))) {
-			Charset charset = Charset.forName("UTF-8");
+		try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8)) {
+			// OutputStream out = Files.newOutputStream(file.toPath());
 			
-			int ind = 0;
+			String sep = "\t";
+			List<String> cols = new ArrayList<>();
+			cols.addAll(Arrays.asList("groupID", "color", "x", "y"));
+			
+			boolean hasClass = pathObjects.stream().anyMatch(p -> p.getPathClass() != null);
+			boolean hasName = pathObjects.stream().anyMatch(p -> p.getName() != null);
+			boolean hasZ = pathObjects.stream().anyMatch(p -> ((PointsROI)p.getROI()).getZ() > 0);
+			boolean hasC = pathObjects.stream().anyMatch(p -> ((PointsROI)p.getROI()).getC() > 0);
+			boolean hasT = pathObjects.stream().anyMatch(p -> ((PointsROI)p.getROI()).getT() > 0);
+			
+			if (hasName)
+				cols.add("name");
+			if (hasClass)
+				cols.add("class");
+			if (hasC)
+				cols.add("c");
+			if (hasZ)
+				cols.add("z");
+			if (hasT)
+				cols.add("t");
+			
+			for (String col: cols)
+				writer.write(col + sep);
+			writer.write("\n");
+			
+			int p = 0;
 			for (PathObject pathObject : pathObjects) {
 				if (!PathObjectTools.hasPointROI(pathObject))
 					continue;
+				
 				PointsROI points = (PointsROI)pathObject.getROI();
-				ZipEntry e = new ZipEntry(String.format("Points %d.txt", ++ind));
-				out.putNextEntry(e);
 				
-				StringBuilder sb = new StringBuilder();
-				sb.append("Name\t").append(pathObject.getDisplayedName()).append("\n");
-				sb.append("Color\t").append(getDisplayedColor(pathObject, defaultColor)).append("\n");
-				sb.append("Coordinates\t").append(points.getNumPoints()).append("\n");
-				out.write(sb.toString().getBytes(charset));
-				
-				
-				out.write(getPointsAsString(points).getBytes(charset));
-				out.closeEntry();
+				for (Point2 point: points.getAllPoints()) {
+					String color = (getDisplayedColor(pathObject, defaultColor)) + sep;
+					String x = point.getX() + sep;
+					String y = point.getY() + sep;
+					
+					String name = pathObject.getName() != null ? pathObject.getName() + sep : sep;
+					String pathClass = pathObject.getPathClass() != null ? pathObject.getPathClass() + sep : sep;
+					String c = points.getC() > -1 ? points.getC() + sep : sep;
+					String z = points.getZ() > 0 ? points.getZ() + sep : sep;
+					String t = points.getT() > 0 ? points.getT() + sep : sep;
+					
+					writer.write(p + sep + color + x + y + name + pathClass + c + z + t + "\n");
+				}
+				p++;
 			}
 		}
 	}
 	
 	
+	private static void putPointObjectFromString(String s, Map<String[], List<Point2>> pointsMap) {
+		List<Point2> pointsList = new ArrayList<>();
+		String[] info = new String[7];
+		String[] optionalCols = new String[] {"groupID", "color", "name", "class", "z", "c", "t"};
+		String[] values = s.split("(?<=\t)");
+
+		// Core columns
+		info[0] = values[0].trim();	// groupID
+		info[1] = values[1].trim();	// color
+		double x = Double.parseDouble(values[2].trim());
+		double y = Double.parseDouble(values[3].trim());
+		
+		// Optional columns
+		for (int i = 2; i < optionalCols.length; i++) {
+				info[i] = values[i+2].trim();
+		}
+		
+		pointsList.add(new Point2(x, y));
+		boolean found = false;
+		for (var key: pointsMap.keySet()) {
+			if (key[0].contentEquals(info[0])) {
+				pointsMap.get(key).add(new Point2(x, y));
+				found = true;
+				break;
+			}	
+		}
+		if (!found) {
+			List<Point2> newArray = new ArrayList<>();
+			newArray.add(new Point2(x, y));
+			pointsMap.put(info, newArray);
+		}
+
+	}
 	
+	/**
+	 * Helper method for readPointsObjectList(), will be removed in future releases.
+	 * @param s
+	 * @return
+	 */
+	@Deprecated
 	private static PathObject readPointsObjectFromString(String s) {
 		List<Point2> pointsList = new ArrayList<>();
 		Scanner scanner = new Scanner(s);
@@ -181,6 +303,4 @@ public class PointIO {
 		return sb.toString();
 	}
 	
-
-
 }
