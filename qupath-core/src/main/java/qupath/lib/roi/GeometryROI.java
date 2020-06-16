@@ -71,13 +71,24 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 	private transient GeometryStats stats = null;
 	private transient Shape shape = null;
 	
+//	/**
+//	 * Create a GeometryROI, without checking for validity.
+//	 * @param geometry
+//	 * @param plane
+//	 */
+//	GeometryROI(Geometry geometry, ImagePlane plane) {
+//		this(geometry, plane, true);
+//	}
+	
 	/**
 	 * Create a GeometryROI, without checking for validity.
 	 * @param geometry
 	 * @param plane
 	 */
-	GeometryROI(Geometry geometry, ImagePlane plane) {
-		this(geometry, plane, false);
+	GeometryROI(Geometry geometry, ImagePlane plane, GeometryStats stats) {
+		this(geometry, plane, stats == null || !stats.isValid());
+		if (stats != null && !GeometryStats.UNKNOWN.equals(stats.error))
+			this.stats = stats;
 	}
 	
 	/**
@@ -85,12 +96,13 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 	 * @param geometry
 	 * @param plane
 	 * @param checkValid if true, check the Geometry is valid before computing measurements. 
-	 *                   Because the validity check can be (very) slow, it may be desireable to skip it if not needed.
+	 *                   Because the validity check can be (very) slow, it may be desirable to skip it if not needed.
 	 */
 	GeometryROI(Geometry geometry, ImagePlane plane, boolean checkValid) {
 		super(plane);
 		this.checkValid = checkValid;
 		this.geometry = geometry.copy();
+		
 //		this.stats = computeGeometryStats(geometry, 1, 1);
 //		if (!stats.isValid())
 //			logger.warn("Creating invalid geometry: {}", stats.getError());
@@ -154,7 +166,7 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 
 	@Override
 	public ROI duplicate() {
-		return new GeometryROI(geometry, getImagePlane());
+		return new GeometryROI(geometry, getImagePlane(), checkValid);
 	}
 	
 	@Override
@@ -223,7 +235,7 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 
 	@Override
 	public ROI translate(double dx, double dy) {
-		return new GeometryROI(AffineTransformation.translationInstance(dx, dy).transform(geometry), getImagePlane());
+		return new GeometryROI(AffineTransformation.translationInstance(dx, dy).transform(geometry), getImagePlane(), checkValid);
 	}
 	
 	private Object writeReplace() {
@@ -343,7 +355,7 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 	@Override
 	public ROI scale(double scaleX, double scaleY, double originX, double originY) {
 		var transform = AffineTransformation.scaleInstance(scaleX, scaleY, originX, originY);
-		return new GeometryROI(transform.transform(geometry), getImagePlane());
+		return new GeometryROI(transform.transform(geometry), getImagePlane(), checkValid);
 	}
 
 //	@Override
@@ -392,9 +404,7 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 
 		private Object readResolve() throws ParseException {
 			var geometry = new WKBReader().read(wkb);
-			GeometryROI roi = new GeometryROI(geometry, ImagePlane.getPlaneWithChannel(c, z, t));
-			roi.stats = this.stats;
-			return roi;
+			return new GeometryROI(geometry, ImagePlane.getPlaneWithChannel(c, z, t), stats);
 		}
 
 	}
@@ -422,9 +432,7 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 		}
 		
 		private Object readResolve() {
-			GeometryROI roi = new GeometryROI(geometry, ImagePlane.getPlaneWithChannel(c, z, t));
-			roi.stats = this.stats;
-			return roi;
+			return new GeometryROI(geometry, ImagePlane.getPlaneWithChannel(c, z, t), stats);
 		}
 		
 	}

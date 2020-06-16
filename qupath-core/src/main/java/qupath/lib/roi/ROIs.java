@@ -249,7 +249,8 @@ public class ROIs {
 	 * @return
 	 */
 	public static ROI createAreaROI(Shape shape, ImagePlane plane) {
-		return new GeometryROI(GeometryTools.shapeToGeometry(shape), plane);
+		return GeometryTools.geometryToROI(GeometryTools.shapeToGeometry(shape), plane);
+//		return new GeometryROI(GeometryTools.shapeToGeometry(shape), plane, true);
 //		return new AWTAreaROI(shape, plane);
 	}
 

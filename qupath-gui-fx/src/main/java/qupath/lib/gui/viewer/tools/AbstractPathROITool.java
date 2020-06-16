@@ -37,10 +37,12 @@ import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjects;
+import qupath.lib.objects.PathROIObject;
 import qupath.lib.objects.classes.PathClassTools;
 import qupath.lib.objects.classes.Reclassifier;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.regions.ImagePlane;
+import qupath.lib.roi.GeometryTools;
 import qupath.lib.roi.PolygonROI;
 import qupath.lib.roi.PolylineROI;
 import qupath.lib.roi.RoiEditor;
@@ -224,8 +226,9 @@ abstract class AbstractPathROITool extends AbstractPathTool {
 			if (!requestParentClipping(e)) {
 				if (currentROI.isEmpty()) {
 					pathObject = null;
-				} else
-					hierarchy.addPathObject(pathObject); // Ensure object is within the hierarchy
+				} else {
+					hierarchy.addPathObject(checkRoiValidity(pathObject)); // Ensure object is within the hierarchy
+				}
 			} else {
 				ROI roiNew = refineROIByParent(pathObject.getROI());
 				if (roiNew.isEmpty()) {
@@ -251,6 +254,27 @@ abstract class AbstractPathROITool extends AbstractPathTool {
 			if (qupath != null)
 				qupath.setSelectedTool(PathTools.MOVE);
 		}
+	}
+	
+	/**
+	 * We avoid some validity check while interactively drawing ROIs, so we need to ensure these are
+	 * reinstated before adding an object to the hierarchy.
+	 * @param pathObject
+	 * @return
+	 */
+	static PathObject checkRoiValidity(PathObject pathObject) {
+		var roi = pathObject == null ? null : pathObject.getROI();
+		if (roi == null)
+			return pathObject;
+		var geom = roi.getGeometry();
+		if (geom.isValid())
+			return pathObject;
+		if (pathObject instanceof PathROIObject) {
+			((PathROIObject)pathObject).setROI(GeometryTools.geometryToROI(geom, roi.getImagePlane()));
+		} else {
+			logger.warn("Unable to fix invalid geometry!");
+		}
+		return pathObject;
 	}
 
 	

@@ -380,7 +380,7 @@ public class BrushTool extends AbstractPathROITool {
 				shapeNew = GeometryTools.ensurePolygonal(shapeNew);
 			}
 					
-			ROI roiNew = GeometryTools.geometryToROI(shapeNew, plane);
+			ROI roiNew = GeometryTools.geometryToROI(shapeNew, plane, false);
 			
 			if (currentObject instanceof PathAnnotationObject) {
 				((PathAnnotationObject)currentObject).setROI(roiNew);
@@ -412,8 +412,9 @@ public class BrushTool extends AbstractPathROITool {
 		if (e.isConsumed())
 			return;
 
-		if (currentObject != null)
+		if (currentObject != null) {
 			commitObjectToHierarchy(e, currentObject);
+		}
 		
 		lastPoint = null;
 		this.currentObject = null;
@@ -500,7 +501,7 @@ public class BrushTool extends AbstractPathROITool {
 		var viewer = getViewer();
 		geom = GeometryTools.roundCoordinates(geom);
 		geom = GeometryTools.constrainToBounds(geom, 0, 0, viewer.getServerWidth(), viewer.getServerHeight());
-		return GeometryTools.geometryToROI(geom, plane);
+		return GeometryTools.geometryToROI(geom, plane, false);
 	}
 	
 }

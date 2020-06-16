@@ -233,13 +233,30 @@ public class GeometryTools {
     
     
     /**
-     * Convert a JTS Geometry to a QuPath ROI.
+     * Convert a JTS {@link Geometry} to a QuPath {@link ROI}, checking if it is valid whenever measurements are made.
      * @param geometry
      * @param plane 
      * @return
      */
     public static ROI geometryToROI(Geometry geometry, ImagePlane plane) {
-    	return DEFAULT_INSTANCE.geometryToROI(geometry, plane);
+    	return geometryToROI(geometry, plane, true);
+    }
+    
+    /**
+     * Convert a JTS {@link Geometry} to a QuPath {@link ROI}.
+     * <p>
+     * Validity checking can optionally be performed whenever the object is measured.
+     * Note that this can be an expensive operation - however passing an invalid geometry may 
+     * cause more problems later. Therefore use 'false' with caution (e.g. because a ROI 
+     * will be validated later).
+     * 
+     * @param geometry
+     * @param plane 
+     * @param checkValidity 
+     * @return
+     */
+    public static ROI geometryToROI(Geometry geometry, ImagePlane plane, boolean checkValidity) {
+    	return DEFAULT_INSTANCE.geometryToROI(geometry, plane, checkValidity);
     }
     
     /**
@@ -363,8 +380,8 @@ public class GeometryTools {
     	boolean hasLines = false;
 //    	boolean hasPoints = false;
     	List<Geometry> collection = new ArrayList<>();
-    	for (int i = 0; i < geometry.getNumGeometries(); i++) {
-    		var geom = homogenizeGeometryCollection(geometry.getGeometryN(i));
+    	for (var geom : flatten(geometry, null)) {
+    		geom = homogenizeGeometryCollection(geom);
     		if (geom instanceof Polygonal) {
     			if (!hasPolygons)
     				collection.clear();
@@ -387,7 +404,8 @@ public class GeometryTools {
 //    	if (collection.size() == geometry.getNumGeometries())
 //    		return geometry;
     	// Factory helps to ensure we have the correct type (e.g. MultiPolygon rather than GeometryCollection)
-    	return geometry.getFactory().buildGeometry(collection);
+    	var geometryResult = geometry.getFactory().buildGeometry(collection);
+    	return geometryResult;
     }
     
     private static List<Geometry> flatten(Geometry geometry, List<Geometry> list) {
@@ -1016,7 +1034,7 @@ public class GeometryTools {
 	        return shape;
 	    }
 	
-	    private ROI geometryToROI(Geometry geometry, ImagePlane plane) {
+	    private ROI geometryToROI(Geometry geometry, ImagePlane plane, boolean checkValidity) {
 	    	// Make sure out Geometry is all of the same type
 	    	var geometry2 = homogenizeGeometryCollection(geometry);
 	    	if (geometry2 != geometry) {
@@ -1032,8 +1050,9 @@ public class GeometryTools {
 	    		return ROIs.createPointsROI(points, plane);
 	    	}
 	    	// For anything complicated, return a Geometry ROI
+	    	// TODO: Consider whether to check validity
 	    	if (geometry.getNumGeometries() > 1 || (geometry instanceof Polygon && ((Polygon)geometry).getNumInteriorRing() > 0))
-	    		return new GeometryROI(geometry, plane);
+	    		return new GeometryROI(geometry, plane, checkValidity);
 	    	// Otherwise return a (possibly easier to edit) ROI
 	        return RoiTools.getShapeROI(geometryToShape(geometry), plane, flatness);
 	    }
