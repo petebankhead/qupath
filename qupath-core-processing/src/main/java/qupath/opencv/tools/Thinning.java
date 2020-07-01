@@ -97,8 +97,6 @@ public class Thinning {
 	
 	private static void thin(UByteIndexer idx) {
 		
-//		var adjacencyTree = new AdjacencyTree();
-		
 		byte[] neighbors = new byte[26];
 		long[] sizes = idx.sizes();
 		long iMax = (int)sizes[0];
@@ -193,29 +191,13 @@ public class Thinning {
 								bitMask = getNeighbors(idx, i, j, k, neighbors);
 
 							/**
-							 * If we have an isolated pixel or just one 'on' neighbor, we have an end point.
+							 * Check if we have a simple border point.
+							 * If so, store it as a candidate for removal - but don't remove it yet, 
+							 * to avoid propagating pixel changes during this directional iteration.
 							 */
-							int count = Integer.bitCount(bitMask);
-							if (count <= 1)
-								continue;
-
-							if (!adjacencyTree.isEulerInvariant(neighbors, bitMask))
-								continue;
-
-							/**
-							 * Count the number of connected objects in the neighborhood, with the center removed.
-							 * If this is 1, we have a 'simple border point' that is a candidate for removal.
-							 */
-							boolean simpleBorderPoint = countConnectedObjects(neighbors) <= 1;
-							if (!simpleBorderPoint)
-								continue;
-
-							/**
-							 * Store the point - but don't remove it yet to avoid propagating pixel changes 
-							 * during this directional iteration.
-							 */
-							simplePoints.add(new long[] {i, j, k});
-
+							if (isSimpleBorderPoint(neighbors, bitMask)) {
+								simplePoints.add(new long[] {i, j, k});
+							}
 						}
 					}
 				}
@@ -229,17 +211,22 @@ public class Thinning {
 					long i = point[0];
 					long j = point[1];
 					long k = point[2];
-					getNeighborsWithBoundsCheck(idx, i, j, k, iMax, jMax, kMax, neighbors);
 					
+					getNeighborsWithBoundsCheck(idx, i, j, k, iMax, jMax, kMax, neighbors);
+
 					boolean simplePoint = countConnectedObjects(neighbors) <= 1;
 					if (!simplePoint)
 						continue;
+
+					// Using the LUT again gives slightly different results
+//					boolean simplePoint = isSimpleBorderPoint(neighbors, bitSet);
+//					if (!simplePoint)
+//						continue;
 
 					idx.put(i, j, k, 0);
 					nChanges++;
 				}
 				simplePoints.clear();
-				
 				
 			}
 			
@@ -253,6 +240,44 @@ public class Thinning {
 				GeneralTools.formatNumber(adjacencyTree.cachedCount/(double)adjacencyTree.requestCount*100.0, 1));
 
 	}
+	
+
+	static boolean isSimpleBorderPoint(byte[] neighborhood, int bitMask) {
+		/**
+		 * If we have an isolated pixel or just one 'on' neighbor, we have an end point.
+		 */
+		int count = Integer.bitCount(bitMask);
+		if (count <= 1)
+			return false;
+		
+		assert bitMask >= 0 && bitMask <= nBits;
+		
+		if (!bitLUTSet.get(bitMask)) {
+			boolean isSimpleBorderPoint = isSimpleBorderPoint(neighborhood);
+			bitLUT.set(bitMask, isSimpleBorderPoint);
+			bitLUTSet.set(bitMask, true);
+			return isSimpleBorderPoint;
+		}
+//		cachedCount++;
+		return bitLUT.get(bitMask);
+	}
+	
+	
+	private static boolean isSimpleBorderPoint(byte[] neighborhood) {
+		/**
+		 * Check if the Euler number changes if the central point is removed.
+		 */
+		if (!adjacencyTree.isEulerInvariant(neighborhood))
+			return false;
+
+		/**
+		 * Count the number of connected objects in the neighborhood, with the center removed.
+		 * If this is 1, we have a 'simple border point' that is a candidate for removal.
+		 */
+		return countConnectedObjects(neighborhood) <= 1;
+	}
+	
+	
 	
 	
 	static class Cube {
@@ -366,19 +391,6 @@ public class Thinning {
 		
 		public Octant getOctant(int ind) {
 			return leaves[ind][0];
-		}
-		
-		boolean isEulerInvariant(byte[] neighbors, int bitMask) {
-			assert bitMask >= 0 && bitMask <= nBits;
-			requestCount++;
-			if (!bitLUTSet.get(bitMask)) {
-				boolean invariant = isEulerInvariant(neighbors);
-				bitLUT.set(bitMask, invariant);
-				bitLUTSet.set(bitMask, true);
-				return invariant;
-			}
-			cachedCount++;
-			return bitLUT.get(bitMask);
 		}
 		
 		boolean isEulerInvariant(byte[] neighbors) {
