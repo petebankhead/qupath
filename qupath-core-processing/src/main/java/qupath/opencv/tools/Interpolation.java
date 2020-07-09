@@ -49,9 +49,9 @@ public class Interpolation {
 	 * @return the interpolated value
 	 */
 	public static double interp2D(Indexer indexer, double i, double j) {
-		if (indexer instanceof FloatIndexer) {
-			return interp2D((FloatIndexer)indexer, i, j);
-		}
+//		if (indexer instanceof FloatIndexer) {
+//			return interp2D((FloatIndexer)indexer, i, j);
+//		}
 		long yi = (long)Math.floor(i);
 		long xi = (long)Math.floor(j);
 		double fx0y0 = get(indexer, yi, xi);

@@ -95,13 +95,12 @@ public class Thinning {
 	}
 	
 	
-	private static void thin(UByteIndexer idx) {
+	static void thin(UByteIndexer idx) {
 		
 		byte[] neighbors = new byte[26];
-		long[] sizes = idx.sizes();
-		long iMax = (int)sizes[0];
-		long jMax = (int)sizes[1];
-		long kMax = (int)sizes[2];
+		long iMax = idx.size(0);
+		long jMax = idx.size(1);
+		long kMax = idx.size(2);
 		
 		// Determine which directions are relevant (north, south, east, west, up, down)
 		List<Direction> directions = new ArrayList<>();
@@ -231,7 +230,7 @@ public class Thinning {
 			}
 			
 			iter++;
-			logger.info("Changes at iteration {}: {}", iter, + nChanges);
+			logger.debug("Changes at iteration {}: {}", iter, + nChanges);
 			
 		}
 
@@ -239,6 +238,47 @@ public class Thinning {
 				adjacencyTree.cachedCount,
 				GeneralTools.formatNumber(adjacencyTree.cachedCount/(double)adjacencyTree.requestCount*100.0, 1));
 
+	}
+	
+	/**
+	 * Count the number of non-zero neighbors for every non-zero pixel in a binary image.
+	 * This is useful for identify isolated, end and branch points.
+	 * If thinning is required, this should be applied beforehand.
+	 * @param idx
+	 */
+	static void countNeighbors(UByteIndexer idx) {
+		long iMax = idx.size(0);
+		long jMax = idx.size(1);
+		long kMax = idx.size(2);
+		byte[] neighbors = new byte[26];
+		for (long k = 0; k < kMax; k++) {
+			for (long i = 0; i < iMax; i++) {
+				for (long j = 0; j < jMax; j++) {
+					
+					if (idx.get(i, j, k) == (byte)0)
+						continue;
+					
+					/**
+					 * Determine if boundary checks are needed.
+					 */
+					boolean checkBounds = i == 0 || j == 0 || k == 0 ||
+							i == iMax-1 || j == jMax-1 || k == kMax-1;
+
+					/**
+					 * Extract pixel neighborhood, including a bit mask representing 'on' neighbours, 
+					 * but excluding the central pixel.
+					 */
+					int bitMask;
+					if (checkBounds)
+						bitMask = getNeighborsWithBoundsCheck(idx, i, j, k, iMax, jMax, kMax, neighbors);
+					else
+						bitMask = getNeighbors(idx, i, j, k, neighbors);
+					
+					int n = Integer.bitCount(bitMask) + 1;
+					idx.put(i, j, k, n);
+				}
+			}
+		}
 	}
 	
 
@@ -252,13 +292,14 @@ public class Thinning {
 		
 		assert bitMask >= 0 && bitMask <= nBits;
 		
+		adjacencyTree.requestCount++;
 		if (!bitLUTSet.get(bitMask)) {
 			boolean isSimpleBorderPoint = isSimpleBorderPoint(neighborhood);
 			bitLUT.set(bitMask, isSimpleBorderPoint);
 			bitLUTSet.set(bitMask, true);
 			return isSimpleBorderPoint;
-		}
-//		cachedCount++;
+		} else
+			adjacencyTree.cachedCount++;
 		return bitLUT.get(bitMask);
 	}
 	
