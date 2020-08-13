@@ -4,6 +4,7 @@
 Key changes:
 * New ContourTracing class to convert binary and labelled images to ROIs
 * ColorMaps class separated from MeasurementMapper for reuse in other commands
+* BufferedImageOverlays are now tied to the the pixel classification display setting (rather than the detection display)
 * Use alternative TensorFlow API
 
 ### Dependency updates*
