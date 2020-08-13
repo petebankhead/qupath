@@ -1,6 +1,11 @@
 ## Version 0.3.0-SNAPSHOT
 *In progress*
 
+Key changes:
+* New ContourTracing class to convert binary and labelled images to ROIs
+* ColorMaps class separated from MeasurementMapper for reuse in other commands
+* Use alternative TensorFlow API
+
 ### Dependency updates*
 * Java Topology suite 1.17.0
 * ControlsFX 11.0.2
