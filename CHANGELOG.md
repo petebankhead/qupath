@@ -7,6 +7,11 @@ Key changes:
 * BufferedImageOverlays are now tied to the the pixel classification display setting (rather than the detection display)
 * Use alternative TensorFlow API
 
+List of bugs fixed:
+* Exception when converting PathObject with name but no color to GeoJSON
+* Exception when pressing 'Create workflow' is no image is open (https://github.com/qupath/qupath/issues/608)
+* Confusing command line help text for the '--image' parameter of the 'script' (https://github.com/qupath/qupath/issues/609)
+
 ### Dependency updates*
 * Java Topology suite 1.17.1
 * OpenCV 4.4.0
