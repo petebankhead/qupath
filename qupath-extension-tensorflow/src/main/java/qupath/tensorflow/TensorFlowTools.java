@@ -27,6 +27,7 @@ import java.nio.DoubleBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
+import java.util.Arrays;
 
 import org.bytedeco.javacpp.Loader;
 import org.bytedeco.opencv.global.opencv_core;
@@ -120,6 +121,8 @@ public class TensorFlowTools {
 	    // Get the shape, stripping off the batch
 	    int n = shape.length;
 	    int[] dims = new int[Math.max(3, n-1)];
+//	    int[] dims = new int[n-1];
+	    Arrays.fill(dims, 1);
 	    for (int i = 1; i < n; i++) {
 	    	dims[i-1] = (int)shape[i];
 	    }
