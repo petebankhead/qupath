@@ -13,12 +13,18 @@ List of bugs fixed:
 * Confusing command line help text for the '--image' parameter of the 'script' (https://github.com/qupath/qupath/issues/609)
 
 ### Dependency updates*
-* Java Topology suite 1.17.1
-* OpenCV 4.4.0
+* AdoptOpenJDK 15.0.1
+* Apache Commons Text 1.9
 * ControlsFX 11.0.2
-* ImageJ 1.53d
-* picocli 4.5.1
+* ImageJ 1.53f
 * Groovy 3.0.5
+* Guava 30.0-jre
+* JavaFX 15.0.1
+* Java Topology suite 1.17.1
+* JavaCPP 1.5.4
+* jfxtras 15-r1
+* picocli 4.5.2
+* OpenCV 4.4.0
 
 
 ## Version 0.2.3
