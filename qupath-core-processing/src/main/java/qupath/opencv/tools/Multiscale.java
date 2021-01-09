@@ -90,14 +90,11 @@ public class Multiscale {
 
 		private static Logger logger = LoggerFactory.getLogger(RidgeDetector.class);
 
-		private ImageData<BufferedImage> imageData;
 		private ColorTransform transform;
 
 		private double angleThreshold = 15; // Controls curvature, defined in terms of degrees (for ease of interpretation)
 
 		private double distanceThreshold = 5.0; // Controls continuity
-		private double dotProductThreshold = Math.cos(Math.toRadians(angleThreshold));
-		private int minPoints = 5;
 		private double sigmaStart = 1.0;
 		private double sigmaScale = 1.5;
 		private int nSigmas = 1;
@@ -106,10 +103,6 @@ public class Multiscale {
 		private boolean do3D = true;
 		private boolean doSqrt = false;
 
-		public RidgeDetector(ImageData<BufferedImage> imageData) {
-			this.imageData = imageData;
-		}
-		
 		public RidgeDetector channel(int channel) {
 			this.transform = ColorTransforms.createChannelExtractor(channel);
 			return this;
@@ -130,6 +123,16 @@ public class Multiscale {
 			return this;
 		}
 		
+		public RidgeDetector mergeMaxDistance(double maxDistance) {
+			this.distanceThreshold = maxDistance;
+			return this;
+		}
+		
+		public RidgeDetector mergeMaxAngle(double maxAngle) {
+			this.angleThreshold = maxAngle;
+			return this;
+		}
+
 		/**
 		 * Detect at a single scale.
 		 * @param sigma Gaussian sigma for smoothing.
@@ -162,14 +165,14 @@ public class Multiscale {
 			return this;
 		}
 
-		public List<Ridge> detect(RegionRequest request) throws IOException {
+		public List<Ridge> detect(ImageData<BufferedImage> imageData, RegionRequest request) throws IOException {
 			try (var scope = new PointerScope()) {
-				return detectRidges(request);
+				return detectRidges(imageData, request);
 			}
 		}
 
 
-		List<Ridge> detectRidges(RegionRequest request) throws IOException {
+		List<Ridge> detectRidges(ImageData<BufferedImage> imageData, RegionRequest request) throws IOException {
 
 			// Extract & preprocess regions
 			var server = imageData.getServer();
@@ -205,7 +208,7 @@ public class Multiscale {
 			// This can be used as a sanity check/minimum threshold
 			double noiseStdDev = inputMats.parallelStream().mapToDouble(m -> Noise.estimateNoise(m, 3.0)).average().orElse(0);
 
-			var accumulator = new ScaleAccumulator2D();
+			var accumulator = new ScaleAccumulator();
 
 			double sigma = sigmaStart;
 			for (int i = 0; i < nSigmas; i++) {
@@ -301,24 +304,29 @@ public class Multiscale {
 //			doMerge = false;
 			
 			if (doMerge)
-				return mergeRidges(ridges, 25, 1.5, server.getPixelCalibration());
+				return mergeRidges(ridges, angleThreshold, distanceThreshold, server.getPixelCalibration());
 			else
 				return ridges;
 		}
 		
 		
-		static void accumulate(ScaleAccumulator2D accumulator, double scale, Hessian hessian, double threshold) {
+		static void accumulate(ScaleAccumulator accumulator, double scale, Hessian hessian, double threshold) {
 		    var eigenvalues = hessian.getEigenvalues(false).get(1);
 		    var eigenvectors = hessian.getEigenvectors(false).get(0);
 		    // Use the highest eigenvalue as a measure of ridge strength, and the 'other' eigenvector as an assessment of ridge direction
 		    accumulator.addScale(scale, opencv_core.multiply(eigenvalues, -1.0).asMat(), eigenvectors, threshold);
 		}
 
-		static void accumulate(ScaleAccumulator2D accumulator, double scale, List<Hessian> hessianMatrices, double threshold) {
+		static void accumulate(ScaleAccumulator accumulator, double scale, List<Hessian> hessianMatrices, double threshold) {
 		    var ridgeStrengths = new ArrayList<Mat>();
 		    var eigenvectors = new ArrayList<Mat>();
 		    for (var hessian : hessianMatrices) {
-		        ridgeStrengths.add(opencv_core.multiply(hessian.getEigenvalues(false).get(1), -1.0).asMat());
+		    	// Here, we assume ridges are bright and so the lowest eigenvalue will be strongly negative.
+		    	// As a measure of ridge strength, take the second eigenvector; if this is similarly negative then we may well have a ridge
+		    	// (we expect that the largest eigenvalue is close to 0).
+		    	// See Sato. et al. MIA, 1998 for more detail and alternative ridge strength measures.
+		    	var eigenvalues = hessian.getEigenvalues(false);
+		        ridgeStrengths.add(opencv_core.multiply(eigenvalues.get(1), -1.0).asMat());
 		        eigenvectors.add(OpenCVTools.mergeChannels(hessian.getEigenvectors(false), null));
 		    }
 		    var strength = OpenCVTools.mergeChannels(ridgeStrengths, null);
@@ -401,12 +409,13 @@ public class Multiscale {
 			while (changes) {
 				changes = false;
 				var startPoint = ridge.getStart(true);
-				
 				var candidates = cache.query(startPoint, distanceThreshold, cal);
 				candidates.sort(Comparator.comparingDouble(p -> p.distanceSq(startPoint, cal)));
 				for (var c : candidates) {
 					double dot = startPoint.eigenvectorDotProduct(c);
 					if (dot < -dotProductThreshold && startPoint.displacementEigenvectorDotProduct(c, cal) > dotProductThreshold) {
+//						System.err.println("Distance: " + startPoint.distance(c, cal));
+//						System.err.println("Dot: " + startPoint.displacementEigenvectorDotProduct(c, cal));
 						var ridge2 = ridgeMap.get(c);
 						if (c != ridge2.getEnd(true))
 							Collections.reverse(ridge2.points);
@@ -427,7 +436,7 @@ public class Multiscale {
 					double dot = endPoint.eigenvectorDotProduct(c);
 					if (dot < -dotProductThreshold && endPoint.displacementEigenvectorDotProduct(c, cal) > dotProductThreshold) {
 						var ridge2 = ridgeMap.get(c);
-						if (c != ridge2.getEnd(true))
+						if (c != ridge2.getStart(true))
 							Collections.reverse(ridge2.points);
 						ridge.points.addAll(ridge2.points);
 						cache.remove(ridge2.getStart(true));
@@ -760,6 +769,8 @@ public class Multiscale {
 		
 		static RidgePoint create(SimpleIndex ind, float strength, float scale, float eigX, float eigY, float eigZ) {
 			var p = new RidgePoint();
+			if (scale <= 0)
+				System.err.println("Scale: " + scale);
 			p.x = (int)ind.j;
 			p.y = (int)ind.i;
 			p.z = (int)ind.k;
@@ -842,6 +853,11 @@ public class Multiscale {
 			}
 		}
 
+		@Override
+		public String toString() {
+			return "RidgePoint [x=" + x + ", y=" + y + ", z=" + z + ", strength=" + strength + ", scale=" + scale + "]";
+		}
+		
 	}
 
 
@@ -971,6 +987,13 @@ public class Multiscale {
 			return points.get(points.size()-1);
 		}
 
+		@Override
+		public String toString() {
+			return "Ridge [nPoints()=" + nPoints() + "]";
+		}
+		
+		
+
 	}
 
 
@@ -1026,7 +1049,7 @@ public class Multiscale {
 			v.list.clear();
 			tree.query(env, v);
 			double distSq = distance*distance;
-			v.list.removeIf(p -> point.distance(point, cal) > distSq);
+			v.list.removeIf(p -> p.distanceSq(point, cal) > distSq);
 			return v.list;
 		}
 
@@ -1068,7 +1091,7 @@ public class Multiscale {
 	/**
 	 * Keep track of maximum ridge response and associated (potential) ridge orientation for every pixel.
 	 */
-	static class ScaleAccumulator2D {
+	static class ScaleAccumulator {
 
 		Mat ridgeStrength;
 		Mat ridgeEigenvector;
@@ -1113,7 +1136,7 @@ public class Multiscale {
 		void setTo(Mat matDest, float value, Mat matMask) {
 			FloatBuffer bufDest = (FloatBuffer)matDest.createBuffer();
 			ByteBuffer bufMask = matMask == null ? null : (ByteBuffer)matMask.createBuffer();
-			long n = java.util.stream.LongStream.of(matDest.createIndexer().sizes()).sum();
+			long n = java.util.stream.LongStream.of(matDest.createIndexer().sizes()).reduce((a, b) -> a * b).orElse(0L);
 			for (int i = 0; i < n; i++) {
 				if (matMask == null || bufMask.get(i) != (byte)0)
 					bufDest.put(i, value);
@@ -1242,11 +1265,6 @@ public class Multiscale {
 			}
 
 			idxBinary.close();
-
-			//	        opencv_ximgproc.thinning(matBinary, matBinary)
-			//	        Display.showImage("Ridge mask", ridgeMask)
-			//	        Display.showImage("Mask", ridgeMask)
-			//	        Display.showImage("Ridges", matBinary);
 
 			idxStrength.close();
 			idxEigenvector.close();

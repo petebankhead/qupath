@@ -401,6 +401,7 @@ public class Thinning {
 			return n;
 		}
 		
+		@Override
 		public String toString() {
 			return "Octant: (Indices: " + Arrays.stream(inds).mapToObj(i -> Integer.toString(i)).collect(Collectors.joining(", ")) + ")";
 		}
