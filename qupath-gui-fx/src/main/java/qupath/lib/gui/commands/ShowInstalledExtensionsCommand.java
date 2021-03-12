@@ -233,7 +233,7 @@ class ShowInstalledExtensionsCommand {
 						  Manifest manifest = stream.getManifest();
 						  if (manifest != null) {
 							  Attributes mainAttributes = manifest.getMainAttributes();
-							  return mainAttributes.getValue("Implementation-Version");						
+							  return mainAttributes.getValue("Implementation-Version");	
 						  }
 					}
 				} catch (IOException e) {

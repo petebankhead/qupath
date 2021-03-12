@@ -67,6 +67,7 @@ import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 
 import javax.imageio.ImageIO;
@@ -196,7 +197,7 @@ import qupath.lib.gui.tools.CommandFinderTools;
 import qupath.lib.gui.tools.GuiTools;
 import qupath.lib.gui.tools.MenuTools;
 import qupath.lib.gui.tools.IconFactory.PathIcons;
-import qupath.lib.gui.viewer.DragDropFileImportListener;
+import qupath.lib.gui.viewer.DragDropImportListener;
 import qupath.lib.gui.viewer.OverlayOptions;
 import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.gui.viewer.QuPathViewerListener;
@@ -323,7 +324,7 @@ public class QuPathGUI {
 	private boolean isStandalone = false;
 	private ScriptMenuLoader sharedScriptMenuLoader;
 	
-	private DragDropFileImportListener dragAndDrop = new DragDropFileImportListener(this);
+	private DragDropImportListener dragAndDrop = new DragDropImportListener(this);
 	
 	private UndoRedoManager undoRedoManager;
 	
@@ -515,7 +516,7 @@ public class QuPathGUI {
 		/**
 		 * Toggle 'selection mode' on/off for all drawing tools.
 		 */
-		@ActionAccelerator("shortcut+alt+s")
+		@ActionAccelerator("shift+s")
 		@ActionIcon(PathIcons.SELECTION_MODE)
 		public final Action SELECTION_MODE = ActionTools.createSelectableAction(PathPrefs.selectionModeProperty(), "Selection mode");
 		
@@ -699,8 +700,10 @@ public class QuPathGUI {
 	 * @return
 	 */
 	public synchronized DefaultActions getDefaultActions() {
-		if (defaultActions == null)
+		if (defaultActions == null) {
 			defaultActions = new DefaultActions();
+			installActions(ActionTools.getAnnotatedActions(defaultActions));
+		}
 		return defaultActions;
 	}
 	
@@ -1200,6 +1203,7 @@ public class QuPathGUI {
 	
 	private void refreshToolsMenu(List<PathTool> tools, Menu menu) {
 		menu.getItems().setAll(tools.stream().map(t -> ActionTools.createCheckMenuItem(getToolAction(t))).collect(Collectors.toList()));
+		MenuTools.addMenuItems(menu, null, ActionTools.createCheckMenuItem(defaultActions.SELECTION_MODE));
 	}
 	
 	
@@ -1933,7 +1937,10 @@ public class QuPathGUI {
 			logger.error("Error saving classes", e);
 		}
 		byte[] bytes = stream.toByteArray();
-		PathPrefs.getUserPreferences().putByteArray("defaultPathClasses", bytes);
+		if (bytes.length < 0.75*Preferences.MAX_VALUE_LENGTH)
+			PathPrefs.getUserPreferences().putByteArray("defaultPathClasses", bytes);
+		else
+			logger.error("Classification list too long ({} bytes) - cannot save it to the preferences.", bytes.length);
 	}
 	
 	
@@ -2116,7 +2123,7 @@ public class QuPathGUI {
 	 * 
 	 * @return
 	 */
-	public DragDropFileImportListener getDefaultDragDropListener() {
+	public DragDropImportListener getDefaultDragDropListener() {
 		return dragAndDrop;
 	}
 	
@@ -2390,7 +2397,9 @@ public class QuPathGUI {
 				ActionTools.createCheckMenuItem(defaultActions.POLYGON_TOOL, groupTools),
 				ActionTools.createCheckMenuItem(defaultActions.POLYLINE_TOOL, groupTools),
 				ActionTools.createCheckMenuItem(defaultActions.BRUSH_TOOL, groupTools),
-				ActionTools.createCheckMenuItem(defaultActions.POINTS_TOOL, groupTools)
+				ActionTools.createCheckMenuItem(defaultActions.POINTS_TOOL, groupTools),
+				null,
+				ActionTools.createCheckMenuItem(defaultActions.SELECTION_MODE)
 //				ActionTools.getActionCheckBoxMenuItem(actionManager.WAND_TOOL, groupTools)
 				);
 
@@ -3016,7 +3025,7 @@ public class QuPathGUI {
 		return installCommand(menuPath, () -> {
 			try {
 				runScript(file, getImageData());
-			} catch (IOException e) {
+			} catch (IOException | ScriptException e) {
 				Dialogs.showErrorMessage("Script error", e);
 			}
 		});
@@ -3032,7 +3041,13 @@ public class QuPathGUI {
 	 * @see #installGroovyCommand(String, File)
 	 */
 	public MenuItem installGroovyCommand(String menuPath, final String script) {
-		return installCommand(menuPath, () -> runScript(script, getImageData()));
+		return installCommand(menuPath, () -> {
+			try {
+				runScript(script, getImageData());
+			} catch (ScriptException e) {
+				Dialogs.showErrorMessage("Script error", e);
+			}
+		});
 	}
 	
 	/**
@@ -3121,8 +3136,9 @@ public class QuPathGUI {
 	 * @param script the script to run
 	 * @param imageData an {@link ImageData} object for the current image (may be null)
 	 * @return result of the script execution
+	 * @throws ScriptException 
 	 */
-	private Object runScript(final String script, final ImageData<BufferedImage> imageData) {
+	private Object runScript(final String script, final ImageData<BufferedImage> imageData) throws ScriptException {
 		return DefaultScriptEditor.executeScript(Language.GROOVY, script, getProject(), imageData, true, null);
 	}
 	
@@ -3133,8 +3149,9 @@ public class QuPathGUI {
 	 * @param imageData an {@link ImageData} object for the current image (may be null)
 	 * @return result of the script execution
 	 * @throws IOException 
+	 * @throws ScriptException 
 	 */
-	private Object runScript(final File file, final ImageData<BufferedImage> imageData) throws IOException {
+	private Object runScript(final File file, final ImageData<BufferedImage> imageData) throws IOException, ScriptException {
 		var script = GeneralTools.readFileAsString(file.getAbsolutePath());
 		return runScript(script, imageData);
 	}
