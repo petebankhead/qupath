@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -166,6 +167,9 @@ public class HierarchyOverlay extends AbstractOverlay {
 		// Get the annotations & selected objects (which must be painted directly)
 		Collection<PathObject> selectedObjects = new ArrayList<>(hierarchy.getSelectionModel().getSelectedObjects());
 		selectedObjects.removeIf(p -> !p.hasROI() || (p.getROI().getZ() != z || p.getROI().getT() != t));
+		// Because we use 'contains', if we have a lot of selected objects it's worth switching to a set
+		if (selectedObjects.size() > 10)
+			selectedObjects = new HashSet<>(selectedObjects);
 
 		ImageRegion region = AwtTools.getImageRegion(boundsDisplayed, z, t);
 		
@@ -214,7 +218,8 @@ public class HierarchyOverlay extends AbstractOverlay {
 
 		// Prepare to handle labels, if we need to
 		Collection<PathObject> objectsWithNames = new ArrayList<>();
-		Collection<PathObject> annotations = hierarchy.getObjectsForRegion(PathAnnotationObject.class, region, null);
+		Collection<PathObject> annotations = overlayOptions.getShowAnnotations() ? 
+				hierarchy.getObjectsForRegion(PathAnnotationObject.class, region, null) : Collections.emptyList();
 		for (var iterator = annotations.iterator(); iterator.hasNext(); ) {
 			var next = iterator.next();
 			if ((next.getName() != null && !next.getName().isBlank()))

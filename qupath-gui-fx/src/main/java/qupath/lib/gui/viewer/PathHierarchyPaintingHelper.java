@@ -45,8 +45,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.WeakHashMap;
 
+import org.locationtech.jts.simplify.DouglasPeuckerSimplifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,6 +77,7 @@ import qupath.lib.objects.hierarchy.events.PathObjectSelectionModel;
 import qupath.lib.plugins.ParallelTileObject;
 import qupath.lib.regions.ImageRegion;
 import qupath.lib.roi.EllipseROI;
+import qupath.lib.roi.GeometryTools;
 import qupath.lib.roi.LineROI;
 import qupath.lib.roi.RoiTools;
 import qupath.lib.roi.PointsROI;
@@ -540,46 +543,9 @@ public class PathHierarchyPaintingHelper {
 		
 		// TODO: Consider if it makes sense to map to PathHierarchyImageServer preferred downsamples
 		// (Only if shape simplification is often used for detection objects)
-		private Map<ROI, Shape> map50 = Collections.synchronizedMap(new WeakHashMap<>());
-		private Map<ROI, Shape> map20 = Collections.synchronizedMap(new WeakHashMap<>());
-		private Map<ROI, Shape> map10 = Collections.synchronizedMap(new WeakHashMap<>());
-		private Map<ROI, Shape> map = Collections.synchronizedMap(new WeakHashMap<>());
-		
-		
-		private Map<ROI, Shape> getMap(final ROI shape, final double downsample) {
-			// If we don't have many vertices, just return the main map - no need to simplify
-			int nVertices = shape.getNumPoints();
-//			if (shape instanceof PolygonROI)
-//				nVertices = ((PolygonROI)shape).nVertices();
-//			else if (shape instanceof AreaROI)
-//				nVertices = ((AreaROI)shape).nVertices();
-			if (nVertices < MIN_SIMPLIFY_VERTICES || !shape.isArea())
-				return map;
-			
-			if (downsample > 50)
-				return map50;
-			if (downsample > 20)
-				return map20;
-			if (downsample > 10)
-				return map10;
-			return map;
-		}
-		
-		private static Shape simplifyByDownsample(final Shape shape, final double downsample) {
-			try {
-				if (downsample > 50)
-					return ShapeSimplifier.simplifyPath(shape instanceof Path2D ? (Path2D)shape : new Path2D.Float(shape), 50);
-				if (downsample > 20)
-					return ShapeSimplifier.simplifyPath(shape instanceof Path2D ? (Path2D)shape : new Path2D.Float(shape), 20);
-				if (downsample > 10)
-					return ShapeSimplifier.simplifyPath(shape instanceof Path2D ? (Path2D)shape : new Path2D.Float(shape), 10);
-			} catch (Exception e) {
-				logger.warn("Unable to simplify path: {}", e.getLocalizedMessage());
-				logger.debug("", e);
-			}
-			return shape;
-		}
-		
+		private Map<ROI, Map<Double, Shape>> map = Collections.synchronizedMap(new WeakHashMap<>());
+
+		private boolean downsampleByGeometry = true;
 		
 		public Shape getShape(final ROI roi, final double downsample) {
 			if (roi instanceof RectangleROI) {
@@ -601,25 +567,77 @@ public class PathHierarchyPaintingHelper {
 				return line;
 			}
 			
-			Map<ROI, Shape> map = getMap(roi, downsample);
-//			map.clear();
-			Shape shape = map.get(roi);
-			if (shape == null) {
-				shape = RoiTools.getShape(roi);
-				// Downsample if we have to
-				if (map != this.map) {
-					// JTS methods are much slower
-//					var simplifier = new DouglasPeuckerSimplifier(roi.getGeometry());
-//					var simplifier = new VWSimplifier(roi.getGeometry());
-//					simplifier.setDistanceTolerance(downsample);
-//					simplifier.setEnsureValid(false);
-//					shape = GeometryTools.geometryToShape(simplifier.getResultGeometry());
-					shape = simplifyByDownsample(shape, downsample);
-				}
-				map.put(roi, shape);
+			Map<Double, Shape> shapeMap = map.computeIfAbsent(roi, r -> getDownsampledShapes(r));
+			Shape shape = null;
+			for (var entry : shapeMap.entrySet()) {
+				if (shape == null || downsample > entry.getKey())
+					shape = entry.getValue();
+				else
+					break;
 			}
-//			map.clear();
 			return shape;
+		}
+		
+		Map<Double, Shape> getDownsampledShapes(ROI roi) {
+			if (downsampleByGeometry)
+				return getDownsampledShapesByGeometry(roi);
+			
+			Map<Double, Shape> map = new TreeMap<>();
+			var shape = roi.getShape();
+			map.put(1.0, shape);
+			shape = shape instanceof Path2D ? (Path2D)shape : new Path2D.Float(shape);
+//			int nPoints = roi.getNumPoints();
+//			if (nPoints > 1000)
+//				System.err.println("Starting " + nPoints);
+			double downsample = 4.0;
+			while (downsample <= 256) {
+				// Progressively simplify the shape
+				if (downsample > 1)
+					shape = ShapeSimplifier.simplifyPath((Path2D)shape, downsample / 2.0);
+				map.put(downsample, shape);
+				downsample *= 2;
+				// Stop early if the shape is 'simple enough'
+				int nPoints = countPoints(shape);
+				if (nPoints <= 100)
+					break;
+//				else if (nPoints > 1000)
+//					System.err.println(downsample + ": \t" + nLines);
+			}
+			return map;
+		}
+		
+		Map<Double, Shape> getDownsampledShapesByGeometry(ROI roi) {
+			Map<Double, Shape> map = new TreeMap<>();
+			var geometry = roi.getGeometry();
+//			int nPoints = roi.getNumPoints();
+			map.put(1.0, roi.getShape());
+			double downsample = 4.0;
+			while (downsample <= 256) {
+				// Progressively simplify the shape
+				var simplifier = new DouglasPeuckerSimplifier(geometry);
+				simplifier.setDistanceTolerance(downsample / 2.0);
+				simplifier.setEnsureValid(false);
+				geometry = simplifier.getResultGeometry();
+				map.put(downsample, GeometryTools.geometryToShape(geometry));
+				// Stop early if the shape is 'simple enough'
+				int nPoints2 = geometry.getNumPoints();
+				if (nPoints2 <= 10)
+					break;
+//				else if (nPoints > 1000)
+//					System.err.println(downsample + ": \t" + nPoints2);
+				downsample *= 2;
+			}
+			return map;
+		}
+		
+		// Helper method when checking when to stop simplification
+		static int countPoints(Shape shape) {
+			var iterator = shape.getPathIterator(null);
+			int count = 0;
+			while (!iterator.isDone()) {
+				iterator.next();
+			}
+			return count;
 		}
 		
 	}
