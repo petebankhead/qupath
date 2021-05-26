@@ -51,7 +51,6 @@ import java.nio.IntBuffer;
 import java.nio.ShortBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -135,11 +134,16 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 	 * Minimum tile size - smaller values will be ignored.
 	 */
 	private static int MIN_TILE_SIZE = 32;
-	
+
 	/**
-	 * Maximum tile size - larger values will be ignored.
+	 * Default tile size - when no other value is available.
 	 */
-	private static int MAX_TILE_SIZE = 4096;
+	private static int DEFAULT_TILE_SIZE = 512;
+
+//	/**
+//	 * Maximum tile size - larger values will be ignored.
+//	 */
+//	private static int MAX_TILE_SIZE = 4096;
 	
 	/**
 	 * Image names (in lower case) normally associated with 'extra' images, but probably not representing the main image in the file.
@@ -290,8 +294,20 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 		if (requestedSeriesName.isBlank())
 			requestedSeriesName = null;
 		
-		// This appears to work more reliably than converting to a File
-		filePath = Paths.get(uri).toString();
+		// Try to get a local file path, but accept something else (since Bio-Formats handles other URIs)
+		try {
+			var path = GeneralTools.toPath(uri);
+			if (path != null)
+				filePath = path.toString();
+//			filePath = Paths.get(uri).toString();
+		} catch (Exception e) {
+			logger.error(e.getLocalizedMessage(), e);
+		} finally {
+			if (filePath == null) {
+				logger.debug("Using URI as file path: {}", uri);
+				filePath = uri.toString();
+			}
+		}
 
 		// Create a reader & extract the metadata
 		readerWrapper = manager.getPrimaryReaderWrapper(options, filePath, readerOptions);
@@ -457,14 +473,10 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 			nChannels = reader.getSizeC();
 
 			// Make sure tile sizes are within range
-			if (tileWidth <= 0)
-				tileWidth = 256;
-			if (tileHeight <= 0)
-				tileHeight = 256;
-			if (tileWidth > width)
-				tileWidth = width;
-			if (tileHeight > height)
-				tileHeight = height;
+			if (tileWidth != width)
+				tileWidth = getDefaultTileLength(tileWidth, width);
+			if (tileHeight != height)
+				tileHeight = getDefaultTileLength(tileHeight, height);
 
 			// Prepared to set channel colors
 			List<ImageChannel> channels = new ArrayList<>();
@@ -550,11 +562,11 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 					}
 					Integer channelColor = null;
 					if (color != null)
-						channelColor = ColorTools.makeRGBA(color.getRed(), color.getGreen(), color.getBlue(), color.getAlpha());
+						channelColor = ColorTools.packARGB(color.getAlpha(), color.getRed(), color.getGreen(), color.getBlue());
 					else {
 						// Select next available default color, or white (for grayscale) if only one channel
 						if (nChannels == 1)
-							channelColor = ColorTools.makeRGB(255, 255, 255);
+							channelColor = ColorTools.packRGB(255, 255, 255);
 						else
 							channelColor = ImageChannel.getDefaultChannelColor(c);
 					}
@@ -699,8 +711,11 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 				builder = builder.zSpacingMicrons(zSpacing);
 
 			// Check the tile size if it is reasonable
-			if (tileWidth >= MIN_TILE_SIZE && tileWidth <= MAX_TILE_SIZE && tileHeight >= MIN_TILE_SIZE && tileHeight <= MAX_TILE_SIZE)
+			if ((long)tileWidth * (long)tileHeight * (long)nChannels * (bpp/8) >= Integer.MAX_VALUE) {
+				builder.preferredTileSize(Math.min(DEFAULT_TILE_SIZE, width), Math.min(DEFAULT_TILE_SIZE, height));
+			} else
 				builder.preferredTileSize(tileWidth, tileHeight);
+
 			originalMetadata = builder.build();
 		}
 
@@ -711,6 +726,23 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 		long endTime = System.currentTimeMillis();
 		logger.debug(String.format("Initialization time: %d ms", endTime-startTime));
 	}
+	
+	
+	/**
+	 * Get a sensible default tile size for a specified dimension.
+	 * @param tileLength tile width or height
+	 * @param imageLength corresponding image width or height
+	 * @return a sensible tile length, bounded by the image width or height
+	 */
+	static int getDefaultTileLength(int tileLength, int imageLength) {
+		if (tileLength <= 0) {
+			tileLength = DEFAULT_TILE_SIZE;
+		} else if (tileLength < MIN_TILE_SIZE) {
+			tileLength = (int)Math.ceil((double)MIN_TILE_SIZE / tileLength) * tileLength;
+		}
+		return Math.min(tileLength, imageLength);
+	}
+	
 	
 	
 	/**
@@ -1288,7 +1320,8 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 			Memoizer memoizer = null;
 			int memoizationTimeMillis = options.getMemoizationTimeMillis();
 			File dir = null;
-			if (memoizationTimeMillis >= 0) {
+			// We can only use memoization if we don't have an illegal character
+			if (memoizationTimeMillis >= 0 && !id.contains(":")) {
 				// Try to use a specified directory
 				String pathMemoization = options.getPathMemoization();
 				if (pathMemoization != null && !pathMemoization.trim().isEmpty()) {
