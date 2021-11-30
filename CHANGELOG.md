@@ -4,9 +4,18 @@
 This is a *minor release* that aims to be fully compatible with v0.3.0 while fixing bugs.
 
 List of bugs fixed:
+* 'Add intensity features' does not reinitialize options (including channels) when new images are opened (https://github.com/qupath/qupath/issues/836)
+* 'Keep settings' in Brightness/Contrast dialog does not always retain channel colors (https://github.com/qupath/qupath/issues/843)
 * Up arrow can cause viewer to move beyond nSlices for Z-stack (https://github.com/qupath/qupath/issues/821)
 * Location text does not update when navigating with keyboard (https://github.com/qupath/qupath/issues/819)
+* Multichannel .tif output is broken in TileExporter (https://github.com/qupath/qupath/issues/838)
+* Main class and classpath missing from app jar (https://github.com/qupath/qupath/issues/818)
+* MeasurementList is ignored for some objects when importing from GeoJSON (https://github.com/qupath/qupath/issues/845)
+* Backspace and delete don't do anything when the annotation list is in focus (https://github.com/qupath/qupath/issues/847)
 
+### Dependency updates
+* JavaFX 17.0.1
+  * Introduced to fix UI bugs, e.g. https://github.com/qupath/qupath/issues/833
 
 ## Version 0.3.0
 
