@@ -54,6 +54,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import javax.imageio.ImageIO;
@@ -528,7 +529,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			return;
 		
 		// We need to repaint everything if the display changed
-		if (imageDisplay != null && (lastDisplayChangeTimestamp != imageDisplay.getLastChangeTimestamp())) {
+		if (displayRenderer != null && (lastDisplayChangeTimestamp != displayRenderer.getLastChangeTimestamp())) {
 			repaintEntireImage();
 			return;
 		}
@@ -807,6 +808,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		//		setDebugGraphicsOptions(DebugGraphics.LOG_OPTION);
 
 		this.imageDisplay = imageDisplay;
+		this.displayRenderer = new ImageDisplayRenderer(imageDisplay);
 
 		// Prepare overlay layers
 		customOverlayLayers.addListener((Change<? extends PathOverlay> e) -> refreshAllOverlayLayers());
@@ -1354,9 +1356,73 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @return
 	 */
 	protected ImageRenderer getRenderer() {
-		return getImageDisplay();
+		return displayRenderer;
 	}
 	
+	private ImageDisplayRenderer displayRenderer;	
+	
+	private class ImageDisplayRenderer implements ImageRenderer {
+		
+		private String id = UUID.randomUUID().toString();
+		
+		private ImageDisplay display;
+		
+		private double gamma = 1.0;
+		private LookupOp gammaOp = null;
+		
+		private ColorConvertOp iccTransformOp = null;
+		private boolean doICCTransform = false;
+
+		private long opTimestamp = 0L;
+		
+		private ImageDisplayRenderer(ImageDisplay display) {
+			this.display = display;
+		}
+		
+		@Override
+		public BufferedImage applyTransforms(BufferedImage imgInput, BufferedImage imgOutput) {
+			var imgRGB = display.applyTransforms(imgInput, imgOutput);
+			if (iccTransformOp != null && doICCTransform) {
+				iccTransformOp.filter(imgRGB.getRaster(), imgRGB.getRaster());
+			}
+			ensureGammaUpdated();
+			if (gammaOp != null) {
+				gammaOp.filter(imgRGB.getRaster(), imgRGB.getRaster());
+			}
+			return imgRGB;
+		}
+
+		@Override
+		public long getLastChangeTimestamp() {
+			ensureGammaUpdated();
+			return Math.max(display.getLastChangeTimestamp(), opTimestamp);
+		}
+
+		@Override
+		public String getUniqueID() {
+			return id + " timestamp " + getLastChangeTimestamp();
+		}
+		
+		private void ensureGammaUpdated() {
+			var gammaProperty = PathPrefs.viewerGammaProperty().get();
+			if (gamma != gammaProperty) {
+				updateGamma(gammaProperty);
+				imageUpdated = true;
+			}
+		}
+		
+		private void updateGamma(final double gamma) {
+			if (this.gamma == gamma)
+				return;
+			if (gamma == 1 || gamma <= 0 || !Double.isFinite(gamma))
+				gammaOp = null;
+			else
+				gammaOp = createGammaOp(gamma);
+			this.gamma = gamma;
+			opTimestamp = System.currentTimeMillis();
+		}
+				
+	}
 
 
 	/**
@@ -1711,9 +1777,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 */
 	public void repaintEntireImage() {
 		imageUpdated = true;
-		if (imageDisplay != null)
-			lastDisplayChangeTimestamp = imageDisplay.getLastChangeTimestamp();
-		ensureGammaUpdated();
+		if (displayRenderer != null)
+			lastDisplayChangeTimestamp = displayRenderer.getLastChangeTimestamp();
 		updateThumbnail();
 		repaint();		
 	}
@@ -2047,14 +2112,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		Graphics2D gBuffered = imgBuffer.createGraphics();
 		updateBufferedImage(gBuffered, shapeRegion, w, h);
 		gBuffered.dispose();
-		// Apply color transforms, if required
-		if (iccTransformOp != null) {
-			iccTransformOp.filter(this.imgBuffer.getRaster(), this.imgBuffer.getRaster());
-		}
-		ensureGammaUpdated();
-		if (gammaOp != null) {
-			gammaOp.filter(this.imgBuffer.getRaster(), this.imgBuffer.getRaster());
-		}
 	}
 
 	//	private void updateBufferedImage(final BufferedImage imgBuffer, final Shape shapeRegion) {
@@ -2103,16 +2160,17 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			// the image as we go along (tile by tile), but we can apply a single transform afterwards.
 			// *However* this shouldn't be applied if the region we are viewing extends beyond the image boundary, as it means we would be color-transforming the background color.
 			// For a non-RGB image, or if the viewed region is over the image boundary, the transform should be applied in advance to the thumbnail, and then tile-by-tile during painting.
-			if (server.isRGB() && !overBoundary) {
-				regionStore.paintRegion(server, gBuffered, shapeToUpdate, getZPosition(), getTPosition(), downsample, imgThumbnail, null, null);
-				gBuffered.dispose();
-				if (imageDisplay != null)
-//					imgBuffer = imageDisplay.applyTransforms(imgBuffer, imgBuffer);
-//					 More benchmarking required... but reusing imgBuffer was killing performance for RGB transform on Java 8 (JavaFX)... possibly
-					imgBuffer = getRenderer().applyTransforms(imgBuffer, null);
-			} else {
-				regionStore.paintRegion(server, gBuffered, shapeToUpdate, getZPosition(), getTPosition(), downsample, imgThumbnail, null, getRenderer());
-			}
+			var renderer = getRenderer();
+//			if (server.isRGB() && !overBoundary) {
+//				regionStore.paintRegion(server, gBuffered, shapeToUpdate, getZPosition(), getTPosition(), downsample, imgThumbnail, null, null);
+//				gBuffered.dispose();
+//				if (renderer != null)
+////					imgBuffer = imageDisplay.applyTransforms(imgBuffer, imgBuffer);
+////					 More benchmarking required... but reusing imgBuffer was killing performance for RGB transform on Java 8 (JavaFX)... possibly
+//					imgBuffer = renderer.applyTransforms(imgBuffer, null);
+//			} else {
+				regionStore.paintRegion(server, gBuffered, shapeToUpdate, getZPosition(), getTPosition(), downsample, imgThumbnail, null, renderer);
+//			}
 		} else {
 			// Just paint the 'thumbnail' version, which has already (potentially) been color-transformed
 			paintThumbnail(gBuffered, imgThumbnailRGB, serverWidth, serverHeight, this);
@@ -2213,44 +2271,20 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 	
 	
-	private double gamma = 1.0;
-	private LookupOp gammaOp = null;
-	
-	private ColorConvertOp iccTransformOp = null;
-	private boolean doICCTransform = false;
-	
-	void setGamma(final double gamma) {
-		if (this.gamma == gamma)
-			return;
-		if (gamma == 1 || gamma <= 0 || !Double.isFinite(gamma))
-			gammaOp = null;
-		else
-			gammaOp = createGammaOp(gamma);
-		this.gamma = gamma;
-	}
-	
-	void ensureGammaUpdated() {
-		var gammaProperty = PathPrefs.viewerGammaProperty().get();
-		if (gamma != gammaProperty) {
-			setGamma(gammaProperty);
-			imageUpdated = true;
-		}
-	}
-	
-	void updateICCTransform() {
+	private void updateICCTransform() {
 		if (getDoICCTransform())
-			iccTransformOp = createICCConvertOp();
+			displayRenderer.iccTransformOp = createICCConvertOp();
 		else
-			iccTransformOp = null;
+			displayRenderer.iccTransformOp = null;
 	}
 	
 	void setDoICCTransform(final boolean doTransform) {
-		this.doICCTransform = doTransform;
+		displayRenderer.doICCTransform = doTransform;
 		updateICCTransform();
 	}
 
 	boolean getDoICCTransform() {
-		return doICCTransform;
+		return displayRenderer.doICCTransform;
 	}
 	
 	static void paintFinalImage(Graphics g, Image img, QuPathViewer viewer) {
