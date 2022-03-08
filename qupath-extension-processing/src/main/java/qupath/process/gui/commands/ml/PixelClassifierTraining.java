@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -270,10 +270,10 @@ public class PixelClassifierTraining {
     
     private synchronized void resetTrainingData() {
         if (matTraining != null)
-            matTraining.release();
+            matTraining.close();
         matTraining = null;
         if (matTargets != null)
-            matTargets.release();
+            matTargets.close();
         matTargets = null;
     }
 
@@ -395,6 +395,10 @@ public class PixelClassifierTraining {
 					features.rois.equals(rois) &&
 					features.request.equals(request))
 				return features;
+			else {
+				// If we need new features, close the old ones (to free the Mats now)
+				features.close();
+			}
 		}
 		
 		// Calculate new features
@@ -411,7 +415,7 @@ public class PixelClassifierTraining {
 	}
     
     
-    private static class TileFeatures {
+    private static class TileFeatures implements AutoCloseable {
     	    	    	
     	private Map<PathClass, Integer> labels;
     	private ImageDataServer<BufferedImage> featureServer;
@@ -550,6 +554,18 @@ public class PixelClassifierTraining {
     	public Mat getTargets() {
     		return matTargets;
     	}
+
+		@Override
+		public void close() {
+			if (matFeatures != null) {
+				matFeatures.close();
+				matFeatures = null;
+			}
+			if (matTargets != null) {
+				matTargets.close();
+				matTargets = null;
+			}
+		}
 
     }
     

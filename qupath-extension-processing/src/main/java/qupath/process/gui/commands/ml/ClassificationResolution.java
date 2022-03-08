@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -69,9 +69,12 @@ public class ClassificationResolution {
 	
 	@Override
 	public String toString() {
-		if (cal.hasPixelSizeMicrons())
-			return String.format("%s (%.2f %s/px)", name, cal.getAveragedPixelSizeMicrons(), GeneralTools.micrometerSymbol());
-		else
+		if (cal.hasPixelSizeMicrons()) {
+			double val = cal.getAveragedPixelSizeMicrons();
+			int maxDP = (int)Math.max(2, Math.ceil(-Math.log10(val)));
+			var resString = GeneralTools.formatNumber(val, maxDP);
+			return String.format("%s (%s %s/px)", name, resString, GeneralTools.micrometerSymbol());
+		} else
 			return String.format("%s (downsample = %.2f)", name, cal.getAveragedPixelSize().doubleValue());
 	}
 	

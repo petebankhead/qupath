@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -526,7 +526,7 @@ public class PixelClassifierPane {
 		paneFeatures.setHgap(5);
 		paneFeatures.setVgap(5);
 		paneFeatures.setPadding(new Insets(5));
-		paneFeatures.prefWidthProperty().bind(viewerBorderPane.prefWidthProperty());
+//		paneFeatures.prefWidthProperty().bind(viewerBorderPane.prefWidthProperty());
 		viewerBorderPane.setBottom(paneFeatures);
 		
 		var splitPane = new BorderPane(viewerBorderPane);
