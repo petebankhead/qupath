@@ -48,7 +48,6 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ColorTransforms;
 import qupath.lib.images.servers.ColorTransforms.ColorTransform;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.servers.PixelCalibration;
 import qupath.opencv.ops.ImageDataOp;
 import qupath.opencv.ops.ImageOp;
 import qupath.opencv.ops.ImageOps;
@@ -63,7 +62,12 @@ abstract class ImageDataTransformerBuilder {
 	
 	private final static Logger logger = LoggerFactory.getLogger(ImageDataTransformerBuilder.class);
 
-	public abstract ImageDataOp build(ImageData<BufferedImage> imageData, PixelCalibration resolution);
+	/**
+	 * Build an {@link ImageDataOp} to transform an image.
+	 * @param baseOp an optional base op (may be null); if available, operations will be appended where possible
+	 * @return
+	 */
+	public abstract ImageDataOp build(ImageDataOp baseOp);
 
 	public boolean canCustomize(ImageData<BufferedImage> imageData) {
 		return false;
@@ -379,7 +383,7 @@ abstract class ImageDataTransformerBuilder {
 
 
 		@Override
-		public ImageDataOp build(ImageData<BufferedImage> imageData, PixelCalibration resolution) {
+		public ImageDataOp build(ImageDataOp baseOp) {
 			
 			if (selectedFeatures == null || selectedSigmas == null)
 				throw new IllegalArgumentException("Features and scales must be selected!");
@@ -426,7 +430,13 @@ abstract class ImageDataTransformerBuilder {
 				op = ImageOps.Core.sequential(opNormalize, op);
 //				op = ImageOps.Core.sequential(op, opNormalize);
 						
-			return ImageOps.buildImageDataOp(selectedChannels).appendOps(op);
+			
+			if (baseOp == null)
+				return ImageOps.buildImageDataOp(selectedChannels).appendOps(op);
+			else {
+				logger.warn("Cannot use selected channels with base op {}", baseOp);
+				return baseOp.appendOps(op);
+			}
 		}
 
 		@Override

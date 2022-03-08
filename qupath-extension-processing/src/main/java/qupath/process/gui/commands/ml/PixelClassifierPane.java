@@ -111,6 +111,8 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.PixelCalibration;
+import qupath.lib.images.servers.PixelType;
+import qupath.lib.io.GsonTools;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
@@ -124,6 +126,7 @@ import qupath.opencv.ml.OpenCVClassifiers;
 import qupath.opencv.ml.OpenCVClassifiers.OpenCVStatModel;
 import qupath.opencv.ml.OpenCVClassifiers.RTreesClassifier;
 import qupath.opencv.ml.pixel.PixelClassifiers;
+import qupath.opencv.ops.ImageDataOp;
 import qupath.opencv.ops.ImageOp;
 import qupath.opencv.ops.ImageOps;
 import qupath.process.gui.commands.ml.PixelClassifierTraining.ClassifierTrainingData;
@@ -714,9 +717,8 @@ public class PixelClassifierPane {
 	
 	
 	private void updateFeatureCalculator() {
-		var cal = getSelectedResolution();
 		var imageData = qupath.getImageData();
-		helper.setFeatureOp(selectedFeatureCalculatorBuilder.get().build(imageData, cal));
+		helper.setFeatureOp(selectedFeatureCalculatorBuilder.get().build(null));
 		var featureServer = helper.getFeatureServer(imageData);
 		if (featureServer == null) {
 			comboDisplayFeatures.getItems().setAll(DEFAULT_CLASSIFICATION_OVERLAY);
@@ -810,7 +812,7 @@ public class PixelClassifierPane {
 	
 	private void updateClassifier(boolean doClassification) {
 		if (doClassification)
-			doClassification();
+			doClassification(false);
 		else
 			replaceOverlay(null);
 	}
@@ -892,7 +894,9 @@ public class PixelClassifierPane {
 	
 	
 	
-	private void doClassification() {
+	private ImageDataOp lastTrainedOp = null;
+	
+	private void doClassification(boolean requestRetrain) {
 //		if (helper == null || helper.getFeatureServer() == null) {
 ////			updateFeatureCalculator();
 ////			updateClassifier();
@@ -914,6 +918,14 @@ public class PixelClassifierPane {
 			Dialogs.showErrorNotification("Pixel classifier", "No classifier selected!");
 			return;
 		}
+		
+		
+		if (requestRetrain)
+			lastTrainedOp = null;
+		else
+			lastTrainedOp = null;
+		helper.setFeatureOp(selectedFeatureCalculatorBuilder.get().build(lastTrainedOp));
+		
 
 		ClassifierTrainingData trainingData;
 		try {
@@ -1061,7 +1073,13 @@ public class PixelClassifierPane {
 				 .outputChannels(channels)
 				 .build();
 
-		 currentClassifier.set(PixelClassifiers.createClassifier(model, featureCalculator, metadata, true));
+		 if (requestRetrain) {
+			 var model2 = GsonTools.getInstance().fromJson(GsonTools.getInstance().toJson(model, OpenCVStatModel.class), OpenCVStatModel.class);
+			 lastTrainedOp = featureCalculator.appendOps(ImageOps.ML.statModel(model2, true), ImageOps.Core.ensureType(PixelType.FLOAT32), ImageOps.Normalize.channelSum(1.0));
+			 doClassification(true);
+			 return;
+		 } else
+			 currentClassifier.set(PixelClassifiers.createClassifier(model, featureCalculator, metadata, true));
 
 		 var overlay = PixelClassificationOverlay.create(qupath.getOverlayOptions(), currentClassifier.get(), getLivePredictionThreads());
 		 replaceOverlay(overlay);
