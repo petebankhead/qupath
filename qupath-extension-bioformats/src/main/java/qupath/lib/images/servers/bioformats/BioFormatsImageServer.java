@@ -1,5 +1,5 @@
-/*-
- * #%L
+/*
+ * * #%L
  * This file is part of QuPath.
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
@@ -60,6 +60,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -595,7 +596,7 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 				// and we want to take advantage of the optimizations where we can
 				if (nChannels == 3 && 
 						pixelType == PixelType.UINT8 &&
-						channels.equals(ImageChannel.getDefaultRGBChannels())
+						rgbChannels(channels)
 						) {
 					isRGB = true;
 					colorModel = ColorModel.getRGBdefault();
@@ -765,6 +766,23 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 	}
 	
 	
+	static boolean rgbChannels(List<ImageChannel> channels) {
+		if (channels.size() != 3)
+			return false;
+		var defaultRGB = ImageChannel.getDefaultRGBChannels();
+		if (channels.equals(defaultRGB))
+			return true;
+		for (int i = 0; i < channels.size(); i++) {
+			if (!Objects.equals(channels.get(i).getColor(), defaultRGB.get(i).getColor()))
+				return false;
+			var name = channels.get(i).getName().strip().toLowerCase();
+			if (!(name.equals(defaultRGB.get(i).getName().strip().toLowerCase()) || name.equals("channel " + (i + 1))))
+				return false;
+		}
+		return true;
+	}
+	
+	
 	/**
 	 * Get a sensible default tile size for a specified dimension.
 	 * @param tileLength tile width or height
@@ -854,7 +872,7 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 	public BufferedImage readTile(TileRequest tileRequest) throws IOException {
 		try {
 			return readerPool.openImage(tileRequest, series, nChannels(), isRGB(), colorModel);
-		} catch (InterruptedException e) {
+		} catch (Exception e) {
 			throw new IOException(e);
 		}
 	}
@@ -1368,8 +1386,21 @@ public class BioFormatsImageServer extends AbstractTileableImageServer {
 			}
 
 			WritableRaster raster = WritableRaster.createWritableRaster(sampleModel, dataBuffer, null);
+			if (!colorModel.isCompatibleRaster(raster)) {
+				// Try to ensure we have a raster compatible with the color model
+				// Specifically, this should handle the case or RGB images that are stored as bytes rather than 
+				// packed ints
+				BufferedImage img;
+				if (raster.getNumDataElements() == 3 && colorModel == ColorModel.getRGBdefault()) 
+					img = new BufferedImage(raster.getWidth(), raster.getHeight(), BufferedImage.TYPE_INT_RGB);
+				else {
+					var raster2 = colorModel.createCompatibleWritableRaster(raster.getWidth(), raster.getHeight());
+					img = new BufferedImage(colorModel, raster2, false, null);					
+				}
+				img.setData(raster);
+				return img;
+			}
 			return new BufferedImage(colorModel, raster, false, null);
-			
 		}
 		
 		
