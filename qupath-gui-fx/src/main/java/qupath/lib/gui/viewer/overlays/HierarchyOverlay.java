@@ -282,24 +282,38 @@ public class HierarchyOverlay extends AbstractOverlay {
 			float fontSize = (float)(requestedFontSize * downsampleFactor);
 			if (!GeneralTools.almostTheSame(font.getSize2D(), fontSize, 0.001))
 				font = font.deriveFont(fontSize);
-			
-			g2d.setFont(font);
-			var metrics = g2d.getFontMetrics(font);
+
+			var metricsOrig = g2d.getFontMetrics(font);
+
 			var rect = new Rectangle2D.Double();
 			g2d.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
 			g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
+			double padDefault = 5.0 * downsampleFactor;
+			
+			var colorBackground = new Color(0, 0, 0, 92);
 			for (var annotation : objectsWithNames) {
 				var name = annotation.getName();
 				
 				var roi = annotation.getROI();
 				
 				if (name != null && !name.isBlank() && roi != null && !overlayOptions.isPathClassHidden(annotation.getPathClass())) {
-					g2d.setColor(ColorToolsAwt.TRANSLUCENT_BLACK);
-	
+					g2d.setColor(colorBackground);
+
+					g2d.setFont(font);
+					var metrics = metricsOrig;
+
 					var bounds = metrics.getStringBounds(name, g2d);
+					double rescale = (roi.getBoundsWidth() - padDefault * 2) / bounds.getWidth();
+					if (rescale < 1) {
+						var font2 = font.deriveFont((float)(font.getSize2D() * rescale));
+						g2d.setFont(font2);
+						
+						metrics = g2d.getFontMetrics(font2);
+						bounds = metrics.getStringBounds(name, g2d);
+					}
 					
-					double pad = 5.0 * downsampleFactor;
+					double pad = padDefault * Math.min(rescale, 1);
 					double x = roi.getCentroidX() - bounds.getWidth() / 2.0;
 					double y = roi.getCentroidY() + bounds.getY() + metrics.getAscent() + pad;
 	
