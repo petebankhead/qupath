@@ -52,6 +52,7 @@ import qupath.lib.projects.Project;
 import qupath.lib.roi.RoiTools;
 import qupath.lib.roi.ShapeSimplifier;
 import qupath.lib.scripting.QP;
+import qupath.lib.scripting.ScriptInfo;
 
 /**
  * Default implementation for a {@link ScriptLanguage}, based on a {@link ScriptEngine}.
@@ -165,7 +166,9 @@ public class DefaultScriptLanguage extends ScriptLanguage implements RunnableLan
 		context = context == null ? DefaultScriptEditor.createDefaultContext() : context;
 		
 		try {
-			result = ScriptLanguageProvider.getEngineByName(getName()).eval(script2, context);
+			var engine = ScriptLanguageProvider.getEngineByName(getName());
+//			System.err.println(engine); // Used during development to check ScriptEngines are different objects
+			result = engine.eval(script2, context);
 		} catch (ScriptException e) {
 			try {
 				int line = e.getLineNumber();
@@ -269,6 +272,7 @@ public class DefaultScriptLanguage extends ScriptLanguage implements RunnableLan
 			throw e;
 		} finally {
 			QP.resetBatchProjectAndImage();
+			QP.resetBatchScriptInfo();
 		}
 		return result;
 	}

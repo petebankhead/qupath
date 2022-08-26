@@ -192,6 +192,11 @@ public class QP {
 	private static Map<Thread, Project<BufferedImage>> batchProject = new WeakHashMap<>();
 	
 	/**
+	 * Store {@link ScriptInfo} for the script thread
+	 */
+	private static Map<Thread, ScriptInfo> batchScriptInfo = new WeakHashMap<>();
+	
+	/**
 	 * Placeholder for the path to the current project.
 	 * May be used as follows:
 	 * <pre>
@@ -406,6 +411,7 @@ public class QP {
 	public static void setBatchProjectAndImage(final Project<BufferedImage> project, final ImageData<BufferedImage> imageData) {
 		setBatchProject(project);
 		setBatchImageData(imageData);
+		
 	}
 	
 	/**
@@ -427,6 +433,40 @@ public class QP {
 		if (imageData == null)
 			return batchImageData.remove(thread);
 		return batchImageData.put(thread, imageData);
+	}
+	
+	/**
+	 * Set the {@link ScriptInfo} to use for batch processing.  This will be local for the current thread.
+	 * This should be set prior to running any script if it is necessary to be able to query information about the script 
+	 * (e.g. the location of the script file).
+	 * @param info
+	 * @return
+	 * @since v0.4.0
+	 */
+	public static ScriptInfo setBatchScriptInfo(final ScriptInfo info) {
+		Thread thread = Thread.currentThread();
+		logger.trace("Setting script info for {} to {}", thread, info);
+		if (info == null)
+			return batchScriptInfo.remove(thread);
+		return batchScriptInfo.put(thread, info);
+	}
+	
+	/**
+	 * Reset the {@link ScriptInfo} to use for batch processing, local for the current thread.
+	 * @since v0.4.0
+	 */
+	public static void resetBatchScriptInfo() {
+		setBatchScriptInfo(null);
+	}
+	
+	/**
+	 * Get the {@link ScriptInfo} for the current thread, or null if no info is available.
+	 * This can be used to query information about the current script.
+	 * @return
+	 * @since v0.4.0
+	 */
+	public static ScriptInfo getScriptInfo() {
+		return batchScriptInfo.get(Thread.currentThread());
 	}
 	
 	
