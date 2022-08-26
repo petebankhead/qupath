@@ -29,7 +29,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.Writer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
@@ -37,7 +36,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -93,6 +96,7 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Callback;
 import qupath.lib.common.GeneralTools;
+import qupath.lib.common.ThreadTools;
 import qupath.lib.gui.ActionTools;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.dialogs.Dialogs;
@@ -241,7 +245,12 @@ public class DefaultScriptEditor implements ScriptEditor {
 	private BooleanProperty clearCache = PathPrefs.createPersistentPreference("scriptingClearCache", false);
 	protected BooleanProperty smartEditing = PathPrefs.createPersistentPreference("scriptingSmartEditing", true);
 	private BooleanProperty wrapTextProperty = PathPrefs.createPersistentPreference("scriptingWrapText", false);
-	
+
+	/**
+	 * Run batch processing scripts in parallel
+	 */
+	private BooleanProperty doParallelProperty = PathPrefs.createPersistentPreference("doParallelBatchScripting", false);
+
 
 	// Regex pattern used to identify whether a script should be run in the JavaFX Platform thread
 	// If so, this line should be included at the top of the script
@@ -693,6 +702,7 @@ public class DefaultScriptEditor implements ScriptEditor {
 				ActionTools.createCheckMenuItem(ActionTools.createSelectableAction(useDefaultBindings, "Include default imports")),
 				ActionTools.createCheckMenuItem(ActionTools.createSelectableAction(sendLogToConsole, "Show log in console")),
 				ActionTools.createCheckMenuItem(ActionTools.createSelectableAction(outputScriptStartTime, "Log script time")),
+				ActionTools.createCheckMenuItem(ActionTools.createSelectableAction(doParallelProperty, "Parallelize batch processing (experimental)")),
 				ActionTools.createCheckMenuItem(ActionTools.createSelectableAction(autoClearConsole, "Auto clear console")),
 				ActionTools.createCheckMenuItem(ActionTools.createSelectableAction(clearCache, "Clear cache (batch processing)"))
 				);
@@ -837,15 +847,24 @@ public class DefaultScriptEditor implements ScriptEditor {
 		var writer = new ScriptConsoleWriter(console, false);
 		context.setWriter(writer);
 		context.setErrorWriter(new ScriptConsoleWriter(console, true));
+		
 		var printWriter = new PrintWriter(writer);
 		
 		boolean attachToLog = sendLogToConsole.get();
 		if (attachToLog)
 			LogManager.addTextAppendableFX(console);
+		
 		long startTime = System.currentTimeMillis();
 		if (outputScriptStartTime.get())
 			printWriter.println("Starting script at " + new Date(startTime).toString());
 		try {
+			// Initialize context
+			context.setAttribute("qupath.startTime", startTime, ScriptContext.ENGINE_SCOPE);
+			var file = tab == null ? null : tab.getFile();
+			context.setAttribute("qupath.script.file", file, ScriptContext.ENGINE_SCOPE);
+			context.setAttribute("qupath.script.uri", file == null ? null : file.toURI(), ScriptContext.ENGINE_SCOPE);
+			
+			
 			Object result = executeScript(runnableLanguage, script, project, imageData, useDefaultBindings.get(), context);
 			if (result != null) {
 				printWriter.println("Result: " + result);
@@ -1289,48 +1308,51 @@ public class DefaultScriptEditor implements ScriptEditor {
 			
 			tab.setRunning(true);
 			
-			int counter = 0;
+			
+			int parallelism = ThreadTools.getParallelism();
+			ExecutorService pool = null;
+			int nImages = imagesToProcess.size();
+
+			// Request parallel batch processing
+			boolean doParallel = doParallelProperty.get() && parallelism > 1 && nImages > 1;
+			if (doParallel) {
+				int poolParallelism = Math.min(parallelism, nImages);
+				int threadParallelism = Math.max(1, parallelism / poolParallelism);
+				logger.info("Initializing batch processing pool with {} threads", poolParallelism);
+				pool = Executors.newFixedThreadPool(poolParallelism);				
+				ThreadTools.setParallelism(threadParallelism);
+			}
+			
+			var counter = new AtomicInteger(0);
 			for (ProjectImageEntry<BufferedImage> entry : imagesToProcess) {
 				try {
 					// Stop
 					if (isQuietlyCancelled() || isCancelled()) {
-						logger.warn("Script cancelled with " + (imagesToProcess.size() - counter) + " image(s) remaining");
+						logger.warn("Script cancelled with " + (imagesToProcess.size() - counter.get()) + " image(s) remaining");
 						break;
 					}
 					
-					updateProgress(counter, imagesToProcess.size());
-					counter++;
-					updateMessage(entry.getImageName() + " (" + counter + "/" + imagesToProcess.size() + ")");
-					
-					// Create a new region store if we need one
-					System.gc();
-
-					// Open saved data if there is any, or else the image itself
-					ImageData<BufferedImage> imageData = entry.readImageData();
-					if (imageData == null) {
-						logger.warn("Unable to open {} - will be skipped", entry.getImageName());
-						continue;
-					}
-//					QPEx.setBatchImageData(imageData);
-					executeScript(tab, tab.getEditorComponent().getText(), project, imageData);
-					if (doSave)
-						entry.saveImageData(imageData);
-					imageData.getServer().close();
-					
-					if (clearCache.get()) {
-						try {
-							var store = qupath == null ? null : qupath.getImageRegionStore();
-							if (store != null)
-								store.clearCache();
-							System.gc();
-						} catch (Exception e) {
-							
-						}
+					if (doParallel) {
+						pool.submit(() -> processImage(entry, counter, false));
+					} else {
+						processImage(entry, counter, clearCache.get() && doParallel);
 					}
 				} catch (Exception e) {
 					logger.error("Error running batch script: {}", e);
 				}
 			}
+			if (pool != null) {
+				pool.shutdown();
+				try {
+					pool.awaitTermination(1, TimeUnit.DAYS);
+				} catch (InterruptedException e) {
+					logger.error(e.getLocalizedMessage(), e);
+				} finally {
+					// Ensure that we reset the parallelism
+					ThreadTools.setParallelism(parallelism);
+				}
+			}
+			
 			updateProgress(imagesToProcess.size(), imagesToProcess.size());
 			
 			long endTime = System.currentTimeMillis();
@@ -1348,6 +1370,55 @@ public class DefaultScriptEditor implements ScriptEditor {
 			
 			return null;
 		}
+		
+		
+		/**
+		 * Process a single image
+		 * @param entry
+		 * @param counter
+		 * @param clearCache
+		 */
+		private void processImage(ProjectImageEntry<BufferedImage> entry, AtomicInteger counter, boolean clearCache) {
+			// Stop
+			if (isQuietlyCancelled() || isCancelled()) {
+				logger.warn("Script cancelled with " + (imagesToProcess.size() - counter.get()) + " image(s) remaining");
+				return;
+			}
+			
+			updateProgress(counter.getAndIncrement(), imagesToProcess.size());
+			updateMessage(entry.getImageName() + " (" + counter + "/" + imagesToProcess.size() + ")");
+			
+			// Reclaim memory (maybe not needed?)
+			System.gc();
+
+			try {
+				// Open saved data if there is any, or else the image itself
+				ImageData<BufferedImage> imageData = entry.readImageData();
+				if (imageData == null) {
+					logger.warn("Unable to open {} - will be skipped", entry.getImageName());
+					return;
+				}
+	//			QPEx.setBatchImageData(imageData);
+				executeScript(tab, tab.getEditorComponent().getText(), project, imageData);
+				if (doSave)
+					entry.saveImageData(imageData);
+				imageData.getServer().close();
+				
+				if (clearCache) {
+					try {
+						var store = qupath == null ? null : qupath.getImageRegionStore();
+						if (store != null)
+							store.clearCache();
+						System.gc();
+					} catch (Exception e) {
+						
+					}
+				}
+			} catch (Exception e) {
+				logger.error("Error running batch script: {}", e);
+			}
+		}
+		
 		
 		
 		@Override
