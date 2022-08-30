@@ -22,18 +22,19 @@
 package qupath.lib.gui.tools;
 
 import java.awt.image.BufferedImage;
+import java.io.BufferedOutputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -193,7 +194,7 @@ public class MeasurementExporter {
 	 * @param file
 	 */
 	public void exportMeasurements(File file) {
-		try(FileOutputStream fos = new FileOutputStream(file)) {
+		try (var fos = new BufferedOutputStream(Files.newOutputStream(file.toPath()))) {
 			exportMeasurements(fos);
 		} catch (Exception e) {
 			logger.error(e.getLocalizedMessage(), e);
@@ -227,7 +228,15 @@ public class MeasurementExporter {
 					pathObjects = pathObjects.stream().filter(filter).collect(Collectors.toList());
 				
 				model.setImageData(imageData, pathObjects);
-				List<String> data = SummaryMeasurementTableCommand.getTableModelStrings(model, separator, excludeColumns);
+				
+				// v0.4.0 - Convert column inclusion to exclusion so that we can use the existing code
+				Collection<String> excludeColumnsLocal = excludeColumns;
+				if (!includeOnlyColumns.isEmpty()) {
+					excludeColumnsLocal = new LinkedHashSet<>(model.getAllNames());
+					excludeColumnsLocal.removeAll(includeOnlyColumns);
+				}
+				
+				List<String> data = SummaryMeasurementTableCommand.getTableModelStrings(model, separator, excludeColumnsLocal);
 				
 				// Get header
 				String[] header;
@@ -241,7 +250,7 @@ public class MeasurementExporter {
 				nImageEntries.put(entry, data.size()-1);
 				
 				for (String col: header) {
-					if (!allColumns.contains(col)  && !excludeColumns.contains(col))
+					if (!allColumns.contains(col) && !excludeColumnsLocal.contains(col))
 						allColumns.add(col);
 				}
 				
@@ -271,11 +280,11 @@ public class MeasurementExporter {
 			}
 		}
 		
-		try (PrintWriter writer = new PrintWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8))){
+		try (PrintWriter writer = new PrintWriter(stream, false, StandardCharsets.UTF_8)) {
 			writer.write(String.join(separator, allColumns));
 			writer.write(System.lineSeparator());
 
-			Iterator[] its = new Iterator[allColumns.size()];
+			Iterator<?>[] its = new Iterator[allColumns.size()];
 			for (int col = 0; col < allColumns.size(); col++) {
 				its[col] = valueMap.get(allColumns.get(col)).iterator();
 			}
