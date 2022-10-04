@@ -31,6 +31,9 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javafx.application.Platform;
 import javafx.beans.property.DoubleProperty;
 import javafx.collections.FXCollections;
@@ -45,6 +48,7 @@ import javafx.scene.chart.ScatterChart;
 import javafx.scene.chart.XYChart;
 import javafx.scene.chart.XYChart.Data;
 import javafx.scene.chart.XYChart.Series;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseEvent;
 import javafx.stage.Stage;
@@ -68,6 +72,8 @@ import qupath.lib.objects.hierarchy.PathObjectHierarchy;
  * @author Pete Bankhead
  */
 public class Charts {
+	
+	private static final Logger logger = LoggerFactory.getLogger(Charts.class);
 	
 	// See https://stackoverflow.com/questions/17164375/subclassing-a-java-builder-class/34741836#34741836 
 	// for a great description of what is going on here...
@@ -406,6 +412,10 @@ public class Charts {
 				dataMap.put(key, d);
 			}
 			chart.getData().setAll(dataMap.values());
+			
+			var sb = new StringBuilder();
+			
+			int i = 0;
 			for (var entry : dataMap.entrySet()) {
 				var key = entry.getKey();
 				var data = entry.getValue();
@@ -423,13 +433,49 @@ public class Charts {
 				else if (key instanceof PathObject)
 					rgb = ColorToolsFX.getDisplayedColorARGB((PathObject)key);
 				if (rgb != null) {
-					node.setStyle(String.format("-fx-background-color: rgb(%d, %d, %d)",
-							ColorTools.red(rgb),
-							ColorTools.green(rgb),
-							ColorTools.blue(rgb)));
+					
+					i++;
+					if (i <= 8) {
+						// For the first 8 colors, we can use the variables as defined in modena.css
+						sb.append(String.format("CHART_COLOR_%d: rgb(%d, %d, %d); ",
+								i,
+								ColorTools.red(rgb), 
+								ColorTools.green(rgb), 
+								ColorTools.blue(rgb)));
+	
+						sb.append(String.format("CHART_COLOR_%d_TRANS_20: rgb(%d, %d, %d, 0.2); ",
+								i,
+								ColorTools.red(rgb), 
+								ColorTools.green(rgb), 
+								ColorTools.blue(rgb)));
+						
+						sb.append(String.format("CHART_COLOR_%d_TRANS_70: rgb(%d, %d, %d, 0.7); ",
+								i,
+								ColorTools.red(rgb), 
+								ColorTools.green(rgb), 
+								ColorTools.blue(rgb)));
+					} else {
+						if (i == 9)
+							logger.warn("Legend colors may be incorrect: 8 colors supported, but {} colors found", dataMap.size());
+						// Still set the node, even though we might get legend wrong
+						node.setStyle(String.format("-fx-background-color: rgb(%d, %d, %d)",
+								ColorTools.red(rgb),
+								ColorTools.green(rgb),
+								ColorTools.blue(rgb)));
+					}
 				}
-
 			}
+			
+
+//			for (var node : chart.lookupAll(".chart-legend-item")) {
+//				System.err.println(((Label)node).getGraphic());
+//			}
+////			System.err.println("LEGEND: " + chart.lookupAll(".chart-legend-item"));
+//			System.err.println("LEGEND: " + chart.lookup(".data10"));
+
+			chart.setStyle(sb.toString());
+			
+			
 		}
 		
 		
