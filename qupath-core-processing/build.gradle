@@ -13,6 +13,11 @@ configurations {
   implementation.extendsFrom guava
 }
 
+tasks.named('compileJava') {
+  // use the project's version or define one directly
+  options.javaModuleVersion = provider { version }
+}
+
 dependencies {
   api project(':qupath-core')
   

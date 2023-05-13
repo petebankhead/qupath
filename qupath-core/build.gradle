@@ -17,6 +17,7 @@ dependencies {
   api libs.jts
   
   implementation libs.commons.math
+  implementation libs.commons.statistics
   implementation libs.picocli
   implementation libs.imagej
   

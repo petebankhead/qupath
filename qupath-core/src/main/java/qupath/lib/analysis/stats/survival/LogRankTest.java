@@ -23,7 +23,7 @@
 
 package qupath.lib.analysis.stats.survival;
 
-import org.apache.commons.math3.distribution.ChiSquaredDistribution;
+import org.apache.commons.statistics.distribution.ChiSquaredDistribution;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +39,7 @@ public class LogRankTest {
 
 	private static final Logger logger = LoggerFactory.getLogger(LogRankTest.class);
 
-	private static ChiSquaredDistribution chi2 = new ChiSquaredDistribution(1);
+	private static ChiSquaredDistribution chi2 = ChiSquaredDistribution.of(1);
 
 	/**
 	 * Compare KaplanMeier objects using log-rank test.

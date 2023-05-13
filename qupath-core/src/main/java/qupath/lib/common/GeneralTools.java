@@ -61,7 +61,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.Locale.Category;
 
-import org.apache.commons.math3.util.Precision;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -380,7 +379,18 @@ public final class GeneralTools {
 //		double difference = n1 - n2;
 //		double average = (n1/2 + n2/2);
 //		return Math.abs(difference / average) < tolerance;
-		return Precision.equalsWithRelativeTolerance(n1, n2, tolerance);
+
+		// Logic based upon that in Apache Commons Math3 v3.6.1
+		// (Removed dependency because it didn't support modularity)
+		//		return Precision.equalsWithRelativeTolerance(n1, n2, tolerance);
+
+		if (n1 == n2)
+			return true;
+		if (Double.isNaN(n1) || Double.isNaN(n2))
+			return false;
+		double absoluteMax = Math.max(Math.abs(n1), Math.abs(n2));
+		double relativeDifference = Math.abs((n1 - n2) / absoluteMax);
+		return relativeDifference <= tolerance;
 	}
 	
 	
