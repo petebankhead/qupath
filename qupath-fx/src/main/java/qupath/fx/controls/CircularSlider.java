@@ -63,7 +63,7 @@ public class CircularSlider extends Control {
         outerCircle.setManaged(false);
         textCircle.setManaged(false);
         //add CSS
-        getStylesheets().add(getClass().getResource("/css/circular-slider.css").toExternalForm());
+        getStylesheets().add(getClass().getResource("/qupath/fx/css/circular-slider.css").toExternalForm());
         // set style class
         getStyleClass().setAll("circular-slider");
         outerCircle.getStyleClass().setAll("circular-slider-outer");

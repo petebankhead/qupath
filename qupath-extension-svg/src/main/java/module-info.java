@@ -2,11 +2,12 @@ module qupath.extension.scripteditor {
 	
     requires qupath.gui.fx;
 
-    requires slf4j.api;
+    requires org.slf4j;
 	requires org.jfree.svg;
 	requires java.desktop;
-	
-	provides qupath.lib.gui.extensions.QuPathExtension with 
+    requires qupath.fx;
+
+    provides qupath.lib.gui.extensions.QuPathExtension with
 		qupath.lib.extension.svg.SvgExtension;
 
 }

@@ -32,8 +32,8 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
-import org.apache.commons.math3.stat.descriptive.StatisticalSummary;
+import org.apache.commons.math4.legacy.stat.descriptive.DescriptiveStatistics;
+import org.apache.commons.math4.legacy.stat.descriptive.StatisticalSummary;
 import org.locationtech.jts.algorithm.Area;
 import org.locationtech.jts.algorithm.Length;
 import org.locationtech.jts.algorithm.MinimumBoundingCircle;

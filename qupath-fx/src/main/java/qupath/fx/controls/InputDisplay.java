@@ -162,7 +162,7 @@ public class InputDisplay implements EventHandler<InputEvent> {
 		double spacing = 5;
 
 		var pane = new AnchorPane();
-		var stylesheetUrl = InputDisplay.class.getResource("/css/input-display.css").toExternalForm();
+		var stylesheetUrl = InputDisplay.class.getResource("/qupath/fx/css/input-display.css").toExternalForm();
 		pane.getStylesheets().add(stylesheetUrl);
 		pane.getStyleClass().add(inputDisplayClass);
 

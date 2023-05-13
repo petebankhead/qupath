@@ -20,10 +20,11 @@ tasks.named('compileJava') {
 
 dependencies {
   api project(':qupath-core')
-  
+
   api libs.imagej
   api libs.bioimageio.spec
+
+  implementation libs.commons.math4
   
-  implementation libs.commons.math
   testImplementation project(':qupath-core').sourceSets.test.output
 }

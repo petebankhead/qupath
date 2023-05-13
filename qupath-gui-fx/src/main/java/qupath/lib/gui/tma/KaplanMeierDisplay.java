@@ -33,7 +33,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.Map.Entry;
 
-import org.apache.commons.math3.distribution.NormalDistribution;
+import org.apache.commons.statistics.distribution.NormalDistribution;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -1165,7 +1165,7 @@ class KaplanMeierDisplay implements ParameterChangeListener, PathObjectHierarchy
 						double epsilon = 0.1;
 						//								pValue = 0.037; // For checking with Altman's paper...
 						double z = (1 - pValue/2);
-						NormalDistribution dist = new NormalDistribution();
+						NormalDistribution dist = NormalDistribution.of(0.0, 1.0);
 						z = dist.inverseCumulativeProbability(1 - pValue/2);
 						double phi = dist.density(z);
 						//								System.err.println("PHI: " + phi + " for " + z);

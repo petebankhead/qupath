@@ -40,7 +40,6 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import org.apache.commons.math3.util.FastMath;
 import org.bytedeco.javacpp.PointerScope;
 import org.bytedeco.javacpp.indexer.DoubleIndexer;
 import org.bytedeco.javacpp.indexer.FloatIndexer;
@@ -2355,7 +2354,9 @@ public class ImageOps {
 			@Override
 			public Mat apply(Mat input) {
 				// Use FastMath - there are too many caveats with OpenCV's log implementation
-				OpenCVTools.apply(input, d -> FastMath.log(d));
+				// v0.5.0 switch from Apache Commons Math3 FastMath to Math
+				// Could switch again to Apache Commons Math4 AccurateMath if this is a performance issue
+				OpenCVTools.apply(input, d -> Math.log(d));
 				return input;
 //				System.err.println("BEFORE: " + input.createIndexer());
 //				
@@ -2403,8 +2404,10 @@ public class ImageOps {
 			
 			@Override
 			public Mat apply(Mat input) {
-				// Use FastMath - there are too many caveats with OpenCV's pow implementation
-				OpenCVTools.apply(input, d -> FastMath.pow(d, power));
+				// Use Math - there are too many caveats with OpenCV's pow implementation
+				// v0.5.0 switch from Apache Commons Math3 FastMath to Math
+				// Could switch again to Apache Commons Math4 AccurateMath if this is a performance issue
+				OpenCVTools.apply(input, d -> Math.pow(d, power));
 				return input;
 //				opencv_core.pow(input, power, input);
 //				// For non-integer powers, OpenCV uses the absolute value

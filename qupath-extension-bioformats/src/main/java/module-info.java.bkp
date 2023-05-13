@@ -10,9 +10,14 @@ module qupath.extension.bioformats {
     
 //    requires formats.gpl;
 
-    requires slf4j.api;
-    
-    provides qupath.lib.images.servers.ImageServerBuilder with
+    requires org.slf4j;
+	requires formats.api;
+	requires ome.xml;
+	requires formats.bsd;
+	requires ome.common;
+	requires info.picocli;
+
+	provides qupath.lib.images.servers.ImageServerBuilder with
     	qupath.lib.images.servers.bioformats.BioFormatsServerBuilder;
     
     provides qupath.lib.images.writers.ImageWriter with

@@ -460,10 +460,10 @@ public class FXUtils {
      * @param boldTitle if true, the title should be displayed in bold
      */
     public static void simplifyTitledPane(TitledPane pane, boolean boldTitle) {
-        var css = GridPaneUtils.class.getClassLoader().getResource("css/titled_plain.css").toExternalForm();
+        var css = GridPaneUtils.class.getClassLoader().getResource("qupath/fx/css/titled_plain.css").toExternalForm();
         pane.getStylesheets().add(css);
         if (boldTitle) {
-            var css2 = GridPaneUtils.class.getClassLoader().getResource("css/titled_bold.css").toExternalForm();
+            var css2 = GridPaneUtils.class.getClassLoader().getResource("qupath/fx/css/titled_bold.css").toExternalForm();
             pane.getStylesheets().add(css2);
         }
     }

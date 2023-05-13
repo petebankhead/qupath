@@ -5,10 +5,11 @@ module qupath.extension.scripteditor {
     requires qupath.gui.fx;
 
     requires org.fxmisc.richtext;
-    requires slf4j.api;
-	requires flowless;
+    requires org.slf4j;
 	requires qupath.core.processing;
 	requires qupath.core;
+	requires org.fxmisc.flowless;
+	requires qupath.fx;
 
 	provides qupath.lib.gui.extensions.QuPathExtension with 
 		qupath.lib.gui.scripting.richtextfx.RichScriptEditorExtension;

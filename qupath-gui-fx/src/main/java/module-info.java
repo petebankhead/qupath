@@ -17,23 +17,29 @@ module qupath.gui.fx {
 	
 	requires transitive org.controlsfx.controls;
 	requires jfxtras.menu;
-	requires slf4j.api;
+	requires org.slf4j;
+    requires qupath.fx;
+	requires com.google.common;
+	requires org.apache.commons.text;
+	requires org.apache.commons.math4.legacy;
+	requires org.apache.commons.statistics.distribution;
+	requires org.commonmark;
+	requires com.google.gson;
+	requires org.kordamp.ikonli.javafx;
+	requires ch.qos.logback.classic;
+	requires ch.qos.logback.core;
+	requires org.locationtech.jts;
 
 	exports qupath.lib.display;
 	exports qupath.lib.gui;
 	exports qupath.lib.gui.commands;
 	exports qupath.lib.gui.dialogs;
 	exports qupath.lib.gui.extensions;
-	exports qupath.lib.gui.icons;
 	exports qupath.lib.gui.images.servers;
 	exports qupath.lib.gui.images.stores;
 	exports qupath.lib.gui.logging;
-	exports qupath.lib.gui.models;
 	exports qupath.lib.gui.panes;
-	exports qupath.lib.gui.panes.classify;
-	exports qupath.lib.gui.plots;
 	exports qupath.lib.gui.prefs;
-	exports qupath.lib.gui.plugins;
 	exports qupath.lib.gui.scripting;
 	exports qupath.lib.gui.tma;
 	exports qupath.lib.gui.tools;
@@ -41,7 +47,13 @@ module qupath.gui.fx {
 	exports qupath.lib.gui.viewer.tools;
 	exports qupath.lib.gui.viewer.recording;
 	exports qupath.lib.gui.viewer.overlays;
-	
+	exports qupath.lib.gui.actions;
+	exports qupath.lib.gui.actions.annotations;
+	exports qupath.lib.gui.localization;
+	exports qupath.lib.gui.charts;
+	exports qupath.lib.gui.prefs.annotations;
+	exports qupath.lib.gui.viewer.tools.handlers;
+
 	uses qupath.lib.gui.extensions.QuPathExtension;
 	
 }

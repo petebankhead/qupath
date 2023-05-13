@@ -44,12 +44,6 @@ import qupath.lib.objects.classes.PathClass;
  */
 public class ColorToolsFX {
 
-	// Shouldn't need to synchronize, because each key value pair should always be a fixed & unique combination?
-	// In other words, if the same Integer is used as a key, it will *always* may to a Color object that is the
-	// same (in terms of 'equals' - not necessarily reference).
-//	private static Map<Integer, Color> colorMap = Collections.synchronizedMap(new HashMap<Integer, Color>());
-//	private static Map<Integer, Color> colorMapWithAlpha = Collections.synchronizedMap(new HashMap<Integer, Color>());
-
 	/**
 	 * Black with opacity at 50%.
 	 */

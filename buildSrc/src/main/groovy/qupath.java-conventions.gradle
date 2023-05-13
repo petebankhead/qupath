@@ -72,7 +72,9 @@ afterEvaluate {
 			]
 			// Set the module name where we can
 			if (project.hasProperty('moduleName')) {
-				manifestAttributes['Automatic-Module-Name'] = "io.github." + project['moduleName']
+                println "MODULE NAME: " + ("io.github." + project['moduleName'])
+                manifestAttributes['Automatic-Module-Name'] = project['moduleName']
+//				manifestAttributes['Automatic-Module-Name'] = "io.github." + project['moduleName']
 			}
 			
 			if (latestGitCommit != null)

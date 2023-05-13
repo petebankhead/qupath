@@ -33,8 +33,8 @@ import java.util.Locale;
 import java.util.Locale.Category;
 
 import javafx.scene.control.*;
-import org.apache.commons.math3.stat.correlation.PearsonsCorrelation;
-import org.apache.commons.math3.stat.correlation.SpearmansCorrelation;
+import org.apache.commons.math4.legacy.stat.correlation.PearsonsCorrelation;
+import org.apache.commons.math4.legacy.stat.correlation.SpearmansCorrelation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

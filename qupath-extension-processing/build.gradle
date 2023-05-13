@@ -9,5 +9,5 @@ archivesBaseName = 'qupath-extension-processing'
 description = "QuPath extension to support processing (including many common commands)."
 
 dependencies {
-  implementation libs.commons.math
+  implementation libs.commons.math4
 }

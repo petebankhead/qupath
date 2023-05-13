@@ -25,9 +25,8 @@ package qupath.lib.gui.scripting;
 
 import java.util.regex.Pattern;
 
-import com.sun.javafx.css.PseudoClassState;
-
 import javafx.beans.binding.Bindings;
+import javafx.css.PseudoClass;
 import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
@@ -140,15 +139,15 @@ class ScriptFindCommand implements Runnable {
 		btClose.setMinWidth(100.0);
 		
 		// Make the 'Next' button appear as if it's in focus, except when other buttons are pressed
-		btNext.pseudoClassStateChanged(PseudoClassState.getPseudoClass("focused"), true);
+		btNext.pseudoClassStateChanged(PseudoClass.getPseudoClass("focused"), true);
 		
 		tfFind.focusedProperty().addListener((v, o, n) -> {
 			if (n)
-				btNext.pseudoClassStateChanged(PseudoClassState.getPseudoClass("focused"), true);
+				btNext.pseudoClassStateChanged(PseudoClass.getPseudoClass("focused"), true);
 		});
 		tfReplace.focusedProperty().addListener((v, o, n) -> {
 			if (n)
-				btNext.pseudoClassStateChanged(PseudoClassState.getPseudoClass("focused"), true);
+				btNext.pseudoClassStateChanged(PseudoClass.getPseudoClass("focused"), true);
 		});
 
 //		actionNext.setAccelerator(new KeyCodeCombination(KeyCode.N, KeyCombination.SHORTCUT_DOWN));
@@ -179,7 +178,7 @@ class ScriptFindCommand implements Runnable {
 			if (!controlTemp.getText().contains(tfFind.getText())) {
 				// Remove focus-looking effect on 'Next' button
 				tfFind.requestFocus();
-				btNext.pseudoClassStateChanged(PseudoClassState.getPseudoClass("focused"), true);
+				btNext.pseudoClassStateChanged(PseudoClass.getPseudoClass("focused"), true);
 			}
 		});
 		btReplaceAll.setOnAction(e -> replaceAll(scriptEditor.getCurrentEditorControl(), tfFind.getText(), cbIgnoreCase.isSelected()));
@@ -199,7 +198,7 @@ class ScriptFindCommand implements Runnable {
 		int found = findNext(scriptEditor.getCurrentEditorControl(), tfFind.getText(), cbIgnoreCase.isSelected());
 		lbFoundOccurrences.setText(found == -1 ? "String not found" : "");
 		lbReplacedOccurrences.setText("");
-		btNext.pseudoClassStateChanged(PseudoClassState.getPseudoClass("focused"), btNextFocus);
+		btNext.pseudoClassStateChanged(PseudoClass.getPseudoClass("focused"), btNextFocus);
 	}
 	
 	/**
@@ -210,7 +209,7 @@ class ScriptFindCommand implements Runnable {
 	 */
 	private void replaceFind(ScriptEditorControl control, String text, boolean ignoreCase) {
 		// Remove focus-looking effect on 'Next' button
-		btNext.pseudoClassStateChanged(PseudoClassState.getPseudoClass("focused"), false);
+		btNext.pseudoClassStateChanged(PseudoClass.getPseudoClass("focused"), false);
 		
 		lbReplacedOccurrences.setText("");
 		lbFoundOccurrences.setText("");
@@ -228,7 +227,7 @@ class ScriptFindCommand implements Runnable {
 	
 	private void replaceAll(ScriptEditorControl control, String text, boolean ignoreCase) {
 		// Remove focus-looking effect on 'Next' button
-		btNext.pseudoClassStateChanged(PseudoClassState.getPseudoClass("focused"), false);
+		btNext.pseudoClassStateChanged(PseudoClass.getPseudoClass("focused"), false);
 		
 		var controlText = control.getText();
 		var initialCaretPos = control.getSelection().getStart();	// Prefer this to getCaretPosition() because it deals better with selections
@@ -298,8 +297,8 @@ class ScriptFindCommand implements Runnable {
 			return -1;
 		
 		// Remove focus-looking effect on 'Next' button
-		btNext.pseudoClassStateChanged(PseudoClassState.getPseudoClass("focused"), false);
-		
+		btNext.pseudoClassStateChanged(PseudoClass.getPseudoClass("focused"), false);
+
 		lbReplacedOccurrences.setText("");
 		
 		String text = control.getText();

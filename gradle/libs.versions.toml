@@ -5,6 +5,7 @@ bioimageIoSpec  = "0.1.0"
 
 commonmark      = "0.21.0"
 commonsMath3    = "3.6.1" # Not modular (therefore awkward to include)
+commonsMath4    = "4.0-beta1"
 commonsStatistics = "1.0"
 commonsText     = "1.10.0"
 controlsFX      = "11.1.2"
@@ -47,6 +48,7 @@ bioimageio-spec = { module = "io.github.qupath:qupath-bioimageio-spec", version.
 
 commonmark    = { module = "org.commonmark:commonmark",         version.ref = "commonmark" }
 commons-math  = { module = "org.apache.commons:commons-math3",  version.ref = "commonsMath3" }
+commons-math4  = { module = "org.apache.commons:commons-math4-legacy",  version.ref = "commonsMath4" }
 commons-statistics  = { module = "org.apache.commons:commons-statistics-distribution", version.ref = "commonsStatistics" }
 commons-text  = { module = "org.apache.commons:commons-text",   version.ref = "commonsText" }
 controlsfx    = { module = "org.controlsfx:controlsfx",         version.ref = "controlsFX" }
