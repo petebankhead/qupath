@@ -1,0 +1,10 @@
+module qupath.qupath.app.main {
+    requires info.picocli;
+    requires org.slf4j;
+    requires qupath.gui.fx;
+    requires java.desktop;
+    requires java.scripting;
+
+    opens qupath to info.picocli;
+    uses qupath.lib.gui.extensions.Subcommand;
+}

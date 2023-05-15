@@ -1,3 +1,5 @@
+import qupath.lib.gui.localization.QuPathResourceBundleProviderImpl;
+
 module qupath.gui.fx {
 
     requires java.base;
@@ -19,6 +21,10 @@ module qupath.gui.fx {
 	requires jfxtras.menu;
 	requires org.slf4j;
     requires qupath.fx;
+
+	uses qupath.lib.gui.localization.spi.QuPathResourceBundleProvider;
+	provides qupath.lib.gui.localization.spi.QuPathResourceBundleProvider with qupath.lib.gui.localization.QuPathResourceBundleProviderImpl;
+
 	requires com.google.common;
 	requires org.apache.commons.text;
 	requires org.apache.commons.math4.legacy;
@@ -53,6 +59,8 @@ module qupath.gui.fx {
 	exports qupath.lib.gui.charts;
 	exports qupath.lib.gui.prefs.annotations;
 	exports qupath.lib.gui.viewer.tools.handlers;
+    exports qupath.lib.gui.scripting.languages;
+	exports qupath.lib.gui.localization.spi;
 
 	uses qupath.lib.gui.extensions.QuPathExtension;
 	

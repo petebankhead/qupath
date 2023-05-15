@@ -26,14 +26,11 @@ public class LocalizedResourceManager {
 
 	private String defaultBundleName;
 
-	private ResourceBundle.Control control;
-
 	private Function<String, ResourceBundle> bundleSupplier;
 
 
-	private LocalizedResourceManager(String defaultBundleName, ResourceBundle.Control control, Function<String, ResourceBundle> bundleFunction) {
+	private LocalizedResourceManager(String defaultBundleName, Function<String, ResourceBundle> bundleFunction) {
 		this.defaultBundleName = defaultBundleName;
-		this.control = control;
 		this.bundleSupplier = bundleFunction == null ? this::getBundle : bundleFunction;
 	}
 
@@ -49,11 +46,10 @@ public class LocalizedResourceManager {
 	/**
 	 * Create an instance, optionally providing an alternative Control to handle identifying resource bundles.
 	 * @param defaultBundleName default bundle name to use when the bundle is not specified
-	 * @param control optional control (may be null)
 	 * @return
 	 */
-	public static LocalizedResourceManager createInstance(String defaultBundleName, ResourceBundle.Control control) {
-		return new LocalizedResourceManager(defaultBundleName, control, null);
+	public static LocalizedResourceManager createInstance(String defaultBundleName, Function<String, ResourceBundle> bundleFunction) {
+		return new LocalizedResourceManager(defaultBundleName, bundleFunction);
 	}
 
 	/**
@@ -66,10 +62,7 @@ public class LocalizedResourceManager {
 			name = defaultBundleName;
 		if (name == null)
 			throw new UnsupportedOperationException("No bundle name provided!");
-		if (control == null)
-			return ResourceBundle.getBundle(name);
-		else
-			return ResourceBundle.getBundle(name, Locale.getDefault(Locale.Category.DISPLAY), control);
+		return ResourceBundle.getBundle(name);
 	}
 
 	/**
