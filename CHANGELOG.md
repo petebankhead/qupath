@@ -4,9 +4,15 @@ This is a work-in-progress for the next QuPath release.
 
 ### Dependency updates
 * DeepJavaLibrary 0.21.0
-* Groovy 4.0.10
-* ImageJ 1.54c
+* Groovy 4.0.12
+* ImageJ 1.54e
+* JavaCPP 1.5.9
 * JavaFX 20
+* LogBack 1.3.7
+* OpenCV 4.7.0
+* Picocli 4.7.4
+* SLF4J 2.0.7
+* SnakeYAML 2.0
 
 
 ## Version 0.4.3

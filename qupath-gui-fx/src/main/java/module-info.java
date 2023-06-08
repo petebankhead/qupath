@@ -35,8 +35,9 @@ module qupath.gui.fx {
 	requires ch.qos.logback.classic;
 	requires ch.qos.logback.core;
 	requires org.locationtech.jts;
+    requires org.yaml.snakeyaml;
 
-	exports qupath.lib.display;
+    exports qupath.lib.display;
 	exports qupath.lib.gui;
 	exports qupath.lib.gui.commands;
 	exports qupath.lib.gui.dialogs;

@@ -59,7 +59,7 @@ import qupath.opencv.tools.MultiscaleFeatures.MultiscaleFeature;
  * 
  * @author Pete Bankhead
  */
-abstract class ImageDataTransformerBuilder {
+public abstract class ImageDataTransformerBuilder {
 	
 	private static final Logger logger = LoggerFactory.getLogger(ImageDataTransformerBuilder.class);
 
