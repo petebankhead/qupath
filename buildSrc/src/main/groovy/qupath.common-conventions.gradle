@@ -15,6 +15,12 @@ repositories {
 
     mavenCentral()
 
+    // May be required for snapshot JavaCPP jars
+    maven {
+        name 'Sonatype snapshots'
+        url 'https://oss.sonatype.org/content/repositories/snapshots'
+    }
+
     // Required for scijava (including some QuPath jars)
     maven {
     	name "SciJava"
@@ -37,14 +43,6 @@ repositories {
         url 'https://artifacts.openmicroscopy.org/artifactory/maven/'
     }
 
-    // May be required for snapshot JavaCPP jars
-    maven {
-        name 'Sonatype snapshots'
-        url 'https://oss.sonatype.org/content/repositories/snapshots'
-    }
-
-    // Currently required for OpenSlide
-    maven { url "../maven/repo" }
 
 }
 

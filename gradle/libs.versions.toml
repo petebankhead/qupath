@@ -23,8 +23,11 @@ jdk             = "17"
 # Need JavaCPP 1.5.9 for gradle fixes: https://github.com/bytedeco/gradle-javacpp/issues/28
 javacpp         = "1.5.9"
 # Potential issue with 4.6.0 and some ONNX models and/or use of x86_64 build on Apple Silicon
-  opencv        = "4.7.0-1.5.9"
+#  opencv        = "4.7.0-1.5.9"
+#  cuda          = "12.1-8.9-1.5.9"
+  opencv        = "4.8.1-1.5.10-SNAPSHOT"
   cuda          = "12.1-8.9-1.5.9"
+# This works on Apple Silicon with x64 build and DNN
 #  opencv        = "4.6.0-1.5.8"
 #  cuda          = "11.8-8.6-1.5.8"
 
