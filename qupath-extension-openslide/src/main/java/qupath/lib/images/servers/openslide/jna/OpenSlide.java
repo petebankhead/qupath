@@ -122,14 +122,14 @@ public final class OpenSlide implements Closeable {
 
         // Cache all available properties
         Map<String, String> props = new LinkedHashMap<>();
-        for (String s : jna.openslide_get_property_names(osr)) {
+        for (String s : jna.getPropertyNames(osr)) {
             props.put(s, jna.openslide_get_property_value(osr, s));
         }
         properties = Collections.unmodifiableMap(props);
 
         // Load associated images now
         associatedImages = new ArrayList<>();
-        Collections.addAll(associatedImages, jna.openslide_get_associated_image_names(osr));
+        Collections.addAll(associatedImages, jna.getAssociatedImageNames(osr));
 
         // Dispose on error, we are in the constructor
         try {

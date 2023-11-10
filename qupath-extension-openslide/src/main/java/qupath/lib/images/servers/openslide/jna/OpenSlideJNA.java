@@ -22,29 +22,49 @@
 package qupath.lib.images.servers.openslide.jna;
 
 import com.sun.jna.Library;
+import com.sun.jna.Native;
+import com.sun.jna.Platform;
+import com.sun.jna.Pointer;
 
 /**
  * JNA interface for OpenSlide.
  */
-public interface OpenSlideJNA extends Library {
+public class OpenSlideJNA {
 
-    String openslide_get_version();
-    String openslide_detect_vendor(String file);
-    long openslide_open(String file);
-    int openslide_get_level_count(long osr);
-    void openslide_get_level_dimensions(long osr, int level, long[] w, long[] h);
-    double openslide_get_level_downsample(long osr, int level);
-    void openslide_close(long osr);
-    String[] openslide_get_property_names(long osr);
-    String openslide_get_property_value(long osr, String name);
-    String[] openslide_get_associated_image_names(long osr);
-    void openslide_read_region(long osr, int[] dest, long x, long y, int level, long w, long h);
-    void openslide_get_associated_image_dimensions(long osr, String name, long[] w, long[] h);
-    void openslide_read_associated_image(long osr, String name, int[] dest);
-    String openslide_get_error(long osr);
+    public static native String openslide_get_version();
+    public static native String openslide_detect_vendor(String file);
+    public static native long openslide_open(String file);
+    public static native int openslide_get_level_count(long osr);
+    public static native void openslide_get_level_dimensions(long osr, int level, long[] w, long[] h);
+    public static native double openslide_get_level_downsample(long osr, int level);
+    public static native void openslide_close(long osr);
+    public static native Pointer openslide_get_property_names(long osr);
+    public static native String openslide_get_property_value(long osr, String name);
+    public static native Pointer openslide_get_associated_image_names(long osr);
+
+    public static String[] getAssociatedImageNames(long osr) {
+        var pointer = openslide_get_associated_image_names(osr);
+        if (pointer == null)
+            return new String[0];
+        else
+            return pointer.getStringArray(0);
+    }
+
+    public static String[] getPropertyNames(long osr) {
+        var pointer = openslide_get_property_names(osr);
+        if (pointer == null)
+            return new String[0];
+        else
+            return pointer.getStringArray(0);
+    }
+
+    public static native void openslide_read_region(long osr, int[] dest, long x, long y, int level, long w, long h);
+    public static native void openslide_get_associated_image_dimensions(long osr, String name, long[] w, long[] h);
+    public static native void openslide_read_associated_image(long osr, String name, int[] dest);
+    public static native String openslide_get_error(long osr);
 
     // New in OpenSlide 4.0.0
-    long openslide_get_icc_profile_size(long osr);
-    void openslide_read_icc_profile(long osr, byte[] bytes);
+    public static native long openslide_get_icc_profile_size(long osr);
+    public static native void openslide_read_icc_profile(long osr, byte[] bytes);
 
 }
