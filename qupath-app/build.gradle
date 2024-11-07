@@ -91,7 +91,9 @@ afterEvaluate {
     jar {
         manifest {
             def manifestAttributes = [
-                    "Class-Path": configurations.runtimeClasspath.collect { it.getName() }.join(' '),
+                    "Class-Path": configurations.runtimeClasspath
+                            .findAll(c -> !c.name.contains('qupath-extension'))
+                            .collect(c -> c.name).join(' '),
                     "Main-Class": "qupath.QuPath"
             ]
             attributes(manifestAttributes)
@@ -102,11 +104,15 @@ afterEvaluate {
 /**
  * Determine which projects to include/exclude as dependencies
  */
-def excludedProjects = [project.name]
-def includedProjects = rootProject.subprojects.findAll { !excludedProjects.contains(it.name) }
+Set<Project> extensionProjects = rootProject.subprojects.findAll {p -> p.name.contains('qupath-extension')}
+List<Project> excludedProjects = [project] + extensionProjects
+Set<Project> includedProjects = rootProject.subprojects.findAll { !excludedProjects.contains(it) }
 
 dependencies {
     implementation includedProjects
+    compileOnly extensionProjects
+
+    implementation libs.bundles.groovy
     implementation libs.picocli
 
     implementation(extraLibs.bundles.extensions) {
@@ -114,6 +120,19 @@ dependencies {
         exclude group: 'io.github.qupath'
     }
 }
+
+task copyExtensions(type: Copy) {
+    extensionProjects.each {
+        from it.getTasksByName('jar', true)
+        into project.layout.buildDirectory.dir("extensions")
+    }
+//    extensionProjects.each {
+//        from it.configurations.runtimeClasspath
+//        into project.layout.buildDirectory.dir("extensions")
+//    }
+}
+
+run.dependsOn('copyExtensions')
 
 
 /**
@@ -705,7 +724,7 @@ JavaVersion getToolchainJavaVersion() {
  * Java version not currently used.
  * @return
  */
-static List<String> buildDefaultJvmArgs(String libraryPath = null) {
+List<String> buildDefaultJvmArgs(String libraryPath = null) {
     // Set up the main Java options
     def javaOptions = []
 
