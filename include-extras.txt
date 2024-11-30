@@ -1,0 +1,8 @@
+[includeBuild]
+../qupath-extension-template
+../qupath-extension-instanseg
+
+[dependencies]
+io.github.qupath:qupath-extension-template
+io.github.qupath:qupath-extension-instanseg
+
