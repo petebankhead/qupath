@@ -252,7 +252,7 @@ public class OpenCVClassifiers {
 		
 		@Override
 		public String toString() {
-			return String.format("OpenCV ", getStatModel().getClass().getSimpleName());
+			return String.format("OpenCV %s", getStatModel().getClass().getSimpleName());
 		}
 		
 	}

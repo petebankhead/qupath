@@ -107,6 +107,7 @@ import qupath.lib.gui.tools.GuiTools;
 import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.gui.viewer.overlays.PixelClassificationOverlay;
 import qupath.lib.images.ImageData;
+import qupath.lib.images.servers.ImageChannel;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.PixelCalibration;
@@ -902,7 +903,7 @@ public class PixelClassifierPane {
 //		}
 		var imageData = qupath.getImageData();
 		if (imageData == null) {
-			if (!qupath.getAllViewers().stream().anyMatch(v -> v.getImageData() != null)) {
+			if (qupath.getAllViewers().stream().noneMatch(v -> v.getImageData() != null)) {
 				logger.debug("doClassification() called, but no images are open"); 
 				return;			
 			}
@@ -1014,12 +1015,11 @@ public class PixelClassifierPane {
 		 }
 		 logger.info("Current accuracy on the {}: {} %", testSet, GeneralTools.formatNumber(nCorrect*100.0/n, 1));
 
-		 if (model instanceof RTreesClassifier) {
-			 var trees = (RTreesClassifier)model;
+		 if (model instanceof RTreesClassifier trees) {
 			 if (trees.hasFeatureImportance() && imageData != null)
 				 logVariableImportance(trees,
 						 helper.getFeatureOp().getChannels(imageData).stream()
-						 .map(c -> c.getName()).toList());
+						 .map(ImageChannel::getName).toList());
 		 }
 		 
 		 trainData.close();
