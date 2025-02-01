@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Objects;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.index.SpatialIndex;
+import org.locationtech.jts.index.hprtree.HPRtree;
 import org.locationtech.jts.index.quadtree.Quadtree;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -347,7 +348,7 @@ public abstract class AbstractImageServer<T> implements ImageServer<T> {
 			allTiles = List.copyOf(tiles);
 			for (var tile : allTiles) {
 				var key = getKey(tile);
-                var index = this.tiles.computeIfAbsent(key, k -> new Quadtree());
+                var index = this.tiles.computeIfAbsent(key, k -> new HPRtree());
 				index.insert(getEnvelope(tile.getRegionRequest()), tile);
 			}
 		}

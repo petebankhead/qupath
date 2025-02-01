@@ -23,24 +23,18 @@
 
 package qupath.lib.gui.commands;
 
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Scanner;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import org.controlsfx.dialog.ProgressDialog;
@@ -48,7 +42,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javafx.beans.property.BooleanProperty;
-import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar.ButtonData;
@@ -71,32 +64,19 @@ import javafx.scene.layout.Priority;
 import qupath.fx.utils.FXUtils;
 import qupath.fx.dialogs.FileChoosers;
 import qupath.lib.common.GeneralTools;
-import qupath.lib.common.ThreadTools;
-import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
 import qupath.fx.dialogs.Dialogs;
 import qupath.lib.gui.panes.ProjectBrowser;
-import qupath.lib.gui.panes.ServerSelector;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.fx.utils.GridPaneUtils;
 import qupath.lib.gui.tools.GuiTools;
-import qupath.lib.images.ImageData;
 import qupath.lib.images.ImageData.ImageType;
-import qupath.lib.images.servers.WrappedBufferedImageServer;
-import qupath.lib.io.PathIO;
-import qupath.lib.objects.PathObject;
-import qupath.lib.objects.PathObjectReader;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerBuilder;
-import qupath.lib.images.servers.ImageServerBuilder.ServerBuilder;
-import qupath.lib.images.servers.ImageServerBuilder.UriImageSupport;
 import qupath.lib.images.servers.ImageServerProvider;
-import qupath.lib.images.servers.ImageServers;
 import qupath.lib.images.servers.RotatedImageServer.Rotation;
-import qupath.lib.images.servers.ServerTools;
 import qupath.lib.projects.Project;
-import qupath.lib.projects.ProjectIO;
 import qupath.lib.projects.ProjectImageEntry;
 
 /**
@@ -281,14 +261,8 @@ class ProjectImportImagesCommand {
 
 		ImageServerBuilder<BufferedImage> requestedBuilder = requestBuilder ? comboBuilder.getSelectionModel().getSelectedItem() : builder;
 
-		List<String> argsList = new ArrayList<>();
-
-		String argsString = tfArgs.getText();
 		// TODO: Use a smarter approach to splitting! Currently we support so few arguments that splitting on spaces should be ok... for now.
-		String[] argsSplit = argsString == null || argsString.isBlank() ? new String[0] : argsString.split(" ");
-		for (var a : argsSplit) {
-			argsList.add(a);
-		}
+		var argsList = new ArrayList<>(parseArgsString(tfArgs.getText()));
 		if (rotation != null && rotation != Rotation.ROTATE_NONE) {
 			argsList.add("--rotate");
 			argsList.add(rotation.toString());
@@ -297,203 +271,9 @@ class ProjectImportImagesCommand {
 			logger.debug("Args: [{}]", String.join(", ", argsList));
 		String[] args = argsList.toArray(String[]::new);
 
-		List<String> pathSucceeded = new ArrayList<>();
-		List<String> pathFailed = new ArrayList<>();
-		Task<List<ProjectImageEntry<BufferedImage>>> worker = new Task<>() {
-			@Override
-			protected List<ProjectImageEntry<BufferedImage>> call() throws Exception {
-				AtomicLong counter = new AtomicLong(0L);
-
-				List<String> items = new ArrayList<>(listView.getItems());
-
-				updateMessage("Checking for compatible image readers...");
-
-				// Limit the size of the thread pool
-				// The previous use of a cached thread pool caused trouble when importing may large, non-pyramidal images
-				var pool = Executors.newFixedThreadPool(ThreadTools.getParallelism(), ThreadTools.createThreadFactory("project-import", true));
-				List<Future<List<ServerBuilder<BufferedImage>>>> results = new ArrayList<>();
-				List<ProjectImageEntry<BufferedImage>> projectImages = new ArrayList<>();
-				List<File> existingDataFiles = new ArrayList<>();
-				for (var item : items) {
-					// Try to load items from a project if possible
-					String lower = item.toLowerCase();
-					if (lower.endsWith(ProjectIO.DEFAULT_PROJECT_EXTENSION)) {
-						try {
-							var tempProject = ProjectIO.loadProject(GeneralTools.toURI(item), BufferedImage.class);
-							projectImages.addAll(tempProject.getImageList());
-						} catch (Exception e) {
-							logger.error("Unable to add images from {} ({})", item, e.getLocalizedMessage());
-						}
-						continue;
-					} else if (lower.endsWith(".qpdata")) {
-						var file = new File(item);
-						if (file.exists()) {
-							existingDataFiles.add(file);
-							continue;
-						}
-					}
-					results.add(pool.submit(() -> {
-						try {
-							var uri = GeneralTools.toURI(item);
-							UriImageSupport<BufferedImage> support;
-							if (requestedBuilder == null) {
-								support = ImageServers.getImageSupport(uri, args);
-								if (support == null)
-									logger.warn("Unable to open {} with any reader", uri);
-							} else {
-								support = ImageServers.getImageSupport(requestedBuilder, uri, args);
-								if (support == null)
-									logger.warn("Unable to open {} with {}", uri, requestedBuilder.getName());
-							}
-							if (support == null)
-								return Collections.emptyList();
-							else
-								return support.getBuilders();
-						} catch (Exception e) {
-							logger.error("Unable to add " + item, e);
-						}
-						return new ArrayList<>();
-					}));
-				}
-
-				List<ProjectImageEntry<BufferedImage>> failures = Collections.synchronizedList(new ArrayList<>());
-
-				// If we have projects, try adding images from these first
-				if (!projectImages.isEmpty()) {
-					if (projectImages.size() == 1)
-						updateMessage("Importing 1 image from existing projects");
-					else
-						updateMessage("Importing " + projectImages.size() + " images from existing projects");
-					for (var temp : projectImages) {
-						try {
-							project.addDuplicate(temp, true);
-						} catch (Exception e) {
-							failures.add(temp);
-						}
-					}
-				}
-
-				// Figure out how many 'standard' image paths with builders we have
-				List<ServerBuilder<BufferedImage>> builders = new ArrayList<>();
-				for (var result : results) {
-					try {
-						builders.addAll(result.get());
-					} catch (ExecutionException e) {
-						logger.error("Execution exception importing image", e);
-					}
-				}
-
-				// Determine the total number of images to add
-				long max = builders.size() + existingDataFiles.size();
-
-				// If we have data files, use them next
-				// Don't parallelize this because it might require a lot of memory for large data files
-				if (!existingDataFiles.isEmpty()) {
-					if (existingDataFiles.size() == 1)
-						updateMessage("Importing 1 image from existing data file");
-					else
-						updateMessage("Importing " + existingDataFiles.size() + " images from existing data files");
-					for (var file : existingDataFiles) {
-						try {
-							ImageData<BufferedImage> imageData = PathIO.readImageData(file);
-							var entry = project.addImage(imageData.getServer().getBuilder());
-							initializeEntry(entry, imageData.getImageType(), false, false);
-							entry.saveImageData(imageData);
-							updateProgress(counter.incrementAndGet(), max);
-							imageData.getServer().close();
-						} catch (Exception e) {
-							logger.warn("Unable to read image data from file: {}", file, e);
-						}
-					}
-				}
-
-				// Finally work through the standard images
-				// We can parallelize the slow initialization step
-				List<ProjectImageEntry<BufferedImage>> allAddedEntries = new ArrayList<>();
-				if (!builders.isEmpty()) {
-					if (max == 1)
-						updateMessage("Preparing to add 1 image to project");
-					else
-						updateMessage("Preparing " + max + " images");
-
-
-					if (showSelector && max > 1) {
-						var selector = ServerSelector.createFromBuilders(builders);
-						var selected = FXUtils.callOnApplicationThread(() -> {
-							return selector.promptToSelectImages("Import");
-						});
-						builders.clear();
-						if (selected != null) {
-							for (var s : selected) {
-								builders.add(s.getBuilder());
-								s.close(); // TODO: Don't waste open images by closing them again...
-							}
-						}
-					}
-
-					// Add everything in order first
-					List<ProjectImageEntry<BufferedImage>> entries = new ArrayList<>();
-					for (var builder : builders) {
-						entries.add(project.addImage(builder));
-					}
-					allAddedEntries.addAll(entries);
-
-					// Initialize (the slow bit)
-					int n = builders.size();
-					for (var entry : entries) {
-						pool.submit(() -> {
-							try {
-								initializeEntry(entry, type, pyramidalize, importObjects);
-							} catch (Exception e) {
-								failures.add(entry);
-								logger.warn("Exception adding " + entry, e);
-							} finally {
-								long i = counter.incrementAndGet();
-								updateProgress(i, max);
-								String name = entry.getImageName();
-								if (name != null) {
-									updateMessage("Added " + i + "/" + n + " - "+ name);
-								}
-							}
-						});
-					}
-				}
-				pool.shutdown();
-				try {
-					pool.awaitTermination(60, TimeUnit.MINUTES);
-				} catch (Exception e) {
-					logger.error("Exception waiting for project import to complete: {}", e.getMessage(), e);
-				}
-
-				String errorMessage = null;
-				if (!failures.isEmpty()) {
-					if (failures.size() == 1)
-						errorMessage = "Failed to load one image.";
-					else
-						errorMessage = "Failed to load " + failures.size() + " images.";
-					if (requestedBuilder != null)
-						errorMessage += "\nThe image type might not be supported by '" + requestedBuilder.getName() + "'";
-					var toRemove = failures.stream().filter(p -> project.getImageList().contains(p)).toList();
-					project.removeAllImages(toRemove, true);
-				} else if (max == 0 && !items.isEmpty()) {
-					// If we have items, but no images to add, then probably none of the items were supported images
-					errorMessage = "Unable to add images - see log for more details";
-				}
-				if (errorMessage != null) {
-					Dialogs.builder()
-							.error()
-							.owner(qupath.getStage())
-							.title("Import images")
-							.contentText(errorMessage)
-							.show();
-				}
-
-				// Now save changes
-				project.syncChanges();
-				updateProgress(max, max);
-				return allAddedEntries;
-	         }
-		};
+		var worker = new ProjectImageImportTask(
+				project, requestedBuilder, showSelector, pyramidalize, importObjects, type, listView.getItems(), args
+		);
 		ProgressDialog progress = new ProgressDialog(worker);
 		progress.setTitle("Project import");
 		qupath.getThreadPoolManager().submitShortTask(worker);
@@ -506,40 +286,48 @@ class ProjectImportImagesCommand {
 		}
 		qupath.refreshProject();
 
-		StringBuilder sb = new StringBuilder();
-		if (!pathSucceeded.isEmpty()) {
-			sb.append("Successfully imported " + pathSucceeded.size() + " paths:\n");
-			for (String path : pathSucceeded)
-				sb.append("\t" + path + "\n");
-			sb.append("\n");
-			qupath.refreshProject();
-			ProjectBrowser.syncProject(qupath.getProject());
-		}
+		Collection<String> pathFailed = worker.getFailedPaths();
+		// Inform the user of any paths that didn't work
 		if (!pathFailed.isEmpty()) {
-			sb.append("Unable to import " + pathFailed.size() + " paths:\n");
+			StringBuilder sb = new StringBuilder();
+			sb.append("Unable to import ").append(pathFailed.size()).append(" paths:\n");
 			for (String path : pathFailed)
-				sb.append("\t" + path + "\n");
+				sb.append("\t").append(path).append("\n");
 			sb.append("\n");
+
+			logger.warn(sb.toString());
 
 			TextArea textArea = new TextArea();
 			textArea.setText(sb.toString());
-			if (pathSucceeded.isEmpty())
-				Dialogs.showErrorMessage(commandName, textArea);
-			else
-				Dialogs.showMessageDialog(commandName, textArea);
+			Dialogs.builder()
+					.resizable()
+					.error()
+					.title(commandName)
+					.headerText("Some images could not be imported")
+					.content(textArea)
+					.showAndWait();
 		}
-		// TODO: Add failed and successful paths to pathFailed/pathSucceeded, so the line below prints something
-		if (!sb.isEmpty())
-			logger.info(sb.toString());
 
-		List<ProjectImageEntry<BufferedImage>> results;
 		try {
-			results = worker.get();
+			return worker.get();
 		} catch (Exception e) {
 			logger.error("Exception importing project entries", e);
-			results = Collections.emptyList();
+			return Collections.emptyList();
 		}
-		return results;
+	}
+
+	/**
+	 * Parse a string of arguments (e.g. from a textfield) into a list of strings.
+	 * @param text
+	 * @return
+	 */
+	private static List<String> parseArgsString(String text) {
+		if (text == null || text.isBlank())
+			return Collections.emptyList();
+		// TODO: Splitting on spaces - consider if escaping is needed
+		return Arrays.stream(text.split(" "))
+				.filter(s -> !s.isBlank())
+				.collect(Collectors.toList());
 	}
 
 
@@ -563,7 +351,7 @@ class ProjectImportImagesCommand {
 	public static ProjectImageEntry<BufferedImage> addSingleImageToProject(Project<BufferedImage> project, ImageServer<BufferedImage> server, ImageType type) {
 		try {
 			var entry = project.addImage(server.getBuilder());
-			initializeEntry(entry, type, false, false);
+			ProjectImageImportTask.initializeEntry(entry, type, false, false);
 			return entry;
 		} catch (Exception e) {
 			return null;
@@ -704,108 +492,10 @@ class ProjectImportImagesCommand {
 			return false;
 		}
 	}
-	
-	/**
-	 * Add a single ImageServer to a project, without considering sub-images.
-	 * <p>
-	 * This includes an optional attempt to request a thumbnail; if this fails, the image will not be added.
-	 * 
-	 * @param entry the entry that should be initialized
-	 * @param type the ImageType that should be set for each entry being added
-	 * @param pyramidalizeSingleResolution if true, attempt to pyramidalize single-resolution image servers
-	 * @param importObjects if true, read objects from the server - if available
-	 * @return
-	 * @throws Exception 
-	 */
-	static ProjectImageEntry<BufferedImage> initializeEntry(ProjectImageEntry<BufferedImage> entry, ImageType type, boolean pyramidalizeSingleResolution, boolean importObjects) throws Exception {
-		try (ImageServer<BufferedImage> server = entry.getServerBuilder().build()) {
-			// Set the image name
-			String name = ServerTools.getDisplayableImageName(server);
-			entry.setImageName(name);
-			// The thumbnail generation has been moved to ProjectBrowser to avoid overhead
-			
-			// Pyramidalize this if we need to
-			@SuppressWarnings("resource")
-			ImageServer<BufferedImage> server2 = server;
-			int minPyramidDimension = PathPrefs.minPyramidDimensionProperty().get();
-			if (pyramidalizeSingleResolution && server.nResolutions() == 1 && Math.max(server.getWidth(), server.getHeight()) > minPyramidDimension) {
-				var serverTemp = ImageServers.pyramidalize(server);
-				if (serverTemp.nResolutions() > 1) {
-					logger.debug("Auto-generating image pyramid for " + name);
-					server2 = serverTemp;
-				} else
-					serverTemp.close();
-			}
-			
-			// Initialize an ImageData object with a type, if required
-			Collection<PathObject> pathObjects = importObjects && server2 instanceof PathObjectReader ? ((PathObjectReader)server2).readPathObjects() : Collections.emptyList();
-			if (type != null || server != server2 || !pathObjects.isEmpty()) {
-				var imageData = new ImageData<>(server2, type);
-				if (!pathObjects.isEmpty())
-					imageData.getHierarchy().addObjects(pathObjects);
-				entry.saveImageData(imageData);
-			}
-			if (server != server2)
-				server2.close();
-		}
-		return entry;
-	}
 
-	
-	
+
 	public static BufferedImage getThumbnailRGB(ImageServer<BufferedImage> server, ImageDisplay imageDisplay) throws IOException {
-		var img2 = server.getDefaultThumbnail(server.nZSlices()/2, 0);
-		// Try to write RGB images directly
-		boolean success = false;
-		if (imageDisplay == null && (server.isRGB() || img2.getType() == BufferedImage.TYPE_BYTE_GRAY)) {
-			return resizeForThumbnail(img2);
-		}
-		if (!success) {
-			// Try with display transforms
-			if (imageDisplay == null) {
-				// By wrapping the thumbnail, we avoid slow z-stack/time series requests & determine brightness & contrast just from one plane
-				var wrappedServer = new WrappedBufferedImageServer("Dummy", img2, server.getMetadata().getChannels());
-				imageDisplay = ImageDisplay.create(new ImageData<>(wrappedServer));
-//				imageDisplay = new ImageDisplay(new ImageData<>(server));
-			}
-			for (ChannelDisplayInfo info : imageDisplay.selectedChannels()) {
-				imageDisplay.autoSetDisplayRange(info);
-			}
-			img2 = imageDisplay.applyTransforms(img2, null);
-			return resizeForThumbnail(img2);
-		}
-		return img2;
+		return ProjectImageThumbnails.getThumbnailRGB(server, imageDisplay);
 	}
-	
-	private static int thumbnailWidth = 1000;
-	private static int thumbnailHeight = 600;
-
-	
-	/**
-	 * Resize an image so that its dimensions fit inside thumbnailWidth x thumbnailHeight.
-	 * 
-	 * Note: this assumes the image can be drawn to a Graphics object.
-	 * 
-	 * @param imgThumbnail
-	 * @return
-	 */
-	static BufferedImage resizeForThumbnail(BufferedImage imgThumbnail) {
-		double scale = Math.min((double)thumbnailWidth / imgThumbnail.getWidth(),
-								(double)thumbnailHeight / imgThumbnail.getHeight()
-								);
-		if (scale > 1)
-			return imgThumbnail;
-		int w = (int)(imgThumbnail.getWidth() * scale);
-		int h = (int)(imgThumbnail.getHeight() * scale);
-
-		BufferedImage imgThumbnail2 = new BufferedImage(w, h, imgThumbnail.getType());
-		Graphics2D g2d = imgThumbnail2.createGraphics();
-		g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-		g2d.drawImage(imgThumbnail, 0, 0, imgThumbnail2.getWidth(), imgThumbnail2.getHeight(), null);
-		g2d.dispose();
-		return imgThumbnail2;
-	}
-	
-	
 	
 }
