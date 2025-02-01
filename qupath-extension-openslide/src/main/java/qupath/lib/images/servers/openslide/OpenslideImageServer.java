@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2024 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2025 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -91,7 +91,7 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 
 	private static boolean useBoundingBoxes = true;
 
-	private ImageServerMetadata originalMetadata;
+	private final ImageServerMetadata originalMetadata;
 
 	private List<String> associatedImageList = null;
 
@@ -100,15 +100,19 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 	
 	private int boundsX, boundsY, boundsWidth, boundsHeight;
 	
-	private URI uri;
-	private String[] args;
+	private final URI uri;
+	private final String[] args;
 	
 	
-	private static double readNumericPropertyOrDefault(Map<String, String> properties, String name, double defaultValue) {
+	private static double readNumericPropertyOrDefault(Map<String, String> properties, String name, double defaultValue, boolean warnIfMissing) {
 		// Try to read a tile size
 		String value = properties.get(name);
 		if (value == null) {
-			logger.warn("Openslide: Property '{}' not available, will return default value {}", name, defaultValue);
+			// Log at warn level if requested (i.e. it's important), otherwise log at debug level
+			if (warnIfMissing)
+				logger.warn("Openslide: Property '{}' not available, will return default value {}", name, defaultValue);
+			else
+				logger.debug("Openslide: Property '{}' not available, will return default value {}", name, defaultValue);
 			return defaultValue;
 		}
 		try {
@@ -190,12 +194,13 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 		}
 
 		// Try to read a tile size
-		int tileWidth = (int)readNumericPropertyOrDefault(properties, "openslide.level[0].tile-width", 256);
-		int tileHeight = (int)readNumericPropertyOrDefault(properties, "openslide.level[0].tile-height", 256);
+		int tileWidth = (int)readNumericPropertyOrDefault(properties, "openslide.level[0].tile-width", 256, true);
+		int tileHeight = (int)readNumericPropertyOrDefault(properties, "openslide.level[0].tile-height", 256, true);
 		// Read other properties
-		double pixelWidth = readNumericPropertyOrDefault(properties, OpenSlide.PROPERTY_NAME_MPP_X, Double.NaN);
-		double pixelHeight = readNumericPropertyOrDefault(properties, OpenSlide.PROPERTY_NAME_MPP_Y, Double.NaN);
-		double magnification = readNumericPropertyOrDefault(properties, OpenSlide.PROPERTY_NAME_OBJECTIVE_POWER, Double.NaN);
+		double pixelWidth = readNumericPropertyOrDefault(properties, OpenSlide.PROPERTY_NAME_MPP_X, Double.NaN, true);
+		double pixelHeight = readNumericPropertyOrDefault(properties, OpenSlide.PROPERTY_NAME_MPP_Y, Double.NaN, true);
+		// Magnification is frequently missing and isn't very important, so don't warn if it's missing
+		double magnification = readNumericPropertyOrDefault(properties, OpenSlide.PROPERTY_NAME_OBJECTIVE_POWER, Double.NaN, false);
 		
 		// Make sure the pixel sizes are valid
 		if (pixelWidth <= 0 || pixelHeight <= 0 || Double.isInfinite(pixelWidth) || Double.isInfinite(pixelHeight)) {

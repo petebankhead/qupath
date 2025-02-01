@@ -330,9 +330,9 @@ public abstract class AbstractImageServer<T> implements ImageServer<T> {
 	
 	private class DefaultTileRequestManager implements TileRequestManager {
 		
-		private Collection<TileRequest> allTiles;
-		private Map<String, SpatialIndex> tiles = new LinkedHashMap<>();
-		private ImageServerMetadata currentMetadata;
+		private final Collection<TileRequest> allTiles;
+		private final Map<String, SpatialIndex> tiles = new LinkedHashMap<>();
+		private final ImageServerMetadata currentMetadata;
 		
 		private String getKey(TileRequest tile) {
 			return getKey(tile.getLevel(), tile.getZ(), tile.getT());
@@ -344,16 +344,11 @@ public abstract class AbstractImageServer<T> implements ImageServer<T> {
 		
 		DefaultTileRequestManager(Collection<TileRequest> tiles) {
 			currentMetadata = getMetadata();
-			allTiles = Collections.unmodifiableList(new ArrayList<>(tiles));
+			allTiles = List.copyOf(tiles);
 			for (var tile : allTiles) {
 				var key = getKey(tile);
-				var set = this.tiles.get(key);
-				if (set == null) {
-					set = new Quadtree();
-					this.tiles.put(key, set);
-				}
-				set.insert(getEnvelope(tile.getRegionRequest()), tile);
-//				set.add(tile);
+                var index = this.tiles.computeIfAbsent(key, k -> new Quadtree());
+				index.insert(getEnvelope(tile.getRegionRequest()), tile);
 			}
 		}
 		
@@ -368,10 +363,11 @@ public abstract class AbstractImageServer<T> implements ImageServer<T> {
 			var set = tiles.get(key);
 			if (set != null) {
 				for (var obj : set.query(new Envelope(x, x, y, y))) {
-					TileRequest tile = (TileRequest)obj;
-					if (tile.getLevel() == level && tile.getRegionRequest().contains(x, y, z, t))
-						return tile;
-				}				
+					if (obj instanceof TileRequest tile) { // Should always be true
+						if (tile.getLevel() == level && tile.getRegionRequest().contains(x, y, z, t))
+							return tile;
+					}
+				}
 			}
 			return null;
 		}

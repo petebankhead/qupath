@@ -21,6 +21,7 @@
 
 package qupath.lib.images.servers;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 
@@ -62,10 +63,17 @@ public class TileRequest {
 	 * @return
 	 */
 	static Collection<TileRequest> getAllTileRequests(ImageServer<?> server) {
-		var set = new LinkedHashSet<TileRequest>();
+		// Switching from LinkedHashSet to ArrayList for v0.6.0 because duplicates should not be possible,
+		// add when importing large numbers of whole slide images HashSet.add could be a bottleneck
+		// (identifying by sampling with VisualVM)
+		var list = new ArrayList<TileRequest>();
 		
 		var tileWidth = server.getMetadata().getPreferredTileWidth();
 		var tileHeight = server.getMetadata().getPreferredTileHeight();
+
+		if (tileWidth <= 0 || tileHeight <= 0)
+			throw new IllegalArgumentException("Tile width and height must be positive");
+
 		var downsamples = server.getPreferredDownsamples();
 		
 		for (int level = 0; level < downsamples.length; level++) {
@@ -88,13 +96,13 @@ public class TileRequest {
 									ImageRegion.createInstance(
 											x, y, tw, th, z, t)
 									);
-							set.add(tile);
+							list.add(tile);
 						}
 					}					
 				}
 			}
 		}
-		return set;
+		return list;
 	}
 	
 	/**

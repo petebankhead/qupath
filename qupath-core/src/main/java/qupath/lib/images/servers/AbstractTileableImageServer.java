@@ -62,14 +62,14 @@ public abstract class AbstractTileableImageServer extends AbstractImageServer<Bu
 	private static final Logger logger = LoggerFactory.getLogger(AbstractTileableImageServer.class);
 	
 	private ColorModel colorModel;
-	private Map<String, BufferedImage> emptyTileMap = new HashMap<>();
+	private final Map<String, BufferedImage> emptyTileMap = new HashMap<>();
 	
-	private transient Set<TileRequest> emptyTiles = new HashSet<>();
+	private final transient Set<TileRequest> emptyTiles = new HashSet<>();
 	
-	private static final Long ZERO = Long.valueOf(0L);
+	private static final Long ZERO = 0L;
 	
 	// Maintain a record of tiles that could not be cached, so we warn for each only once
-	private transient Set<RegionRequest> failedCacheTiles = new HashSet<>();
+	private final transient Set<RegionRequest> failedCacheTiles = new HashSet<>();
 		
 	protected AbstractTileableImageServer() {
 		super(BufferedImage.class);
@@ -77,9 +77,6 @@ public abstract class AbstractTileableImageServer extends AbstractImageServer<Bu
 	
 	protected BufferedImage getEmptyTile(int width, int height) throws IOException {
 		return getEmptyTile(width, height, true);
-//		return getEmptyTile(width, height,
-//				width == getMetadata().getPreferredTileWidth() &&
-//				height == getMetadata().getPreferredTileHeight());
 	}
 	
 	/**
@@ -174,14 +171,12 @@ public abstract class AbstractTileableImageServer extends AbstractImageServer<Bu
 	
 	private static class TileTask extends FutureTask<BufferedImage> {
 		
-		private Thread thread;
+		private final Thread thread;
 
 		public TileTask(Thread thread, Callable<BufferedImage> callable) {
 			super(callable);
 			this.thread = thread;
 		}
-		
-		
 		
 	}
 		
