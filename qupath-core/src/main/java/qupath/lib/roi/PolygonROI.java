@@ -59,6 +59,8 @@ public class PolygonROI extends AbstractPathROI implements Serializable {
 	
 	private transient ClosedShapeStatistics stats = null;
 
+	private transient Boolean simplePolygon = null;
+
 	/**
 	 * Cache a soft reference to the geometry because calculating a valid
 	 * geometry can be a performance bottleneck (e.g. if there are self-intersections).
@@ -178,6 +180,14 @@ public class PolygonROI extends AbstractPathROI implements Serializable {
 		if (stats == null)
 			calculateShapeMeasurements();
 		return stats.getCentroidY();
+	}
+
+	@Override
+	public boolean isSimplePolygon() {
+		if (simplePolygon == null) {
+			simplePolygon = GeometryROI.isSimplePolygon(getGeometryInternal());
+		}
+		return simplePolygon;
 	}
 
 	/* (non-Javadoc)

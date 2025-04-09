@@ -40,6 +40,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryCollection;
+import org.locationtech.jts.geom.Polygon;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,6 +63,8 @@ import qupath.lib.objects.hierarchy.events.PathObjectSelectionModel;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent.HierarchyEventType;
 import qupath.lib.regions.ImagePlane;
 import qupath.lib.regions.ImageRegion;
+import qupath.lib.roi.EllipseROI;
+import qupath.lib.roi.RectangleROI;
 import qupath.lib.roi.interfaces.ROI;
 
 /**
@@ -221,20 +226,21 @@ public final class PathObjectHierarchy implements Serializable {
 	 * @return true if the hierarchy changed as a result of this call, false otherwise
 	 */
 	public synchronized boolean insertPathObjects(Collection<? extends PathObject> pathObjects) {
-		var selectedObjects =  new ArrayList<>(pathObjects);
-		int nObjects = selectedObjects.size();
-		selectedObjects.removeIf(PathObject::isTMACore);
-		if (selectedObjects.size() < nObjects)
+		var newObjects =  new ArrayList<>(pathObjects);
+		int nObjects = newObjects.size();
+		newObjects.removeIf(PathObject::isTMACore);
+		if (newObjects.size() < nObjects) {
 			logger.warn("TMA core objects cannot be inserted - use resolveHierarchy() instead");
+		}
 		
-		if (selectedObjects.isEmpty())
+		if (newObjects.isEmpty())
 			return false;
-		removeObjects(selectedObjects, true);
-		selectedObjects.sort(PathObjectHierarchy.HIERARCHY_COMPARATOR.reversed());
-		boolean singleObject = selectedObjects.size() == 1;
+		removeObjects(newObjects, true);
+		newObjects.sort(PathObjectHierarchy.HIERARCHY_COMPARATOR.reversed());
+		boolean singleObject = newObjects.size() == 1;
 		// We don't want to reset caches for every object if we have only detections, since previously-inserted objects don't impact the potential parent
-		boolean allDetections = selectedObjects.stream().allMatch(PathObject::isDetection);
-		for (var pathObject : selectedObjects) {
+		boolean allDetections = newObjects.stream().allMatch(PathObject::isDetection);
+		for (var pathObject : newObjects) {
 //			hierarchy.insertPathObject(pathObject, true);
 			insertPathObject(getRootObject(), pathObject, singleObject, !singleObject && !allDetections);
 //			insertPathObject(pathObject, selectedObjects.size() == 1);
@@ -312,7 +318,7 @@ public final class PathObjectHierarchy implements Serializable {
 				addObject = true;
 			} else {
 				// If we're adding a detection, check centroid; otherwise check covers
-				if (pathObject.isDetection())
+				if (pathObject.isDetection() && pathObject.hasROI() && pathObject.getROI().isSimplePolygon())
 					addObject = tileCache.containsCentroid(possibleParent, pathObject);
 				else
 					addObject = pathObjectParent != null && possibleParent == pathObjectParent ||
@@ -346,7 +352,8 @@ public final class PathObjectHierarchy implements Serializable {
 		}
 		return true;
 	}
-	
+
+
 	
 	/**
 	 * Remove a single object from the hierarchy, firing a remove event.
@@ -858,14 +865,14 @@ public final class PathObjectHierarchy implements Serializable {
 			if (!sameZT(roi, child.getROI()))
 				return false;
 
-			if (child.isDetection())
+			if (child.isDetection() && child.hasROI() && child.getROI().isSimplePolygon())
 				return relate.containsCentroid(child.getROI());
 			else {
 				return relate.coversWithTolerance(child.getROI());
 			}
 		}).collect(Collectors.toCollection(ArrayList::new));
 	}
-	
+
 	
 	/**
 	 * Check if two ROIs fall in the same plane, i.e. have the same Z and T values.

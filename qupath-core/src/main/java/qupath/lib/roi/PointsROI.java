@@ -171,6 +171,10 @@ public class PointsROI extends AbstractPathROI implements Serializable {
 		points.add(new Point2(x, y));
 	}
 
+	@Override
+	public boolean isSimplePolygon() {
+		return false;
+	}
 
 	/**
 	 * A Points ROI is empty if it contains no points (*not* if its bounds have no width or height...

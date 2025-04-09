@@ -162,6 +162,10 @@ public class EllipseROI extends AbstractPathBoundedROI implements Serializable {
 				new Point2(x, y/2+y2/2));
 	}
 
+	@Override
+	public boolean isSimplePolygon() {
+		return true;
+	}
 	
 	@Override
 	public Shape getShape() {

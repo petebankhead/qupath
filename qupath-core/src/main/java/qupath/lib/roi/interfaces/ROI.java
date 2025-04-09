@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2020, 2025 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -28,6 +28,8 @@ import java.util.List;
 
 import org.locationtech.jts.geom.Geometry;
 
+import org.locationtech.jts.geom.GeometryCollection;
+import org.locationtech.jts.geom.Polygon;
 import qupath.lib.geom.Point2;
 import qupath.lib.images.servers.PixelCalibration;
 import qupath.lib.regions.ImagePlane;
@@ -95,6 +97,24 @@ public interface ROI {
 	 * @return
 	 */
 	double getCentroidY();
+
+
+	/**
+	 * Returns true if this ROI represents an area that can be represented by a simple polygon,
+	 * without holes or multiple (disconnected) pieces.
+	 * <br/>
+	 * See e.g. https://en.wikipedia.org/wiki/Simple_polygon
+	 * <br/>
+	 * Note that this does not follow the same definition as JTS; consider {@code ROI.getGeometry().isSimple()}
+	 * if that is desired.
+	 * <br/>
+	 * Note that it is only sometimes possible to infer the result of this method from the ROI type.
+	 * For example, lines and points always return false, while rectangles and ellipses return true
+	 * (because an ellipse could be converted to a simple polygon - albeit with some necessarily loss of precision).
+	 * Polygons and arbitrary geometries may or may not return true, depending upon the shape they represent.
+	 * @return true if this ROI can be represented as a simple polygon, false otherwise
+	 */
+	boolean isSimplePolygon();
 
 	/**
 	 * Returns the x coordinate for the top left of the ROI bounding box.

@@ -34,8 +34,10 @@ import org.locationtech.jts.algorithm.locate.PointOnGeometryLocator;
 import org.locationtech.jts.algorithm.locate.SimplePointInAreaLocator;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryCollection;
 import org.locationtech.jts.geom.Lineal;
 import org.locationtech.jts.geom.Location;
+import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.geom.Polygonal;
 import org.locationtech.jts.geom.Puntal;
 import org.locationtech.jts.geom.util.AffineTransformation;
@@ -128,6 +130,11 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 	@Override
 	public double getCentroidY() {
 		return getGeometryStats().getCentroidY();
+	}
+
+	@Override
+	public boolean isSimplePolygon() {
+		return getGeometryStats().simplePolygon;
 	}
 
 	@Override
@@ -268,6 +275,17 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 		var transform = AffineTransformation.scaleInstance(pixelWidth, pixelHeight);
 		return new GeometryStats(transform.transform(geometry), checkValid);
 	}
+
+	static boolean isSimplePolygon(Geometry geometry) {
+		// Unwrap geometry from a collection if we have to
+		while (geometry instanceof GeometryCollection && geometry.getNumGeometries() == 1) {
+			geometry = geometry.getGeometryN(0);
+		}
+		if (geometry instanceof Polygon poly) {
+			return poly.getNumInteriorRing() == 0 && poly.isSimple();
+		}
+		return false;
+	}
 	
 	static class GeometryStats implements Serializable {
 		
@@ -281,6 +299,7 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 		private double boundsMaxY = Double.NaN;
 		private double centroidX = Double.NaN;
 		private double centroidY = Double.NaN;
+		private boolean simplePolygon = false;
 		private double area = Double.NaN;
 		private double length = Double.NaN;
 //		private double maxDiameter = Double.NaN;
@@ -293,7 +312,7 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 				error = validationError == null ? null : validationError.getMessage();
 			}
 			if (checkValid && error != null) {
-				logger.warn("Stats requested for invalid geometry: " + error);
+                logger.warn("Stats requested for invalid geometry: {}", error);
 			} else {
 				area = geometry.getArea();
 				length = geometry.getLength();
@@ -303,6 +322,8 @@ public class GeometryROI extends AbstractPathROI implements Serializable {
 				centroidX = centroid.getX();
 				centroidY = centroid.getY();
 			}
+			this.simplePolygon = isSimplePolygon(geometry);
+
 			var envelope = geometry.getEnvelopeInternal();
 			if (envelope != null) {
 				boundsMinX = envelope.getMinX();

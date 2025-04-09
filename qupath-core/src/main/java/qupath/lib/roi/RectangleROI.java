@@ -93,6 +93,11 @@ public class RectangleROI extends AbstractPathBoundedROI implements Serializable
 	}
 
 	@Override
+	public boolean isSimplePolygon() {
+		return true;
+	}
+
+	@Override
 	@Deprecated
 	public ROI duplicate() {
 		RectangleROI duplicate = new RectangleROI();

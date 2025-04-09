@@ -169,6 +169,11 @@ public class AreaROI extends AbstractPathROI implements Serializable {
 	}
 
 	@Override
+	public boolean isSimplePolygon() {
+		return GeometryROI.isSimplePolygon(getGeometryInternal());
+	}
+
+	@Override
 	public boolean contains(double x, double y) {
 		// I'm not entirely sure this is right...
 		// But the idea is that the vertices ought to give 'positive' and 'negative' areas - and ought to be non-empty and non-overlapping (if using java.awt.Area)
@@ -186,7 +191,7 @@ public class AreaROI extends AbstractPathROI implements Serializable {
 	public boolean intersects(double x, double y, double width, double height) {
 		if (!intersectsBounds(x, y, width, height))
 			return false;
-		return RectangleIntersects.intersects(GeometryTools.createRectangle(x, y, width, height), getGeometry());
+		return RectangleIntersects.intersects(GeometryTools.createRectangle(x, y, width, height), getGeometryInternal());
 	}
 
 	@Override
@@ -321,12 +326,12 @@ public class AreaROI extends AbstractPathROI implements Serializable {
 		if (o == null || getClass() != o.getClass())
 			return false;
 		AreaROI that = (AreaROI) o;
-		return Objects.equals(getImagePlane(), that.getImagePlane()) && Objects.equals(getGeometry(), that.getGeometry());
+		return Objects.equals(getImagePlane(), that.getImagePlane()) && Objects.equals(getGeometryInternal(), that.getGeometryInternal());
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(getGeometry(), getImagePlane());
+		return Objects.hash(getGeometryInternal(), getImagePlane());
 	}
 	
 	private Object writeReplace() {
@@ -374,9 +379,8 @@ public class AreaROI extends AbstractPathROI implements Serializable {
 		}
 		
 	}
-	
-	@Override
-	public Geometry getGeometry() {
+
+	private Geometry getGeometryInternal() {
 		if (geometry == null) {
 			synchronized(this) {
 				if (geometry == null)
@@ -384,6 +388,11 @@ public class AreaROI extends AbstractPathROI implements Serializable {
 			}
 		}
 		return geometry;
+	}
+	
+	@Override
+	public Geometry getGeometry() {
+		return getGeometryInternal().copy();
 	}
 
 	@Override

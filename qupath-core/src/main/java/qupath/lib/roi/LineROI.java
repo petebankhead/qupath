@@ -331,6 +331,11 @@ public class LineROI extends AbstractPathROI implements Serializable {
 	}
 
 	@Override
+	public boolean isSimplePolygon() {
+		return false;
+	}
+
+	@Override
 	public boolean intersects(double x, double y, double width, double height) {
 		if (!intersectsBounds(x, y, width, height))
 			return false;
