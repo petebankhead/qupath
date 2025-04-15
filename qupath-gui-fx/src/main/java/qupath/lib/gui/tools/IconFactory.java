@@ -49,6 +49,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.shape.Arc;
 import javafx.scene.shape.CubicCurveTo;
 import javafx.scene.shape.QuadCurve;
+import javafx.scene.text.Font;
 import javafx.scene.text.TextAlignment;
 import javafx.scene.text.TextBoundsType;
 import javafx.scene.transform.Transform;
@@ -57,6 +58,11 @@ import org.controlsfx.glyphfont.Glyph;
 import org.controlsfx.glyphfont.GlyphFont;
 import org.controlsfx.glyphfont.GlyphFontRegistry;
 import org.controlsfx.tools.Duplicatable;
+import org.kordamp.ikonli.Ikon;
+import org.kordamp.ikonli.fontawesome5.FontAwesomeBrands;
+import org.kordamp.ikonli.fontawesome5.FontAwesomeRegular;
+import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
+import org.kordamp.ikonli.javafx.FontIcon;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -107,34 +113,78 @@ public class IconFactory {
 
 		static {
 	        // Register a custom default font
-	        GlyphFontRegistry.register("icomoon", IconFactory.class.getClassLoader().getResourceAsStream("fonts/icomoon.ttf") , 12);
+	        GlyphFontRegistry.register("icomoon",
+					IconFactory.class.getClassLoader().getResourceAsStream("fonts/icomoon.ttf") , 12);
 	    }
 
-		private static GlyphFont icoMoon = GlyphFontRegistry.font("icomoon");
-		private static GlyphFont fontAwesome = GlyphFontRegistry.font("FontAwesome");
+		private static final GlyphFont icoMoon = GlyphFontRegistry.font("icomoon");
+		private static final GlyphFont fontAwesome = GlyphFontRegistry.font("FontAwesome");
+
+		static class IkonliIconSupplier implements IntFunction<Node> {
+
+			private final Ikon ikon;
+
+			private IkonliIconSupplier(Ikon ikon) {
+				this.ikon = ikon;
+			}
+
+			@Override
+			public Node apply(int value) {
+				var icon = new DuplicableIkon(ikon);
+				icon.setIconSize(value);
+				return icon;
+			}
+
+		}
+
+		private static class DuplicableIkon extends FontIcon implements Duplicatable<Node> {
+
+			DuplicableIkon(String literal) {
+				super(literal);
+			}
+
+			DuplicableIkon(Ikon code) {
+				super(code);
+			}
+
+			@Override
+			public Node duplicate() {
+				DuplicableIkon icon;
+				if (getIconCode() != null)
+					icon = new DuplicableIkon(getIconCode());
+				else
+					icon = new DuplicableIkon(getIconLiteral());
+				icon.setIconSize(getIconSize());
+				icon.getStyleClass().add("qupath-icon");
+//				icon.setIconColor(getIconColor());
+				return icon;
+			}
+		}
+
 
 		static class FontIconSupplier implements IntFunction<Node> {
 			
-			private GlyphFont font;
+			private final GlyphFont font;
 			
-			private char code;
-			private javafx.scene.paint.Color color;// = javafx.scene.paint.Color.GRAY;
-			private ObservableIntegerValue observableColor;
+			private final char code;
+			private final javafx.scene.paint.Color color;// = javafx.scene.paint.Color.GRAY;
+			private final ObservableIntegerValue observableColor;
 			
 			FontIconSupplier(GlyphFont font, char code) {
-				this.font = font;
-				this.code = code;
+				this(font, code, (ObservableIntegerValue) null);
 			};
 			
 			FontIconSupplier(GlyphFont font, char code, javafx.scene.paint.Color color) {
 				this.font = font;
 				this.code = code;
 				this.color = color;
+				this.observableColor = null;
 			};
 	
 			FontIconSupplier(GlyphFont font, char code, ObservableIntegerValue observableColor) {
 				this.font = font;
 				this.code = code;
+				this.color = null;
 				this.observableColor = observableColor;
 			};
 	
@@ -171,7 +221,10 @@ public class IconFactory {
 			}
 			
 		}
-		
+
+		static IntFunction<Node> ikonli(Ikon ikon) {
+			return new IkonliIconSupplier(ikon);
+		}
 		
 		static IntFunction<Node> fontAwesome(FontAwesome.Glyph glyph, ObservableIntegerValue color) {
 			return new FontIconSupplier(fontAwesome, glyph.getChar(), color);
@@ -307,26 +360,26 @@ public class IconFactory {
 
 									DETECTIONS(IconSuppliers.icoMoon('\ue908', DETECTION_COLOR)),
 									DETECTIONS_FILL(IconSuppliers.fillDetectionsIcon()),
-									DOWNLOAD(IconSuppliers.fontAwesome(FontAwesome.Glyph.DOWNLOAD)),
+									DOWNLOAD(IconSuppliers.ikonli(FontAwesomeSolid.DOWNLOAD)),
 
 									ELLIPSE_TOOL(IconSuppliers.ellipseToolIcon()),
 									EXTRACT_REGION(IconSuppliers.icoMoon('\ue90a')),
 
 									GRID(IconSuppliers.icoMoon('\ue90b')),
-									GITHUB(IconSuppliers.fontAwesome(FontAwesome.Glyph.GITHUB)),
+									GITHUB(IconSuppliers.ikonli(FontAwesomeBrands.GITHUB)),
 
-									HELP(IconSuppliers.fontAwesome(FontAwesome.Glyph.QUESTION_CIRCLE)),
+									HELP(IconSuppliers.ikonli(FontAwesomeSolid.QUESTION_CIRCLE)),
 
-									INFO(IconSuppliers.fontAwesome(FontAwesome.Glyph.INFO)),
+									INFO(IconSuppliers.ikonli(FontAwesomeSolid.INFO)),
 									INACTIVE_SERVER(IconSuppliers.icoMoon('\ue915', ColorToolsFX.getCachedColor(200, 0, 0))),
 
-									LOG_VIEWER(IconSuppliers.fontAwesome(FontAwesome.Glyph.LIST_ALT)), // Shows list in window
+									LOG_VIEWER(IconSuppliers.ikonli(FontAwesomeSolid.LIST_ALT)), // Shows list in window
 //									LOG_VIEWER(IconSuppliers.fontAwesome(FontAwesome.Glyph.LIST_UL)), // Alternative
 									LINE_TOOL(IconSuppliers.lineToolIcon()),
 									LOCATION(IconSuppliers.icoMoon('\ue90d')),
 									
 									MEASURE(IconSuppliers.icoMoon('\ue90e')),
-									MINUS(IconSuppliers.fontAwesome(FontAwesome.Glyph.MINUS)),
+									MINUS(IconSuppliers.ikonli(FontAwesomeSolid.MINUS)),
 									MOVE_TOOL(IconSuppliers.icoMoon('\ue90f')),
 									
 									NUCLEI_ONLY(IconSuppliers.icoMoon('\ue910')),
@@ -346,14 +399,14 @@ public class IconFactory {
 
 									SELECTION_MODE(IconSuppliers.selectionModeIcon()),
 
-									SCRIPT_EDITOR(IconSuppliers.fontAwesome(FontAwesome.Glyph.CODE)),
+									SCRIPT_EDITOR(IconSuppliers.ikonli(FontAwesomeSolid.CODE)),
 
 									SHOW_NAMES(IconSuppliers.showNamesIcon()),
 									SHOW_SCALEBAR(IconSuppliers.icoMoon('\ue917')),
 									SHOW_CONNECTIONS(IconSuppliers.drawConnectionsIcon()),
 									SCREENSHOT(IconSuppliers.icoMoon('\ue918')),
 									
-									TRACKING_REWIND(IconSuppliers.fontAwesome(FontAwesome.Glyph.BACKWARD)),
+									TRACKING_REWIND(IconSuppliers.ikonli(FontAwesomeSolid.BACKWARD)),
 									TRACKING_RECORD(IconSuppliers.icoMoon('\ue915', ColorToolsFX.getCachedColor(200, 0, 0))),
 									TRACKING_STOP(IconSuppliers.icoMoon('\ue919')),
 
@@ -374,7 +427,7 @@ public class IconFactory {
 									ZOOM_TO_FIT(IconSuppliers.icoMoon('\ue91f'))
 									;
 		
-		private IntFunction<Node> fun;
+		private final IntFunction<Node> fun;
 									
 		PathIcons(IntFunction<Node> fun) {
 			this.fun = fun;
@@ -666,16 +719,22 @@ public class IconFactory {
 		bindStrokeToSelectionMode(shape.getStrokeDashArray());
 		return wrapInGroup(size, shape);
 	}
+
+	private static Label createTextIcon(String text, double size) {
+		var textNode = new Label(text);
+		textNode.getStyleClass().add("qupath-icon");
+//		textNode.setFont(new Font("Arial", size));
+		return textNode;
+	}
 	
 	private static Node drawShowNamesIcon(int size) {
-		var text = new Text("N");
-		bindColorPropertyToRGB(text.fillProperty(), PathPrefs.colorDefaultObjectsProperty());
+		var text = createTextIcon("N", size);
+		bindColorPropertyToRGB(text.textFillProperty(), PathPrefs.colorDefaultObjectsProperty());
 		return text;
 	}
 
 	private static Node drawPixelClassificationIcon(int size) {
-		var label = new Label("C");
-		label.getStyleClass().add("qupath-icon");
+		var label = createTextIcon("C", size);
 		return label;
 	}
 

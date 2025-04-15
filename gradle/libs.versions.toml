@@ -14,7 +14,7 @@ deepJavaLibrary = "0.32.0"
 
 groovy          = "4.0.26"
 gson            = "2.12.1"
-guava           = "33.4.7-jre"
+guava           = "33.4.8-jre"
 
 ikonli          = "12.3.1"
 imagej          = "1.54k"
@@ -106,6 +106,7 @@ opencv        = { module = "org.bytedeco:opencv-platform",      version.ref = "o
 
 ikonli-javafx    = { module = "org.kordamp.ikonli:ikonli-javafx",         version.ref = "ikonli" }
 ikonli-ionicons4 = { module = "org.kordamp.ikonli:ikonli-ionicons4-pack", version.ref = "ikonli" }
+ikonli-fontawesome5 = { module = "org.kordamp.ikonli:ikonli-fontawesome5-pack", version.ref = "ikonli" }
 
 junit            = { module = "org.junit.jupiter:junit-jupiter",        version.ref = "junit" }
 junit-platform   = { module = "org.junit.platform:junit-platform-launcher" }
@@ -114,7 +115,7 @@ junit-platform   = { module = "org.junit.platform:junit-platform-launcher" }
 [bundles]
 djl           = ["deepJavaLibrary", "deepJavaLibrary-zoo"]
 groovy        = ["groovy-core", "groovy-jsr223", "groovy-xml"]
-ikonli        = ["ikonli-javafx", "ikonli-ionicons4"]
+ikonli        = ["ikonli-javafx", "ikonli-ionicons4", "ikonli-fontawesome5"]
 logging       = ["slf4j", "logback"]
 logviewer     = ["logviewer", "logviewer-console", "logviewer-rich", "logviewer-logback"]
 markdown      = ["commonmark", "commonmark-yaml"]
