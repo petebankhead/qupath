@@ -1897,20 +1897,33 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		boolean paintCompletely = thumbnailIsFullImage || !doFasterRepaint;
 //		var regionBounds = AwtTools.getImageRegion(clip, getZPosition(), getTPosition());
 		if (opacity > 0 || PathPrefs.alwaysPaintSelectedObjectsProperty().get()) {
-			if (opacity < 1) {
-				AlphaComposite composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, opacity);
-				g2d.setComposite(composite);			
-			}
+			var imgOverlay = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+			var g2dOverlay = imgOverlay.createGraphics();
+			g2dOverlay.setTransform(g2d.getTransform());
+			g2dOverlay.setRenderingHints(g2d.getRenderingHints());
+			g2dOverlay.setClip(g2d.getClip());
+//			if (opacity < 1) {
+////				AlphaComposite composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, opacity);
+////				g2d.setComposite(composite);
+//
+//				g2d.setClip(0, 0, (int)Math.round(w*opacity), h);
+//			}
 
 			Color color = getSuggestedOverlayColor();
 			// Paint the overlay layers
 			var imageData = this.imageDataProperty.get();
 			for (PathOverlay overlay : allOverlayLayers.toArray(PathOverlay[]::new)) {
 				logger.trace("Painting overlay: {}", overlay);
-				if (overlay instanceof AbstractOverlay)
-					((AbstractOverlay)overlay).setPreferredOverlayColor(color);
-				overlay.paintOverlay(g2d, getServerBounds(), downsample, imageData, paintCompletely);
+				if (overlay instanceof AbstractOverlay abstractOverlay)
+					abstractOverlay.setPreferredOverlayColor(color);
+				overlay.paintOverlay(g2dOverlay, getServerBounds(), downsample, imageData, paintCompletely);
 			}
+
+			var gTemp = (Graphics2D)g2d.create();
+			gTemp.setTransform(new AffineTransform());
+			int w2 = Math.round(w*opacity);
+			gTemp.drawImage(imgOverlay, 0, 0, w2, h, 0, 0, w2, h, null);
+			gTemp.dispose();
 		}
 		
 		// Paint the selected object
