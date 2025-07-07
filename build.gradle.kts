@@ -6,7 +6,7 @@ plugins {
     id("qupath.javafx-conventions")
     id("qupath.git-commit-id")
 
-    id("qupath.djl-conventions")
+//    id("qupath.djl-conventions")
     id("qupath.application-conventions")
 
     id("qupath.fiji-conventions")
@@ -163,7 +163,11 @@ dependencies {
     runtimeOnly(libs.bundles.groovy)
 
     includedProjects.forEach {
-        implementation(it)
+        if (!it.name.lowercase().contains("-extension") || it.name.lowercase().contains("openslide")) {
+//            || it.name.lowercase().contains("processing")) {
+//            println(it)
+            implementation(it)
+        }
     }
 
     with (gradle.extra["qupath.included.dependencies"] as List<*>) {
