@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2024 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2025 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -41,7 +41,10 @@ import qupath.lib.images.servers.openslide.jna.OpenSlideLoader;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.color.ColorSpace;
+import java.awt.color.ICC_Profile;
 import java.awt.image.BufferedImage;
+import java.awt.image.ColorConvertOp;
 import java.awt.image.DataBufferInt;
 import java.io.IOException;
 import java.lang.ref.Cleaner;
@@ -101,8 +104,9 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 	
 	private URI uri;
 	private String[] args;
-	
-	
+
+    private transient byte[] iccProfile;
+
 	private static double readNumericPropertyOrDefault(Map<String, String> properties, String name, double defaultValue) {
 		// Try to read a tile size
 		String value = properties.get(name);
@@ -156,9 +160,12 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 		Map<String, String> properties = osr.getProperties();
 		
 		boolean applyBounds = useBoundingBoxes;
-		for (String arg : args) {
+		boolean useIcc = false;
+        for (String arg : args) {
 			if ("--no-crop".equals(arg))
 				applyBounds = false;
+            if ("--use-icc".equals(arg))
+                useIcc = true;
 		}
 		
 		// Read bounds
@@ -187,6 +194,13 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 			boundsWidth = width;
 			boundsHeight = height;
 		}
+
+        // Read ICC
+        try {
+            iccProfile = osr.getICCProfileBytes();
+        } catch (Exception e) {
+            logger.warn("Exception requesting ICC profile: {}", e.getMessage(), e);
+        }
 
 		// Try to read a tile size
 		int tileWidth = (int)readNumericPropertyOrDefault(properties, "openslide.level[0].tile-width", 256);
@@ -334,6 +348,12 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 		}
 		g2d.drawImage(img, 0, 0, tileWidth, tileHeight, null);
 		g2d.dispose();
+
+        // Apply ICC profile (in-place)
+        if (iccOp != null) {
+            iccOp.filter(img2.getRaster(), img2.getRaster());
+        }
+
 		return img2;
 	}
 
@@ -354,7 +374,7 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 		try {
 			return osr.getAssociatedImage(name);
 		} catch (Exception e) {
-			logger.error("Error requesting associated image " + name, e);
+            logger.error("Error requesting associated image {}", name, e);
 		}
 		throw new IllegalArgumentException("Unable to find sub-image with the name " + name);
 	}
@@ -363,5 +383,15 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 	public ImageServerMetadata getOriginalMetadata() {
 		return originalMetadata;
 	}
+
+    @Override
+    public boolean hasIccProfile() {
+        return iccProfile != null;
+    }
+
+    @Override
+    public byte[] getIccProfileBytes() {
+        return iccProfile == null ? null : iccProfile.clone();
+    }
 
 }

@@ -23,17 +23,16 @@
 
 package qupath.lib.images.servers;
 
+import org.slf4j.LoggerFactory;
+import qupath.lib.images.servers.ImageServerBuilder.ServerBuilder;
+import qupath.lib.regions.ImagePlane;
+import qupath.lib.regions.RegionRequest;
+
 import java.io.IOException;
 import java.net.URI;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
-
-import org.slf4j.LoggerFactory;
-
-import qupath.lib.images.servers.ImageServerBuilder.ServerBuilder;
-import qupath.lib.regions.ImagePlane;
-import qupath.lib.regions.RegionRequest;
 
 /**
  * 
@@ -409,5 +408,26 @@ public interface ImageServer<T> extends AutoCloseable {
 	public default ServerBuilder<T> getBuilder() {
 		return null;
 	}
+
+    /**
+     * Query if the server has an ICC profile available.
+     * If this returns {@code true}, then {@link #getIccProfileBytes()} should be non-null.
+     * @return
+     * @see #getIccProfileBytes()
+     */
+    public default boolean hasIccProfile() {
+        return getIccProfileBytes() != null;
+    }
+
+    /**
+     * Get a byte array of any ICC profile available within this image.
+     * Most images will not have an ICC profile available.
+     * It is assumed that {@link #readRegion(RegionRequest)} does <i>not</i> apply the profile by default.
+     * @return a byte array containing an ICC profile if available, otherwise null
+     * @see #hasIccProfile()
+     */
+    public default byte[] getIccProfileBytes() {
+        return null;
+    }
 	
 }
