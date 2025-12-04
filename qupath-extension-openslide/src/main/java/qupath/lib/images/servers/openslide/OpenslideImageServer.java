@@ -38,7 +38,7 @@ import qupath.lib.images.servers.ServerTools;
 import qupath.lib.images.servers.TileRequest;
 import qupath.lib.images.servers.openslide.jna.OpenSlide;
 import qupath.lib.images.servers.openslide.jna.OpenSlideLoader;
-import qupath.lib.images.servers.transforms.IccProfileTools;
+import qupath.lib.images.servers.icc.IccProfileTools;
 
 import java.awt.Color;
 import java.awt.Graphics2D;

@@ -46,6 +46,10 @@ import qupath.lib.images.servers.ImageServerProvider.UriImageSupportComparator;
 import qupath.lib.images.servers.RotatedImageServer.Rotation;
 import qupath.lib.images.servers.SparseImageServer.SparseImageServerManagerRegion;
 import qupath.lib.images.servers.SparseImageServer.SparseImageServerManagerResolution;
+import qupath.lib.images.servers.icc.DefaultIccProfileProfileWrapper;
+import qupath.lib.images.servers.icc.EmbeddedIccProfileProfileWrapper;
+import qupath.lib.images.servers.icc.IccProfileWrapper;
+import qupath.lib.images.servers.icc.UriIccProfileProfileWrapper;
 import qupath.lib.images.servers.transforms.BufferedImageNormalizer;
 import qupath.lib.images.servers.transforms.ColorDeconvolutionNormalizer;
 import qupath.lib.images.servers.transforms.SubtractOffsetAndScaleNormalizer;
@@ -83,9 +87,9 @@ public class ImageServers {
 	
 	private static final Logger logger = LoggerFactory.getLogger(ImageServers.class);
 	
-	private static Set<String> loggedWarnings = new HashSet<>();
+	private static final Set<String> loggedWarnings = new HashSet<>();
 	
-	private static SubTypeAdapterFactory<ServerBuilder> serverBuilderFactory = 
+	private static final SubTypeAdapterFactory<ServerBuilder> serverBuilderFactory =
 			GsonTools.createSubTypeAdapterFactory(ServerBuilder.class, "builderType")
 			.registerSubtype(DefaultImageServerBuilder.class, "uri")
 			.registerSubtype(RotatedImageServerBuilder.class, "rotated")
@@ -102,18 +106,26 @@ public class ImageServers {
 			.registerSubtype(SlicedImageServerBuilder.class, "sliced")
 			.registerSubtype(ZProjectedImageServerBuilder.class, "z_projected")
 			.registerSubtype(ZConcatenatedImageServerBuilder.class, "z_concatenated")
+            .registerSubtype(IccProfileImageServerBuilder.class, "icc_profile")
 			;
 
-	private static GsonTools.SubTypeAdapterFactory<BufferedImageNormalizer> normalizerFactory =
+	private static final GsonTools.SubTypeAdapterFactory<BufferedImageNormalizer> normalizerFactory =
 			GsonTools.createSubTypeAdapterFactory(BufferedImageNormalizer.class, "normalizerType")
 					.registerSubtype(ColorDeconvolutionNormalizer.class, "colorDeconvolution")
 					.registerSubtype(SubtractOffsetAndScaleNormalizer.class, "offsetAndScale");
+
+    private static final GsonTools.SubTypeAdapterFactory<IccProfileWrapper> iccProfileWrapperFactory =
+            GsonTools.createSubTypeAdapterFactory(IccProfileWrapper.class, "iccProfileType")
+                    .registerSubtype(EmbeddedIccProfileProfileWrapper.class, "embedded")
+                    .registerSubtype(UriIccProfileProfileWrapper.class, "uri")
+                    .registerSubtype(DefaultIccProfileProfileWrapper.class, "java");
 
 	static {
 		GsonTools.getDefaultBuilder()
 			.registerTypeAdapterFactory(ImageServers.getImageServerTypeAdapterFactory(true))
 			.registerTypeAdapterFactory(ImageServers.getServerBuilderFactory())
-			.registerTypeAdapterFactory(ImageServers.getNormalizerFactory());
+			.registerTypeAdapterFactory(ImageServers.getNormalizerFactory())
+            .registerTypeAdapterFactory(iccProfileWrapperFactory);
 	}
 	
 	
@@ -903,6 +915,49 @@ public class ImageServers {
 		}
 
 	}
+
+
+    static class IccProfileImageServerBuilder extends AbstractServerBuilder<BufferedImage> {
+
+        private ServerBuilder<BufferedImage> builder;
+        private IccProfileWrapper source;
+        private IccProfileWrapper dest;
+
+        IccProfileImageServerBuilder(ImageServerMetadata metadata, ServerBuilder<BufferedImage> builder,
+                                     IccProfileWrapper source,
+                                     IccProfileWrapper dest) {
+            super(metadata);
+            this.builder = builder;
+            this.source = source;
+            this.dest = dest;
+        }
+
+        @Override
+        protected ImageServer<BufferedImage> buildOriginal() throws Exception {
+            return new IccProfileImageServer(builder.build(), source, dest);
+        }
+
+        @Override
+        public Collection<URI> getURIs() {
+            Set<URI> uris = new LinkedHashSet<>(builder.getURIs());
+            if (source != null)
+                uris.addAll(source.getURIs());
+            if (dest != null)
+                uris.addAll(dest.getURIs());
+            return uris;
+        }
+
+        @Override
+        public ServerBuilder<BufferedImage> updateURIs(Map<URI, URI> updateMap) {
+            ServerBuilder<BufferedImage> newBuilder = builder.updateURIs(updateMap);
+            IccProfileWrapper newSource = source == null ? null : source.updateURIs(updateMap);
+            IccProfileWrapper newDest = dest == null ? null : dest.updateURIs(updateMap);
+            if (builder == newBuilder && source == newSource && dest == newDest)
+                return this;
+            return new IccProfileImageServerBuilder(getMetadata().orElse(null), newBuilder, newSource, newDest);
+        }
+
+    }
 
 	static class TypeConvertImageServerBuilder extends AbstractServerBuilder<BufferedImage> {
 
