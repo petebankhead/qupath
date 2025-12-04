@@ -38,15 +38,13 @@ import qupath.lib.images.servers.ServerTools;
 import qupath.lib.images.servers.TileRequest;
 import qupath.lib.images.servers.openslide.jna.OpenSlide;
 import qupath.lib.images.servers.openslide.jna.OpenSlideLoader;
+import qupath.lib.images.servers.transforms.IccProfileTools;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
-import java.awt.color.ICC_ColorSpace;
-import java.awt.color.ICC_Profile;
 import java.awt.image.BufferedImage;
 import java.awt.image.ColorConvertOp;
 import java.awt.image.DataBufferInt;
-import java.awt.image.WritableRaster;
 import java.io.IOException;
 import java.lang.ref.Cleaner;
 import java.net.URI;
@@ -167,7 +165,7 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 				applyBounds = false;
 		}
         try {
-            iccOp = parseIccProfileArgs(args, osr.getICCProfileBytes());
+            iccOp = IccProfileTools.parseIccProfileArgs(args, osr.getICCProfileBytes());
         } catch (Exception e) {
             logger.error("Exception requesting ICC profile for args {}", List.of(args), e);
         }
@@ -347,7 +345,7 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 		g2d.dispose();
 
         if (iccOp != null) {
-            applyInPlace(iccOp, img2.getRaster());
+            IccProfileTools.applyInPlace(iccOp, img2.getRaster());
         }
 
 		return img2;
@@ -380,67 +378,5 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 		return originalMetadata;
 	}
 
-
-    private static WritableRaster applyInPlace(ColorConvertOp op, WritableRaster raster) {
-        return op.filter(raster, raster);
-    }
-
-    private static ColorConvertOp parseIccProfileArgs(String[] args, byte[] embeddedProfileBytes)
-            throws IllegalArgumentException, IOException {
-        ICC_Profile source = null;
-        ICC_Profile dest = null;
-
-        String ICC_EMBED = "--icc-profile"; // Use embedded profile, nothing extra required
-        String ICC_SOURCE = "--icc-profile-source=";
-        String ICC_DEST = "--icc-profile-dest=";
-
-        for (String arg : args) {
-            arg = arg.strip();
-            if (arg.startsWith(ICC_SOURCE)) {
-                String argTemp = arg.substring(ICC_SOURCE.length());
-                logger.info("Requesting source ICC profile from {}", argTemp);
-                source = parseIccProfileFromArg(argTemp);
-            } else if (arg.startsWith(ICC_DEST)) {
-                String argTemp = arg.substring(ICC_DEST.length());
-                logger.info("Requesting dest ICC profile from {}", argTemp);
-                dest = parseIccProfileFromArg(argTemp);
-            } else if (arg.equalsIgnoreCase(ICC_EMBED)) {
-                if (embeddedProfileBytes == null) {
-                    logger.warn("No embedded ICC profile found");
-                    return null;
-                } else {
-                    logger.info("Found embedded ICC profile ({} bytes)", embeddedProfileBytes.length);
-                    source = ICC_Profile.getInstance(embeddedProfileBytes);
-                }
-            }
-        }
-        if (source == null) {
-            if (dest == null) {
-                logger.debug("No ICC profile requested");
-                return null;
-            } else {
-                logger.warn("No source ICC profile found, cannot apply dest profile only");
-                return null;
-            }
-        }
-        if (dest == null) {
-            logger.debug("Using default ICC destination CS_sRGB");
-            dest = ICC_Profile.getInstance(ICC_ColorSpace.CS_sRGB);
-        }
-        return new ColorConvertOp(
-                new ICC_Profile[] {
-                        source, dest
-                },
-                null);
-    }
-
-    private static ICC_Profile parseIccProfileFromArg(String arg) throws IOException {
-        if ("srgb".equalsIgnoreCase(arg))
-            return ICC_Profile.getInstance(ICC_ColorSpace.CS_sRGB);
-        else if ("linear".equalsIgnoreCase(arg))
-            return ICC_Profile.getInstance(ICC_ColorSpace.CS_LINEAR_RGB);
-        else
-            return ICC_Profile.getInstance(arg);
-    }
 
 }
