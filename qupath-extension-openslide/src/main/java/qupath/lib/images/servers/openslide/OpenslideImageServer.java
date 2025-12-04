@@ -36,9 +36,10 @@ import qupath.lib.images.servers.ImageServerMetadata.ImageResolutionLevel;
 import qupath.lib.images.servers.PixelType;
 import qupath.lib.images.servers.ServerTools;
 import qupath.lib.images.servers.TileRequest;
+import qupath.lib.images.servers.icc.IccProfileReader;
+import qupath.lib.images.servers.icc.IccProfileTools;
 import qupath.lib.images.servers.openslide.jna.OpenSlide;
 import qupath.lib.images.servers.openslide.jna.OpenSlideLoader;
-import qupath.lib.images.servers.icc.IccProfileTools;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -62,11 +63,11 @@ import java.util.Map;
  * @author Pete Bankhead
  *
  */
-public class OpenslideImageServer extends AbstractTileableImageServer {
+public class OpenslideImageServer extends AbstractTileableImageServer implements IccProfileReader {
 	
 	private static final Logger logger = LoggerFactory.getLogger(OpenslideImageServer.class);
 
-	/**
+    /**
 	 * Use a Cleaner to ensure that the OpenSlide object is closed when the server is no longer needed.
 	 * This is necessary because OpenSlide uses native resources that need to be released,
 	 * and finalize() is both a bad idea and deprecated for removal.
@@ -378,5 +379,9 @@ public class OpenslideImageServer extends AbstractTileableImageServer {
 		return originalMetadata;
 	}
 
+    @Override
+    public byte[] getIccProfileBytes() {
+        return osr.getICCProfileBytes();
+    }
 
 }

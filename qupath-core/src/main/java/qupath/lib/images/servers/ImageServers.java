@@ -48,6 +48,7 @@ import qupath.lib.images.servers.SparseImageServer.SparseImageServerManagerRegio
 import qupath.lib.images.servers.SparseImageServer.SparseImageServerManagerResolution;
 import qupath.lib.images.servers.icc.DefaultIccProfileProfileWrapper;
 import qupath.lib.images.servers.icc.EmbeddedIccProfileProfileWrapper;
+import qupath.lib.images.servers.icc.IccProfileReader;
 import qupath.lib.images.servers.icc.IccProfileWrapper;
 import qupath.lib.images.servers.icc.UriIccProfileProfileWrapper;
 import qupath.lib.images.servers.transforms.BufferedImageNormalizer;
@@ -60,6 +61,7 @@ import qupath.lib.regions.ImageRegion;
 
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
@@ -471,6 +473,39 @@ public class ImageServers {
 		if (support == null)
 			return null;
 		List<Function<ServerBuilder<BufferedImage>, ServerBuilder<BufferedImage>>> functions = new ArrayList<>();
+
+        if (args.iccProfileSource != null) {
+            var source = getIccProfileWrapper(args.iccProfileSource);
+            var dest = getIccProfileWrapper(args.iccProfileDest);
+            if (source == null) {
+                logger.warn("Cannot create ICC profile for source {}", args.iccProfileSource);
+            } else {
+                // It's inefficient, but we need to check if there *is* an ICC profile embedded if we want to use that
+                boolean canBuild = dest != null;
+                if (canBuild && source instanceof EmbeddedIccProfileProfileWrapper) {
+                    for (var b : support.getBuilders()) {
+                        boolean hasProfile = false;
+                        try (var server = b.build()) {
+                            if (server instanceof IccProfileReader reader) {
+                                var bytes = reader.getIccProfileBytes();
+                                hasProfile = bytes != null && bytes.length > 0;
+                            }
+                        } catch (Exception e) {
+                            logger.error("Exception trying to find ICC profile", e);
+                        }
+                        if (!hasProfile) {
+                            canBuild = false;
+                            break;
+                        }
+                    }
+                }
+                if (canBuild)
+                    functions.add(b -> getIccProfileBuilder(b, source, dest));
+                else
+                    logger.warn("Unable to build ICC profile for source={}, dest={}", args.iccProfileSource, args.iccProfileDest);
+            }
+        }
+
 		if (args.rotation != null && args.rotation != Rotation.ROTATE_NONE)
 			functions.add(b -> RotatedImageServer.getRotatedBuilder(b, args.rotation));
 		String orderRGB = args.getOrderRGB();
@@ -487,7 +522,22 @@ public class ImageServers {
 		}
 		return new UriImageSupport<>(support.getProviderClass(), support.getSupportLevel(), buildersNew);
 	}
-	
+
+    private static IccProfileImageServerBuilder getIccProfileBuilder(ServerBuilder<BufferedImage> builder, IccProfileWrapper source, IccProfileWrapper dest) {
+        return new IccProfileImageServerBuilder(null, builder, source, dest);
+    }
+
+    private static IccProfileWrapper getIccProfileWrapper(String arg) {
+        if (arg.equalsIgnoreCase("embed"))
+            return new EmbeddedIccProfileProfileWrapper();
+        if (Set.of("srgb", "linear", "linear_rgb").contains(arg.toLowerCase())) {
+            return new DefaultIccProfileProfileWrapper(arg);
+        }
+        var file = new File(arg);
+        if (file.exists())
+            return new UriIccProfileProfileWrapper(file.toPath());
+        return null;
+    }
 	
 	
 	static class ServerArgs {
@@ -495,7 +545,13 @@ public class ImageServers {
 		@Option(names = {"--classname"}, description = "Requested classnames for the ImageServerProvider")
 		String[] requestedClassnames = new String[0];
 
-		@Option(names = {"--rotate"}, description = "Rotate the image during reading by an increment of 90 degrees.")
+        @Option(names = {"--icc_source"}, description = "Source ICC profile to apply, e.g. 'embed' or a file path.")
+        String iccProfileSource = null;
+
+        @Option(names = {"--icc_dest"}, description = "Source ICC profile to apply, e.g. 'sRGB', 'linear_rgb' or a file path. Only used if --icc-source is set.", defaultValue = "sRGB")
+        String iccProfileDest = "sRGB";
+
+        @Option(names = {"--rotate"}, description = "Rotate the image during reading by an increment of 90 degrees.")
 		Rotation rotation = Rotation.ROTATE_NONE;
 		
 		@Option(names = {"--order"}, description = "Rearrange the channels of an RGB image (to correct errors in the image reader)")

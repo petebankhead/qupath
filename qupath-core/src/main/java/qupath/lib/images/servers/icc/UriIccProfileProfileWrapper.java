@@ -26,6 +26,7 @@ import qupath.lib.images.servers.ImageServer;
 import java.awt.color.ICC_Profile;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.List;
@@ -43,8 +44,12 @@ public class UriIccProfileProfileWrapper implements IccProfileWrapper {
 
     private final URI uri;
 
-    private UriIccProfileProfileWrapper(URI uri) {
+    public UriIccProfileProfileWrapper(URI uri) {
         this.uri = uri;
+    }
+
+    public UriIccProfileProfileWrapper(Path path) {
+        this(path.toUri());
     }
 
     @Override

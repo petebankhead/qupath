@@ -38,7 +38,7 @@ public class DefaultIccProfileProfileWrapper implements IccProfileWrapper {
 
     private final String name;
 
-    private DefaultIccProfileProfileWrapper(String name) {
+    public DefaultIccProfileProfileWrapper(String name) {
         this.name = name;
     }
 
