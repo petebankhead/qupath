@@ -23,6 +23,7 @@
 
 package qupath.lib.images.servers.bioformats;
 
+import java.nio.channels.ClosedChannelException;
 import loci.common.services.DependencyException;
 import loci.common.services.ServiceException;
 import loci.formats.ClassList;
@@ -1435,8 +1436,12 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 		
 		private IFormatReader nextQueuedReader() {
 			var nextReader = queue.poll();
-			if (nextReader != null)
-				return nextReader;
+			if (nextReader != null) {
+				if (nextReader.getCurrentFile() != null)
+					return nextReader;
+				else
+					totalReaders.decrementAndGet();
+			}
 			synchronized (this) {
 				if (!isClosed && (task == null || task.isDone()) && totalReaders.get() < getMaxReaders()) {
 					logger.debug("Requesting reader for {}", id);
@@ -1458,6 +1463,14 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 				return isClosed ? null : mainReader;
 			}
 		}
+
+		private void ensureOpen(IFormatReader reader) throws IOException, FormatException {
+			if (!id.equals(reader.getCurrentFile())) {
+				reader.close();
+				reader.setFlattenedResolutions(false);
+				reader.setId(id);
+			}
+		}
 		
 		
 		BufferedImage openImage(TileRequest tileRequest, int series, int nChannels, boolean isRGB, ColorModel colorModel) throws IOException, InterruptedException {
@@ -1471,8 +1484,6 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 	
 			byte[][] bytes = null;
 			int effectiveC;
-			int sizeC = nChannels;
-			int length = 0;
 			ByteOrder order = ByteOrder.BIG_ENDIAN;
 			boolean interleaved;
 			int pixelType;
@@ -1486,13 +1497,14 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 				if (ipReader == null) {
 					throw new IOException("Reader is null - was the image already closed? " + id);
 				}
-	
+
 				// Check if this is non-zero
 				if (tileWidth <= 0 || tileHeight <= 0) {
 					throw new IOException("Unable to request pixels for region with downsampled size " + tileWidth + " x " + tileHeight);
 				}
-		
+
 				synchronized (ipReader) {
+					ensureOpen(ipReader);
 					ipReader.setSeries(series);
 
 					// Some files provide z scaling (the number of z stacks decreases when the resolution becomes
@@ -1528,7 +1540,7 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 							byte[] bytesSimple = ipReader.openBytes(ind, tileX, tileY, tileWidth, tileHeight);
 							return AWTImageTools.openImage(bytesSimple, ipReader, tileWidth, tileHeight);
 						} catch (Exception | UnsatisfiedLinkError e) {
-                            logger.warn("Unable to open image {} for {}", ind, tileRequest.getRegionRequest());
+							logger.warn("Unable to open image {} for {}", ind, tileRequest.getRegionRequest());
 							throw convertToIOException(e);
 						}
 					}
@@ -1539,17 +1551,25 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 						for (int c = 0; c < effectiveC; c++) {
 							int ind = ipReader.getIndex(z, c, t);
 							bytes[c] = ipReader.openBytes(ind, tileX, tileY, tileWidth, tileHeight);
-							length = bytes[c].length;
 						}
+					} catch (ClosedChannelException e) {
+						// This occurs when a request is interrupted
+						logger.warn("Closed channel exception, closing reader");
+						ipReader.close(false);
+						throw e;
 					} catch (Exception | UnsatisfiedLinkError e) {
 						throw convertToIOException(e);
 					}
 				}
+			} catch (FormatException e) {
+				logger.debug("Unable to open reader: {}", e.getMessage(), e);
+				throw new IOException(e);
 			} finally {
 				if (Thread.interrupted()) {
 					logger.debug("Thread interrupted, flag will be reset: {}", Thread.currentThread());
 				}
-				queue.put(ipReader);
+				if (ipReader != null)
+					queue.put(ipReader);
 			}
 
 			OMEPixelParser omePixelParser = new OMEPixelParser.Builder()
