@@ -7,16 +7,11 @@ import java.io.IOException;
 import java.lang.ref.Cleaner;
 import java.nio.ByteOrder;
 import java.nio.channels.ClosedChannelException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.TimeUnit;
@@ -27,7 +22,6 @@ import java.util.stream.IntStream;
 import loci.formats.ClassList;
 import loci.formats.DimensionSwapper;
 import loci.formats.FormatException;
-import loci.formats.FormatTools;
 import loci.formats.IFormatReader;
 import loci.formats.ImageReader;
 import loci.formats.Memoizer;
@@ -35,15 +29,12 @@ import loci.formats.MetadataTools;
 import loci.formats.ReaderWrapper;
 import loci.formats.gui.AWTImageTools;
 import loci.formats.in.DynamicMetadataOptions;
-import loci.formats.in.MetadataOptions;
 import loci.formats.in.ZarrReader;
 import loci.formats.meta.DummyMetadata;
 import loci.formats.meta.MetadataStore;
 import loci.formats.ome.OMEPyramidStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import qupath.lib.common.GeneralTools;
-import qupath.lib.images.servers.PixelType;
 import qupath.lib.images.servers.TileRequest;
 
 /**
@@ -54,13 +45,6 @@ class ReaderPool implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(ReaderPool.class);
 
-    /**
-     * Define a maximum memoization file size above which parallelization is disabled.
-     * This is necessary to avoid creating multiple readers that are too large (e.g. sometimes
-     * a memoization file can be over 1GB...)
-     */
-    private static final long MAX_PARALLELIZATION_MEMO_SIZE = 1024L * 1024L * 16L;
-
     private static final Pattern ZARR_FILE_PATTERN = Pattern.compile("\\.zarr/?(\\d+/?)?$");
 
     private static final int DEFAULT_TIMEOUT_SECONDS = 60;
@@ -70,25 +54,26 @@ class ReaderPool implements AutoCloseable {
      */
     private static final int MAX_QUEUE_CAPACITY = 128;
 
-    private static MemoUtils memoizationHelper = new MemoUtils();
+    private static final Cleaner cleaner = Cleaner.create();
+    private final List<Cleaner.Cleanable> cleanables = new ArrayList<>();
 
-    private String id;
-    private BioFormatsServerOptions options;
-    private BioFormatsArgs args;
-    private ClassList<IFormatReader> classList;
+    private final String id;
+    private final BioFormatsServerOptions options;
+    private final BioFormatsArgs args;
+    private final ClassList<IFormatReader> classList;
 
     private volatile boolean isClosed = false;
 
-    private AtomicInteger totalReaders = new AtomicInteger(0);
-    private List<IFormatReader> additionalReaders = Collections.synchronizedList(new ArrayList<>());
-    private ArrayBlockingQueue<IFormatReader> queue;
+    private final AtomicInteger totalReaders = new AtomicInteger(0);
+    private final List<IFormatReader> additionalReaders = Collections.synchronizedList(new ArrayList<>());
+    private final ArrayBlockingQueue<IFormatReader> queue;
 
-    private OMEPyramidStore metadata;
-    private IFormatReader mainReader;
+    private final OMEPyramidStore metadata;
+    private final IFormatReader mainReader;
 
     private ForkJoinTask<?> task;
 
-    private int timeoutSeconds;
+    private final int timeoutSeconds;
 
     // This may be reused by OMERO extension? Not sure, but need to change cautiously...
     ReaderPool(BioFormatsServerOptions options, String id, BioFormatsArgs args) throws FormatException, IOException {
@@ -112,7 +97,14 @@ class ReaderPool implements AutoCloseable {
         queue.add(mainReader);
 
         // Store the class so we don't need to go hunting later
-        classList = unwrapClasslist(mainReader);
+        classList = unwrapBaseClassList(mainReader);
+    }
+
+    boolean checkCanRead() throws IOException, FormatException {
+        var reader = getMainReader();
+        return reader.getSizeX() > 0
+                && reader.getSizeY() > 0
+                && reader.openBytes(0, 0, 0, 1, 1) != null;
     }
 
     OMEPyramidStore getMetadata() {
@@ -141,8 +133,10 @@ class ReaderPool implements AutoCloseable {
         return mainReader;
     }
 
-    private void createAdditionalReader(BioFormatsServerOptions options, final ClassList<IFormatReader> classList,
-                                        final String id, BioFormatsArgs args) {
+    private void createAdditionalReader(BioFormatsServerOptions options,
+                                        final ClassList<IFormatReader> classList,
+                                        final String id,
+                                        final BioFormatsArgs args) {
         try {
             if (isClosed)
                 return;
@@ -155,7 +149,7 @@ class ReaderPool implements AutoCloseable {
             } else
                 logger.warn("New Bio-Formats reader could not be created (returned null)");
         } catch (Exception e) {
-            logger.error("Error creating additional readers: " + e.getLocalizedMessage(), e);
+            logger.error("Error creating additional readers: {}", e.getMessage(), e);
         }
     }
 
@@ -179,8 +173,11 @@ class ReaderPool implements AutoCloseable {
      * @throws IOException
      */
     @SuppressWarnings("resource")
-    private IFormatReader createReader(final BioFormatsServerOptions options, final ClassList<IFormatReader> classList,
-                                       final String id, final MetadataStore store, BioFormatsArgs args) throws FormatException, IOException {
+    private IFormatReader createReader(final BioFormatsServerOptions options,
+                                       final ClassList<IFormatReader> classList,
+                                       final String id,
+                                       final MetadataStore store,
+                                       final BioFormatsArgs args) throws FormatException, IOException {
 
         int maxReaders = getMaxReaders();
         int nReaders = totalReaders.getAndIncrement();
@@ -190,135 +187,11 @@ class ReaderPool implements AutoCloseable {
             return null;
         }
 
-        IFormatReader imageReader;
-        Matcher zarrMatcher = ZARR_FILE_PATTERN.matcher(id.toLowerCase());
-        if (new File(id).isDirectory() || zarrMatcher.find()) {
-            // Using new ImageReader() on a directory won't work
-            imageReader = new ZarrReader();
-            if (id.startsWith("https") && imageReader.getMetadataOptions() instanceof DynamicMetadataOptions zarrOptions) {
-                zarrOptions.set("omezarr.alt_store", id);
-            }
-        } else {
-            if (classList != null) {
-                imageReader = new ImageReader(classList);
-            } else {
-                imageReader = new ImageReader();
-            }
-        }
-
-        imageReader.setFlattenedResolutions(false);
-
-        // Try to set any reader options that we have
-        MetadataOptions metadataOptions = imageReader.getMetadataOptions();
-        var readerOptions = args.readerOptions;
-        if (!readerOptions.isEmpty() && metadataOptions instanceof DynamicMetadataOptions) {
-            for (var option : readerOptions.entrySet()) {
-                ((DynamicMetadataOptions) metadataOptions).set(option.getKey(), option.getValue());
-            }
-        }
-
-        // TODO: Warning! Memoization does not play nicely with options like
-        // --bfOptions zeissczi.autostitch=false
-        // in a way that options don't have an effect unless QuPath is restarted.
-        Memoizer memoizer = null;
-        int memoizationTimeMillis = options.getMemoizationTimeMillis();
-        File dir = null;
-        File fileMemo = null;
-        boolean useTempMemoDirectory = false;
-        // Check if we want to (and can) use memoization
-        if (BioFormatsServerOptions.allowMemoization() && memoizationTimeMillis >= 0) {
-            // Try to use a specified directory
-            String pathMemoization = options.getPathMemoization();
-            if (pathMemoization != null && !pathMemoization.trim().isEmpty()) {
-                dir = new File(pathMemoization);
-                if (!dir.isDirectory()) {
-                    logger.warn("Memoization path does not refer to a valid directory, will be ignored: {}", dir.getAbsolutePath());
-                    dir = null;
-                }
-            }
-            if (dir == null) {
-                dir = createTempMemoDir();
-                useTempMemoDirectory = dir != null;
-            }
-            if (dir != null) {
-                try {
-                    memoizer = new Memoizer(imageReader, memoizationTimeMillis, dir);
-                    fileMemo = memoizer.getMemoFile(id);
-                    // The call to .toPath() should throw an InvalidPathException if there are illegal characters
-                    // If so, we want to know that now before committing to the memoizer
-                    if (fileMemo != null && fileMemo.toPath() != null)
-                        imageReader = memoizer;
-                } catch (Exception e) {
-                    logger.warn("Unable to use memoization: {}", e.getLocalizedMessage());
-                    logger.debug(e.getLocalizedMessage(), e);
-                    fileMemo = null;
-                    memoizer = null;
-                }
-            }
-        }
-
-
-        if (store != null)
-            imageReader.setMetadataStore(store);
-        else {
-            imageReader.setMetadataStore(new DummyMetadata());
-            imageReader.setOriginalMetadataPopulated(false);
-        }
-
-        var swapDimensions = args.getSwapDimensions();
-        if (swapDimensions != null)
-            logger.debug("Creating DimensionSwapper for {}", swapDimensions);
-
-
-        if (id != null) {
-            if (fileMemo != null) {
-                // If we're using a temporary directory, delete the memo file when app closes
-                if (useTempMemoDirectory)
-                    tempMemoFiles.add(fileMemo);
-
-                long memoizationFileSize = fileMemo == null ? 0L : fileMemo.length();
-                boolean memoFileExists = fileMemo != null && fileMemo.exists();
-                try {
-                    if (swapDimensions != null)
-                        imageReader = DimensionSwapper.makeDimensionSwapper(imageReader);
-                    imageReader.setId(id);
-                } catch (Exception e) {
-                    if (memoFileExists) {
-                        logger.warn("Problem with memoization file {} ({}), will try to delete it", fileMemo.getName(), e.getLocalizedMessage());
-                        fileMemo.delete();
-                    }
-                    imageReader.close();
-                    if (swapDimensions != null)
-                        imageReader = DimensionSwapper.makeDimensionSwapper(imageReader);
-                    imageReader.setId(id);
-                }
-                memoizationFileSize = fileMemo == null ? 0L : fileMemo.length();
-                if (memoizationFileSize > 0L) {
-                    if (memoizationFileSize > MAX_PARALLELIZATION_MEMO_SIZE) {
-                        logger.warn(String.format("The memoization file is very large (%.1f MB) - parallelization may be turned off to save memory",
-                                memoizationFileSize / (1024.0 * 1024.0)));
-                    }
-                    memoizationSizeMap.put(id, memoizationFileSize);
-                }
-                if (memoizationFileSize == 0L)
-                    logger.debug("No memoization file generated for {}", id);
-                else if (!memoFileExists)
-                    logger.debug(String.format("Generating memoization file %s (%.2f MB)", fileMemo.getAbsolutePath(), memoizationFileSize / 1024.0 / 1024.0));
-                else
-                    logger.debug("Memoization file exists at {}", fileMemo.getAbsolutePath());
-            } else {
-                if (swapDimensions != null)
-                    imageReader = DimensionSwapper.makeDimensionSwapper(imageReader);
-                imageReader.setId(id);
-            }
-        }
-
-        if (swapDimensions != null) {
-            // The series needs to be set before swapping dimensions
-            if (args.series >= 0)
-                imageReader.setSeries(args.series);
-            ((DimensionSwapper) imageReader).swapDimensions(swapDimensions);
-        }
+        IFormatReader imageReader = createBaseReader(id, classList, args.readerOptions);
+        // TODO: Warning! Memoization might not play nicely with options (it might require QuPath to be restarted)
+        imageReader = maybeMemoize(imageReader, id, options);
+        initializeMetadata(imageReader, store);
+        imageReader = setImageAndDimensions(imageReader, id, args.series, args.swapDimensions);
 
         if (isClosed) {
             imageReader.close(false);
@@ -327,8 +200,111 @@ class ReaderPool implements AutoCloseable {
             cleanables.add(cleaner.register(this,
                     new ReaderCleaner(Integer.toString(cleanables.size() + 1), imageReader)));
         }
-
         return imageReader;
+    }
+
+
+    private static IFormatReader createBaseReader(String id, ClassList<IFormatReader> classList, Map<String, String> readerMetadataOptions) {
+        IFormatReader imageReader;
+        Matcher zarrMatcher = ZARR_FILE_PATTERN.matcher(id.toLowerCase());
+        if (new File(id).isDirectory() || zarrMatcher.find()) {
+            // Using new ImageReader() on a directory won't work
+            imageReader = new ZarrReader();
+            if (id.startsWith("https")) {
+                setReaderMetadataOptions(imageReader, Map.of("omezarr.alt_store", id));
+            }
+        } else {
+            if (classList != null) {
+                imageReader = new ImageReader(classList);
+            } else {
+                imageReader = new ImageReader();
+            }
+        }
+        setReaderMetadataOptions(imageReader, readerMetadataOptions);
+        imageReader.setFlattenedResolutions(false);
+        return imageReader;
+    }
+
+
+    private static void initializeMetadata(IFormatReader reader, MetadataStore store) {
+        if (store == null) {
+            reader.setMetadataStore(new DummyMetadata());
+            reader.setOriginalMetadataPopulated(false);
+        } else {
+            reader.setMetadataStore(store);
+        }
+    }
+
+
+    private static void setReaderMetadataOptions(IFormatReader reader, Map<String, String> options) {
+        if (reader.getMetadataOptions() instanceof DynamicMetadataOptions dynamicOptions) {
+            for (var entry : options.entrySet()) {
+                dynamicOptions.set(entry.getKey(), entry.getValue());
+            }
+        } else if (!options.isEmpty()) {
+            logger.warn("Unable to set reader metadata options: {}", options);
+        }
+    }
+
+
+    private static IFormatReader maybeMemoize(final IFormatReader reader, String id, final BioFormatsServerOptions options) {
+        int memoizationTimeMillis = options.getMemoizationTimeMillis();
+        // Check if we want to (and can) use memoization
+        if (!BioFormatsServerOptions.allowMemoization() || memoizationTimeMillis < 0) {
+            return reader;
+        }
+        // Try to use a specified directory
+        File dir = getSpecifiedMemoizationDirectory(options);
+        boolean useTempDirectory = dir == null;
+        // Use a temp directory if none specified
+        if (useTempDirectory) {
+            try {
+                dir = MemoUtils.createTempMemoDir();
+            } catch (IOException e) {
+                logger.debug("Unable to create memoization directory: {}", e.getMessage(), e);
+                return reader;
+            }
+        }
+        try {
+            var memoizer = new Memoizer(reader, memoizationTimeMillis, dir);
+            // The call to .toPath() should throw an InvalidPathException if there are illegal characters
+            // If so, we want to know that now before committing to the memoizer
+            var fileMemo = memoizer.getMemoFile();
+            if (fileMemo != null && fileMemo.toPath() != null) {
+                MemoUtils.registerTempFileForDeletion(fileMemo);
+                return memoizer;
+            }
+        } catch (Exception e) {
+            logger.warn("Unable to use memoization: {}", e.getMessage());
+            logger.debug(e.getMessage(), e);
+        }
+        return reader;
+    }
+
+    private static File getSpecifiedMemoizationDirectory(final BioFormatsServerOptions options) {
+        String pathMemoization = options.getPathMemoization();
+        if (pathMemoization != null && !pathMemoization.trim().isEmpty()) {
+            var dir = new File(pathMemoization);
+            if (dir.isDirectory())
+                return dir;
+            logger.warn("Memoization path does not refer to a valid directory, will be ignored: {}", dir.getAbsolutePath());
+        }
+        return null;
+    }
+
+    /**
+     * Update the reader's ID, series and dimensions.
+     * These are grouped together because we need to do them in a valid order.
+     */
+    private static IFormatReader setImageAndDimensions(IFormatReader reader, String id, int series, String swapDimensions) throws IOException, FormatException {
+        if (swapDimensions != null && !swapDimensions.isBlank())
+            reader = DimensionSwapper.makeDimensionSwapper(reader);
+        reader.setId(id);
+        if (series >= 0)
+            reader.setSeries(series);
+        if (reader instanceof DimensionSwapper swapper && swapDimensions != null)
+            swapper.swapDimensions(swapDimensions);
+        return reader;
     }
 
 
@@ -436,7 +412,7 @@ class ReaderPool implements AutoCloseable {
                         return AWTImageTools.openImage(bytesSimple, ipReader, tileWidth, tileHeight);
                     } catch (Exception | UnsatisfiedLinkError e) {
                         logger.warn("Unable to open image {} for {}", ind, tileRequest.getRegionRequest());
-                        throw convertToIOException(e);
+                        throw ReaderUtils.convertToIOException(e);
                     }
                 }
                 // Read bytes for all the required channels
@@ -453,7 +429,7 @@ class ReaderPool implements AutoCloseable {
                     ipReader.close(false);
                     throw e;
                 } catch (Exception | UnsatisfiedLinkError e) {
-                    throw convertToIOException(e);
+                    throw ReaderUtils.convertToIOException(e);
                 }
             }
         } catch (FormatException e) {
@@ -469,17 +445,7 @@ class ReaderPool implements AutoCloseable {
 
         OMEPixelParser omePixelParser = new OMEPixelParser.Builder()
                 .isInterleaved(interleaved)
-                .pixelType(switch (pixelType) {
-                    case FormatTools.UINT8 -> PixelType.UINT8;
-                    case FormatTools.INT8 -> PixelType.INT8;
-                    case FormatTools.UINT16 -> PixelType.UINT16;
-                    case FormatTools.INT16 -> PixelType.INT16;
-                    case FormatTools.UINT32 -> PixelType.UINT32;
-                    case FormatTools.INT32 -> PixelType.INT32;
-                    case FormatTools.FLOAT -> PixelType.FLOAT32;
-                    case FormatTools.DOUBLE -> PixelType.FLOAT64;
-                    default -> throw new IllegalStateException("Unexpected value: " + pixelType);
-                })
+                .pixelType(ReaderUtils.formatToPixelType(pixelType))
                 .byteOrder(order)
                 .normalizeFloats(normalizeFloats)
                 .effectiveNChannels(effectiveC)
@@ -487,30 +453,6 @@ class ReaderPool implements AutoCloseable {
                 .build();
 
         return omePixelParser.parse(bytes, tileWidth, tileHeight, nChannels, colorModel);
-    }
-
-    /**
-     * Ensure a throwable is an IOException.
-     * This gives the opportunity to include more human-readable messages for common errors.
-     *
-     * @param t
-     * @return
-     */
-    static IOException convertToIOException(Throwable t) {
-        if (GeneralTools.isMac()) {
-            String message = t.getMessage();
-            if (message != null) {
-                if (message.contains("ome.jxrlib.JXRJNI")) {
-                    return new IOException("Bio-Formats does not support JPEG-XR on Apple Silicon: " + t.getMessage(), t);
-                }
-                if (message.contains("org.libjpegturbo.turbojpeg.TJDecompressor")) {
-                    return new IOException("Bio-Formats does not currently support libjpeg-turbo on Apple Silicon", t);
-                }
-            }
-        }
-        if (t instanceof IOException e)
-            return e;
-        return new IOException(t);
     }
 
 
@@ -539,7 +481,7 @@ class ReaderPool implements AutoCloseable {
     }
 
 
-    private static ClassList<IFormatReader> unwrapClasslist(IFormatReader reader) {
+    private static ClassList<IFormatReader> unwrapBaseClassList(IFormatReader reader) {
         while (true) {
             IFormatReader nextReader = null;
             if (reader instanceof ReaderWrapper wrapper)
@@ -572,126 +514,5 @@ class ReaderPool implements AutoCloseable {
         }
     }
 
-
-    private static final Cleaner cleaner = Cleaner.create();
-    private final List<Cleaner.Cleanable> cleanables = new ArrayList<>();
-
-
-    /**
-     * Map of memoization file sizes.
-     */
-    private static final Map<String, Long> memoizationSizeMap = new ConcurrentHashMap<>();
-
-    /**
-     * Temporary directory for storing memoization files
-     */
-    private static File dirMemoTemp = null;
-
-    /**
-     * Set of created temp memo files
-     */
-    private static final Set<File> tempMemoFiles = new HashSet<>();
-
-
-    /**
-     * Request the file size of any known memoization file for a specific ID.
-     *
-     * @param id
-     * @return
-     */
-    public long getMemoizationFileSize(String id) {
-        return memoizationSizeMap.getOrDefault(id, 0L);
-    }
-
-    /**
-     * Get a temporary directory to use for memoization, creating it if it does not already exist.
-     * @return a temporary directory
-     * @throws IOException if the directory could not be created
-     */
-    static File createTempMemoDir() throws IOException {
-        return getTempMemoDir(true);
-    }
-
-    private static File getTempMemoDir(boolean create) throws IOException {
-        if (create && dirMemoTemp == null) {
-            synchronized (ReaderPool.class) {
-                if (dirMemoTemp == null) {
-                    Path path = Files.createTempDirectory("qupath-memo-");
-                    dirMemoTemp = path.toFile();
-                    Runtime.getRuntime().addShutdownHook(new Thread() {
-                        @Override
-                        public void run() {
-                            deleteTempMemoFiles();
-                        }
-                    });
-                    logger.warn("Temp memoization directory created at {}", dirMemoTemp);
-                    logger.warn("If you want to avoid this warning, either specify a memoization directory in the preferences or turn off memoization by setting the time to < 0");
-                }
-            }
-        }
-        return dirMemoTemp;
-    }
-
-    /**
-     * Delete any memoization files registered as being temporary, and also the
-     * temporary memoization directory (if it exists).
-     * Note that this acts both recursively and rather conservatively, stopping if a file is
-     * encountered that is not expected.
-     */
-    private static void deleteTempMemoFiles() {
-        for (File f : tempMemoFiles) {
-            // Be extra-careful not to delete too much...
-            if (!f.exists())
-                continue;
-            if (!f.isFile() || !f.getName().endsWith(".bfmemo")) {
-                logger.warn("Unexpected memoization file, will not delete {}", f.getAbsolutePath());
-                return;
-            }
-            if (f.delete())
-                logger.debug("Deleted temp memoization file {}", f.getAbsolutePath());
-            else
-                logger.warn("Could not delete temp memoization file {}", f.getAbsolutePath());
-        }
-        if (dirMemoTemp == null)
-            return;
-        deleteEmptyDirectories(dirMemoTemp);
-    }
-
-    /**
-     * Delete a directory and all sub-directories, assuming each contains only empty directories.
-     * This is applied recursively, stopping at the first failure (i.e. any directory containing files).
-     *
-     * @param dir
-     * @return true if the directory could be deleted, false otherwise
-     */
-    private static boolean deleteEmptyDirectories(File dir) {
-        if (!dir.isDirectory())
-            return false;
-        int nFiles = 0;
-        var files = dir.listFiles();
-        if (files == null) {
-            logger.debug("Unable to list files for {}", dir);
-            return false;
-        }
-        for (File f : files) {
-            if (f.isDirectory()) {
-                if (!deleteEmptyDirectories(f))
-                    return false;
-            } else if (f.isFile())
-                nFiles++;
-        }
-        if (nFiles == 0) {
-            if (dir.delete()) {
-                logger.debug("Deleting empty memoization directory {}", dir.getAbsolutePath());
-                return true;
-            } else {
-                logger.warn("Could not delete temp memoization directory {}", dir.getAbsolutePath());
-                return false;
-            }
-        } else {
-            logger.warn("Temp memoization directory contains files, will not delete {}", dir.getAbsolutePath());
-            return false;
-        }
-    }
 
 }

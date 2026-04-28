@@ -26,9 +26,7 @@ package qupath.lib.images.servers.bioformats;
 import loci.common.services.DependencyException;
 import loci.common.services.ServiceException;
 import loci.formats.FormatException;
-import loci.formats.FormatTools;
 import loci.formats.IFormatReader;
-import loci.formats.ImageReader;
 import loci.formats.in.ZarrReader;
 import loci.formats.ome.OMEPyramidStore;
 import loci.formats.ome.OMEXMLMetadata;
@@ -63,7 +61,6 @@ import java.awt.image.BufferedImage;
 import java.awt.image.ColorModel;
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -203,15 +200,11 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 			// This is expected to throw an exception if it fails; without this check, Bio-Formats can appear to work
 			// but then fail when trying to read the first tile.
 			// The risk is that this will be slow for large, non-tiled images.
-			// TODO: Avoid reader access outside the reader pool
-			var reader = server.readerPool.getMainReader();
-			if (reader.getSizeX() > 0 && reader.getSizeY() > 0 && reader.openBytes(0, 0, 0, 1, 1) != null) {
-				return server;
-			} else {
+			if (!server.readerPool.checkCanRead())
 				throw new IOException("Unable to read bytes from " + uri);
-			}
+			return server;
 		} catch (Throwable t) {
-			throw ReaderPool.convertToIOException(t);
+			throw ReaderUtils.convertToIOException(t);
 		}
 	}
 	
@@ -289,7 +282,7 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 		long firstPixels = -1L;
 
 		// If we have more than one series, we need to construct maps of 'analyzable' & associated images
-		synchronized(reader) {
+		synchronized (reader) {
 			int nImages = meta.getImageCount();
 			imageMap = new LinkedHashMap<>(nImages);
 			associatedImageMap = new LinkedHashMap<>(nImages);
@@ -297,7 +290,7 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 			// Loop through series to find out whether we have multiresolution images, or associated images (e.g. thumbnails)
 			for (int s = 0; s < nImages; s++) {
 				String name = "Series " + s;
-				String originalImageName = getImageName(meta, s);
+				String originalImageName = ReaderUtils.getImageName(meta, s);
 				if (originalImageName == null)
 					originalImageName = "";
 				
@@ -313,14 +306,6 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 					long sizeZ = meta.getPixelsSizeZ(s).getNumberValue().longValue();
 					long sizeT = meta.getPixelsSizeT(s).getNumberValue().longValue();
 					
-					// Check the resolutions
-					//						int nResolutions = meta.getResolutionCount(s);
-					//						for (int r = 1; r < nResolutions; r++) {
-					//							int sizeXR = meta.getResolutionSizeX(s, r).getValue();
-					//							int sizeYR = meta.getResolutionSizeY(s, r).getValue();
-					//							if (sizeXR <= 0 || sizeYR <= 0 || sizeXR > sizeX || sizeYR > sizeY)
-					//								throw new IllegalArgumentException("Resolution " + r + " size " + sizeXR + " x " + sizeYR + " invalid!");
-					//						}
 					// It seems we can't get the resolutions from the metadata object... instead we need to set the series of the reader
 					reader.setSeries(s);
 					assert reader.getSizeX() == sizeX;
@@ -361,7 +346,7 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 								largestSeries = s;
 								mostPixels = nPixels;
 							}
-						} else if (requestedSeriesName.equals(name) || requestedSeriesName.equals(getImageName(meta, s)) || requestedSeriesName.contentEquals(meta.getImageName(s))) {
+						} else if (requestedSeriesName.equals(name) || requestedSeriesName.equals(ReaderUtils.getImageName(meta, s)) || requestedSeriesName.contentEquals(meta.getImageName(s))) {
 							seriesIndex = s;
 						}
 					}
@@ -369,16 +354,15 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 				} catch (Exception e) {
 					// We don't want to log this prominently if we're requesting a different series anyway
 					if ((seriesIndex < 0 || seriesIndex == s) && (requestedSeriesName == null || requestedSeriesName.equals(imageName)))
-						logger.warn("Error attempting to read series " + s + " (" + imageName + ") - will be skipped", e);
+                        logger.warn("Error attempting to read series {} ({}) - will be skipped", s, imageName, e);
 					else
-						logger.trace("Error attempting to read series " + s + " (" + imageName + ") - will be skipped", e);
+                        logger.trace("Error attempting to read series {} ({}) - will be skipped", s, imageName, e);
 				}
 			}
 
 			// If we have just one image in the image list, then reset to none - we can't switch
 			if (imageMap.size() == 1 && seriesIndex < 0) {
 				seriesIndex = firstSeries;
-//					imageMap.clear();
 			} else if (imageMap.size() > 1) {
 				// Set default series index, if we need to
 				if (seriesIndex < 0) {
@@ -457,47 +441,11 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 				tileHeight = getDefaultTileLength(tileHeight, height);
 
 			nZSlices = reader.getSizeZ();
-//			// Workaround bug whereby VSI channels can also be replicated as z-slices
-//			if (options.requestChannelZCorrectionVSI() && nZSlices == nChannels && nChannels > 1 && "CellSens VSI".equals(format)) {
-//				doChannelZCorrectionVSI = true;
-//				nZSlices = 1;
-//			}
 			nTimepoints = reader.getSizeT();
 
-			PixelType pixelType;
-			switch (reader.getPixelType()) {
-				case FormatTools.BIT:
-					logger.warn("Pixel type is BIT! This is not currently supported by QuPath.");
-					pixelType = PixelType.UINT8;
-					break;
-				case FormatTools.INT8:
-					logger.warn("Pixel type is INT8! This is not currently supported by QuPath.");
-					pixelType = PixelType.INT8;
-					break;
-				case FormatTools.UINT8:
-					pixelType = PixelType.UINT8;
-					break;
-				case FormatTools.INT16:
-					pixelType = PixelType.INT16;
-					break;
-				case FormatTools.UINT16:
-					pixelType = PixelType.UINT16;
-					break;
-				case FormatTools.INT32:
-					pixelType = PixelType.INT32;
-					break;
-				case FormatTools.UINT32:
-					logger.warn("Pixel type is UINT32! This is not currently supported by QuPath.");
-					pixelType = PixelType.UINT32;
-					break;
-				case FormatTools.FLOAT:
-					pixelType = PixelType.FLOAT32;
-					break;
-				case FormatTools.DOUBLE:
-					pixelType = PixelType.FLOAT64;
-					break;
-				default:
-					throw new IllegalArgumentException("Unsupported pixel type " + reader.getPixelType());
+			PixelType pixelType = ReaderUtils.formatToPixelType(reader.getPixelType());
+			if (Set.of(PixelType.INT8, PixelType.UINT32).contains(pixelType)) {
+				logger.warn("Pixel type {} is not currently supported", pixelType);
 			}
 			
 			// Determine min/max values if we can
@@ -575,17 +523,14 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 						}
 					}
 				} catch (Exception e) {
-					logger.warn("Exception parsing channels " + e.getLocalizedMessage(), e);
+					logger.warn("Exception parsing channels {}", e.getMessage(), e);
 				}
 				if (nChannels != tempNames.size() || tempNames.size() != tempColors.size()) {
 					logger.warn("The channel names and colors read from the metadata don't match the expected number of channels!");
 					logger.warn("Be very cautious working with channels, since the names and colors may be misaligned, incorrect or default values.");
 					long nNames = tempNames.stream().filter(n -> n != null && !n.isBlank()).count();
-					long nColors = tempColors.stream().filter(n -> n != null).count();
+					long nColors = tempColors.stream().filter(Objects::nonNull).count();
 					logger.warn("(I expected {} channels, but found {} names and {} colors)", nChannels, nNames, nColors);
-					// Could reset them, but may help to use what we can
-//					tempNames.clear();
-//					tempColors.clear();
 				}
 				
 					
@@ -693,14 +638,14 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 					}
 					resolutionBuilder.addLevel(w, h);
 				} catch (Exception e) {
-					logger.warn("Error attempting to extract resolution " + i + " for " + getImageName(meta, series), e);					
+                    logger.warn("Error attempting to extract resolution {} for {}", i, ReaderUtils.getImageName(meta, series), e);
 					break;
 				}
 			}
 			
 			// Generate a suitable name for this image
 			String imageName = getFile().getName();
-			String shortName = getImageName(meta, seriesIndex);
+			String shortName = ReaderUtils.getImageName(meta, seriesIndex);
 			if (shortName == null || shortName.isBlank()) {
 				if (imageMap.size() > 1)
 					imageName = imageName + " - Series " + seriesIndex;
@@ -711,29 +656,11 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 			
 			// Build resolutions
 			var resolutions = resolutionBuilder.build();
-			// Unused code to check if resolutions seem to be correct
-//			var iter = resolutions.iterator();
-//			int r = 0;
-//			while (iter.hasNext()) {
-//				var resolution = iter.next();
-//				double widthDifference = Math.abs(resolution.getWidth() - width/resolution.getDownsample());
-//				double heightDifference = Math.abs(resolution.getHeight() - height/resolution.getDownsample());
-//				if (widthDifference > Math.max(2.0, resolution.getWidth()*0.01) || heightDifference > Math.max(2.0, resolution.getHeight()*0.01)) {
-//					logger.warn("Aspect ratio of resolution level {} differs from", r);
-//					iter.remove();
-//					while (iter.hasNext()) {
-//						iter.next();
-//						iter.remove();
-//					}
-//				}
-//				r++;
-//			}
 			
 			// Set metadata
 			path = createID();
 			ImageServerMetadata.Builder builder = new ImageServerMetadata.Builder(
 					getClass(), path, width, height).
-//					args(args).
 					minValue(minValue).
 					maxValue(maxValue).
 					name(imageName).
@@ -788,25 +715,8 @@ public class BioFormatsImageServer extends AbstractTileableImageServer implement
 		}
 		return Math.min(tileLength, imageLength);
 	}
-	
-	
-	
-	/**
-	 * Get the image name for a series, making sure to remove any trailing null terminators.
-	 * <p>
-	 * See https://github.com/qupath/qupath/issues/573
-	 * @param series
-	 * @return
-	 */
-	private String getImageName(OMEXMLMetadata meta, int series) {
-		 String name = meta.getImageName(series);
-		 if (name == null)
-			 return null;
-		 while (name.endsWith("\0"))
-			 name = name.substring(0, name.length()-1);
-		 return name;
-	}
-	
+
+
 	/**
 	 * Get the format String, as returned by Bio-Formats {@code IFormatReader.getFormat()}.
 	 * @return
