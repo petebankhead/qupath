@@ -25,7 +25,6 @@ import ij.CompositeImage;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
-import javafx.beans.property.IntegerProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -48,8 +47,6 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
-import javafx.scene.control.ListCell;
-import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.ToggleButton;
@@ -89,6 +86,7 @@ import qupath.lib.gui.tools.GuiTools;
 import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.gui.viewer.overlays.PixelClassificationOverlay;
 import qupath.lib.images.ImageData;
+import qupath.lib.images.servers.ImageChannel;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
@@ -98,7 +96,6 @@ import qupath.lib.objects.PathObject;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyListener;
-import qupath.lib.plugins.parameters.ParameterList;
 import qupath.lib.projects.ProjectImageEntry;
 import qupath.lib.regions.RegionRequest;
 import qupath.lib.roi.RectangleROI;
@@ -117,7 +114,6 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -188,6 +184,7 @@ public class PixelClassifierPane {
 	private final MouseListener mouseListener = new MouseListener();
 
 	private final PixelClassifierTraining helper = new PixelClassifierTraining(null);
+	private final PixelClassifierAdvancedOptions advancedOptions = new PixelClassifierAdvancedOptions();
 
 	private final FeatureNormalization normalization = new FeatureNormalization();
 	private ImageOp preprocessingOp = null;
@@ -312,8 +309,9 @@ public class PixelClassifierPane {
 		var btnAdvancedOptions = new Button("Advanced options");
 		btnAdvancedOptions.setTooltip(new Tooltip("Advanced options to customize preprocessing and classifier behavior"));
 		btnAdvancedOptions.setOnAction(e -> {
-			if (showAdvancedOptions())
+			if (advancedOptions.promptToUpdateOptions()) {
 				updateClassifier();
+			}
 		});
 		
 		// Live predict
@@ -484,8 +482,6 @@ public class PixelClassifierPane {
 		var splitPane = new BorderPane(viewerBorderPane);
 		splitPane.setLeft(pane);
 		pane.setMinWidth(400);
-//		pane.setPrefWidth(400);
-//		pane.setMaxWidth(400);
 		
 		var fullPane = splitPane;//new StackPane(splitPane);
 		
@@ -531,16 +527,6 @@ public class PixelClassifierPane {
 				}
 			}
 		});
-		
-		nThreads.addListener((v, o, n) -> {
-			if (n == null)
-				return;
-			if (overlay != null)
-				overlay.setMaxThreads(n.intValue());
-			if (featureOverlay != null)
-				featureOverlay.setMaxThreads(n.intValue());
-		});
-		
 	}
 
 	
@@ -684,8 +670,8 @@ public class PixelClassifierPane {
 		var selectedChannel = featureRenderer == null ? null : featureRenderer.getSelectedChannel();
 		if (selectedChannel != null) {
 			featureRenderer.autoSetDisplayRange();
-			double min = (double)selectedChannel.getMinDisplay();
-			double max = (double)selectedChannel.getMaxDisplay();
+			double min = selectedChannel.getMinDisplay();
+			double max = selectedChannel.getMaxDisplay();
 			spinFeatureMin.getValueFactory().setValue(min);
 			spinFeatureMax.getValueFactory().setValue(max);
 		}
@@ -738,7 +724,7 @@ public class PixelClassifierPane {
 	
 	
 	private int getLivePredictionThreads() {
-		int n = nThreads.get();
+		int n = advancedOptions.getNumThreads();
 		return  n < 0 ? PathPrefs.numCommandThreadsProperty().get() : Math.max(n, 1);
 	}
 	
@@ -762,81 +748,6 @@ public class PixelClassifierPane {
 		else
 			replaceOverlay(null);
 	}
-
-	private boolean reweightSamples = false;
-	private int maxSamples = 100_000;
-	private int rngSeed = 100;
-
-	private final IntegerProperty nThreads = PathPrefs.createPersistentPreference("pixelClassificationThreads", -1);
-
-	private boolean showAdvancedOptions() {
-		
-		var existingStrategy = helper.getBoundaryStrategy();
-		
-		List<BoundaryStrategy> boundaryStrategies = new ArrayList<>();
-		boundaryStrategies.add(BoundaryStrategy.getSkipBoundaryStrategy());
-		boundaryStrategies.add(BoundaryStrategy.getDerivedBoundaryStrategy(1));
-		for (var pathClass : QuPathGUI.getInstance().getAvailablePathClasses())
-			boundaryStrategies.add(BoundaryStrategy.getClassifyBoundaryStrategy(pathClass, 1));
-		
-		String PCA_NONE = "No feature reduction";
-		String PCA_BASIC = "Do PCA projection";
-		String PCA_NORM = "Do PCA projection + normalize output";
-		
-		String pcaChoice = PCA_NONE;
-		if (normalization.getPCARetainedVariance() > 0) {
-			if (normalization.doPCANormalize())
-				pcaChoice = PCA_NORM;
-			else
-				pcaChoice = PCA_BASIC;
-		}
-		
-		
-		var params = new ParameterList()
-				.addTitleParameter("Live prediction")
-				.addIntParameter("numThreads", "Number of threads", nThreads.get(), null, "Maximum number of threads to use for live prediction, or -1 to use default threads")
-				.addTitleParameter("Training data")
-				.addIntParameter("maxSamples", "Maximum samples", maxSamples, null, "Maximum number of training samples - only needed if you have a lot of annotations, slowing down training")
-				.addIntParameter("rngSeed", "RNG seed", rngSeed, null, "Seed for the random number generator used when selecting training samples")
-				.addBooleanParameter("reweightSamples", "Reweight samples", reweightSamples, "Weight training samples according to frequency")
-				.addTitleParameter("Preprocessing")
-				.addChoiceParameter("normalization", "Feature normalization", normalization.getNormalization(),
-						Arrays.asList(Normalization.values()), "Method to normalize features - use only if needed, may make no difference with some common classifiers")
-				.addChoiceParameter("featureReduction", "Feature reduction", pcaChoice, List.of(PCA_NONE, PCA_BASIC, PCA_NORM), 
-						"Use Principal Component Analysis for feature reduction (must also specify retained variance)")
-				.addDoubleParameter("pcaRetainedVariance", "PCA retained variance", normalization.getPCARetainedVariance(), "",
-						"Retained variance if applying Principal Component Analysis for dimensionality reduction. Should be between 0 and 1; if <= 0 PCA will not be applied.")
-				.addTitleParameter("Annotation boundaries")
-				.addChoiceParameter("boundaryStrategy", "Boundary strategy", helper.getBoundaryStrategy(),
-						boundaryStrategies,
-						"Choose how annotation boundaries should influence classifier training")
-				.addDoubleParameter("boundaryThickness", "Boundary thickness", existingStrategy.getBoundaryThickness(), "pixels",
-						"Set the boundary thickness whenever annotation boundaries are trained separately")
-				;
-		
-		if (!GuiTools.showParameterDialog("Advanced options", params))
-			return false;
-		
-		reweightSamples = params.getBooleanParameterValue("reweightSamples");
-		maxSamples = params.getIntParameterValue("maxSamples");
-		rngSeed = params.getIntParameterValue("rngSeed");
-		
-		pcaChoice = (String)params.getChoiceParameterValue("featureReduction");
-		boolean pcaNormalize = PCA_NORM.equals(pcaChoice);
-		double pcaRetainedVariance = PCA_NONE.equals(pcaChoice) ? 0 : params.getDoubleParameterValue("pcaRetainedVariance");
-		
-		normalization.setNormalization((Normalization)params.getChoiceParameterValue("normalization"));
-		normalization.setPCARetainedVariance(pcaRetainedVariance);
-		normalization.setPCANormalize(pcaNormalize);
-		
-		nThreads.set(params.getIntParameterValue("numThreads"));
-		
-		var strategy = (BoundaryStrategy)params.getChoiceParameterValue("boundaryStrategy");
-		strategy = BoundaryStrategy.setThickness(strategy, params.getDoubleParameterValue("boundaryThickness"));
-		helper.setBoundaryStrategy(strategy);
-		
-		return true;
-	}
 	
 	
 	
@@ -854,6 +765,8 @@ public class PixelClassifierPane {
 			Dialogs.showErrorNotification("Pixel classifier", "No classifier selected!");
 			return;
 		}
+
+		this.helper.setBoundaryStrategy(advancedOptions.getBoundaryStrategy());
 
 		ClassifierTrainingData trainingData;
 		try {
@@ -874,10 +787,10 @@ public class PixelClassifierPane {
 		 //	     		var trainData = classifier.createTrainData(matFeatures, matTargets);
 
 		 // Ensure we seed the RNG for reproducibility
-		 opencv_core.setRNGSeed(rngSeed);
+		 opencv_core.setRNGSeed(advancedOptions.getRngSeed());
 		 
 		 // TODO: Prevent training K nearest neighbor with a huge number of samples (very slow!)
-		 var actualMaxSamples = this.maxSamples;
+		 var actualMaxSamples = advancedOptions.getMaxSamples();
 		 
 		 var trainData = trainingData.getTrainData();
 		 if (actualMaxSamples > 0 && trainData.getNTrainSamples() > actualMaxSamples)
@@ -909,7 +822,7 @@ public class PixelClassifierPane {
 		 updatePieChart(counts);
 		 
 		 Mat weights = null;
-		 if (reweightSamples) {
+		 if (advancedOptions.getReweightSamples()) {
 			 weights = new Mat(n, 1, opencv_core.CV_32FC1);
 			 FloatIndexer bufferWeights = weights.createIndexer();
 			 float[] weightArray = new float[rawCounts.length];
@@ -954,12 +867,11 @@ public class PixelClassifierPane {
 		 }
 		 logger.info("Current accuracy on the {}: {} %", testSet, GeneralTools.formatNumber(nCorrect*100.0/n, 1));
 
-		 if (model instanceof RTreesClassifier) {
-			 var trees = (RTreesClassifier)model;
-			 if (trees.hasFeatureImportance() && imageData != null)
+		 if (model instanceof RTreesClassifier trees) {
+             if (trees.hasFeatureImportance() && imageData != null)
 				 logVariableImportance(trees,
 						 helper.getFeatureOp().getChannels(imageData).stream()
-						 .map(c -> c.getName()).toList());
+						 .map(ImageChannel::getName).toList());
 		 }
 		 
 		 trainData.close();
@@ -1063,6 +975,7 @@ public class PixelClassifierPane {
 		}
 		overlay = newOverlay;
 		if (overlay != null) {
+			overlay.setMaxThreads(advancedOptions.getNumThreads());
 			overlay.setLivePrediction(livePrediction.get());
 			overlay.setOpacity(sliderFeatureOpacity.getValue());
 		}
@@ -1327,7 +1240,6 @@ public class PixelClassifierPane {
 				cursorLocation.set("");
 			else
 				cursorLocation.set(results);
-			return;
 		}
 		
 		
@@ -1350,18 +1262,5 @@ public class PixelClassifierPane {
 		
 	}
 
-
-	private static class OverrunListCell<T> extends ListCell<T> {
-
-		public OverrunListCell() {
-			this(OverrunStyle.ELLIPSIS);
-		}
-
-		public OverrunListCell(OverrunStyle style) {
-			super();
-			setTextOverrun(style);
-		}
-
-	}
 
 }
