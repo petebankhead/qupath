@@ -49,7 +49,6 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
-import javafx.scene.control.ListView;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Spinner;
@@ -62,7 +61,6 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
-import javafx.util.Callback;
 import org.bytedeco.javacpp.indexer.FloatIndexer;
 import org.bytedeco.opencv.global.opencv_core;
 import org.bytedeco.opencv.opencv_core.Mat;
@@ -111,7 +109,8 @@ import qupath.opencv.ml.OpenCVClassifiers.RTreesClassifier;
 import qupath.opencv.ml.pixel.PixelClassifiers;
 import qupath.opencv.ops.ImageOp;
 import qupath.opencv.ops.ImageOps;
-import qupath.process.gui.commands.ml.ImageDataTransformerBuilder.DefaultFeatureCalculatorBuilder;
+import qupath.process.gui.commands.ml.op.DefaultMultiscaleImageDataOpBuilder;
+import qupath.process.gui.commands.ml.op.ImageDataOpBuilder;
 import qupath.process.gui.commands.ml.PixelClassifierTraining.ClassifierTrainingData;
 
 import java.awt.image.BufferedImage;
@@ -138,58 +137,62 @@ public class PixelClassifierPane {
 	
 	private static final Logger logger = LoggerFactory.getLogger(PixelClassifierPane.class);
 	
-	private static ObservableList<ImageDataTransformerBuilder> defaultFeatureCalculatorBuilders = FXCollections.observableArrayList();
-	
-	
-	private QuPathGUI qupath;
+	private static final ObservableList<ImageDataOpBuilder> defaultFeatureCalculatorBuilders = FXCollections.observableArrayList();
 
-	private GridPane pane;
-	
-	private ObservableList<ClassificationResolution> resolutions = FXCollections.observableArrayList();
-	private ComboBox<ClassificationResolution> comboResolutions = new ComboBox<>(resolutions);
+	private final QuPathGUI qupath;
+
+    private final ObservableList<ClassificationResolution> resolutions = FXCollections.observableArrayList();
+	private final ComboBox<ClassificationResolution> comboResolutions = new ComboBox<>(resolutions);
 	private ReadOnlyObjectProperty<ClassificationResolution> selectedResolution;
 	
 	// To display features as overlays across the image
-	private ComboBox<String> comboDisplayFeatures = new ComboBox<>();
-	private Slider sliderFeatureOpacity = new Slider(0.0, 1.0, 1.0);
-	private Spinner<Double> spinFeatureMin = FXUtils.createDynamicStepSpinner(-Double.MAX_VALUE, Double.MAX_VALUE, 0, 0.1, 1);
-	private Spinner<Double> spinFeatureMax = FXUtils.createDynamicStepSpinner(-Double.MAX_VALUE, Double.MAX_VALUE, 1, 0.1, 1);
-	private String DEFAULT_CLASSIFICATION_OVERLAY = "Show classification";
+	private final ComboBox<String> comboDisplayFeatures = new ComboBox<>();
+	private final Slider sliderFeatureOpacity = new Slider(0.0, 1.0, 1.0);
+	private final Spinner<Double> spinFeatureMin = FXUtils.createDynamicStepSpinner(-Double.MAX_VALUE, Double.MAX_VALUE, 0, 0.1, 1);
+	private final Spinner<Double> spinFeatureMax = FXUtils.createDynamicStepSpinner(-Double.MAX_VALUE, Double.MAX_VALUE, 1, 0.1, 1);
+	private final String DEFAULT_CLASSIFICATION_OVERLAY = "Show classification";
 
 	/**
 	 * Other images from which training annotations should be used
 	 */
-	private List<ProjectImageEntry<BufferedImage>> trainingEntries = new ArrayList<>();
+	private final List<ProjectImageEntry<BufferedImage>> trainingEntries = new ArrayList<>();
 	
-	private Map<ProjectImageEntry<BufferedImage>, ImageData<BufferedImage>> trainingMap = new WeakHashMap<>();
+	private final Map<ProjectImageEntry<BufferedImage>, ImageData<BufferedImage>> trainingMap = new WeakHashMap<>();
 	
 	
 	private MiniViewers.MiniViewerManager miniViewer;
 	
-	private BooleanProperty livePrediction = new SimpleBooleanProperty(false);
+	private final BooleanProperty livePrediction = new SimpleBooleanProperty(false);
 	
 	private ReadOnlyObjectProperty<OpenCVStatModel> selectedClassifier;
 
-	private ReadOnlyObjectProperty<ImageDataTransformerBuilder> selectedFeatureCalculatorBuilder;
+	private ReadOnlyObjectProperty<ImageDataOpBuilder> selectedFeatureCalculatorBuilder;
 
 	private ReadOnlyObjectProperty<ImageServerMetadata.ChannelType> selectedOutputType;
 	
-	private StringProperty cursorLocation = new SimpleStringProperty();
+	private final StringProperty cursorLocation = new SimpleStringProperty();
 	
 	private PieChart pieChart;
 
-	private HierarchyListener hierarchyListener = new HierarchyListener();
+	private final HierarchyListener hierarchyListener = new HierarchyListener();
 	
 	/**
 	 * The last trained classifier
 	 */
-	private ObjectProperty<PixelClassifier> currentClassifier = new SimpleObjectProperty<>();
+	private final ObjectProperty<PixelClassifier> currentClassifier = new SimpleObjectProperty<>();
 	
 	private PixelClassificationOverlay overlay;
 	private PixelClassificationOverlay featureOverlay;
-	private FeatureRenderer featureRenderer;
+	private final FeatureRenderer featureRenderer;
 
-	private ChangeListener<ImageData<BufferedImage>> imageDataListener = this::handleImageDataChange;
+	private final MouseListener mouseListener = new MouseListener();
+
+	private final PixelClassifierTraining helper = new PixelClassifierTraining(null);
+
+	private final FeatureNormalization normalization = new FeatureNormalization();
+	private ImageOp preprocessingOp = null;
+
+	private final ChangeListener<ImageData<BufferedImage>> imageDataListener = this::handleImageDataChange;
 
 	private Stage stage;
 
@@ -199,7 +202,6 @@ public class PixelClassifierPane {
 			oldValue.getHierarchy().removeListener(hierarchyListener);
 		if (newValue != null)
 			newValue.getHierarchy().addListener(hierarchyListener);
-		updateTitle();
 		updateAvailableResolutions(newValue);
 	}
 
@@ -209,8 +211,6 @@ public class PixelClassifierPane {
 	 */
 	public PixelClassifierPane(final QuPathGUI qupath) {
 		this.qupath = qupath;
-//		this.viewer = qupath.getViewer();
-		helper = new PixelClassifierTraining(null);
 		featureRenderer = new FeatureRenderer(qupath.getImageRegionStore());
 		initialize();
 	}
@@ -223,7 +223,7 @@ public class PixelClassifierPane {
 		int row = 0;
 		
 		// Classifier
-		pane = new GridPane();
+        GridPane pane = new GridPane();
 		
 		var labelClassifier = new Label("Classifier");
 		var comboClassifier = new ComboBox<OpenCVStatModel>();
@@ -253,9 +253,10 @@ public class PixelClassifierPane {
 		
 		// Features
 		var labelFeatures = new Label("Features");
-		var comboFeatures = new ComboBox<ImageDataTransformerBuilder>();
-		comboFeatures.getItems().add(new ImageDataTransformerBuilder.DefaultFeatureCalculatorBuilder(imageData));
-//		comboFeatures.getItems().add(new FeatureCalculatorBuilder.ExtractNeighborsFeatureCalculatorBuilder(viewer.getImageData()));
+		var comboFeatures = new ComboBox<ImageDataOpBuilder>();
+		comboFeatures.setButtonCell(new OverrunListCell<>());
+		comboFeatures.setCellFactory(l -> new OverrunListCell<>());
+		comboFeatures.getItems().add(new DefaultMultiscaleImageDataOpBuilder(imageData));
 		labelFeatures.setLabelFor(comboFeatures);
 		selectedFeatureCalculatorBuilder = comboFeatures.getSelectionModel().selectedItemProperty();
 		
@@ -274,7 +275,7 @@ public class PixelClassifierPane {
 			}
 		});
 		comboFeatures.getItems().addAll(defaultFeatureCalculatorBuilders);
-		
+
 		comboFeatures.getSelectionModel().select(0);
 		comboFeatures.getSelectionModel().selectedItemProperty().addListener((v, o, n) -> updateFeatureCalculator());
 
@@ -382,15 +383,9 @@ public class PixelClassifierPane {
 		
 		labelCursor.setTooltip(new Tooltip("Prediction for current cursor location"));
 		paneChart.setBottom(labelCursor);
-		// This tends to make it harder to read the proportions as tooltips when putting the mouse over the pie chart
-//		Tooltip.install(paneChart, new Tooltip("Relative proportion of training samples"));
 
 		paneChart.setMaxWidth(400);
 
-//		PaneTools.addGridRow(pane, row++, 0, 
-//				"Prediction for current cursor location",
-//				labelCursor, labelCursor, labelCursor);
-		
 		comboClassifier.getItems().addAll(
 				OpenCVClassifiers.createStatModel(RTrees.class),
 				OpenCVClassifiers.createStatModel(ANN_MLP.class),
@@ -426,8 +421,6 @@ public class PixelClassifierPane {
 				);
 		panePostProcess.setVgap(5);
 		
-//		var panePostProcess = PixelClassifierUI.createPixelClassifierButtons(qupath.imageDataProperty(), currentClassifier);
-				
 		pane.add(panePostProcess, 0, row++, pane.getColumnCount(), 1);
 
 		GridPaneUtils.setMaxWidth(Double.MAX_VALUE, pane.getChildren().stream().filter(p -> p instanceof Region).toArray(Region[]::new));
@@ -476,27 +469,8 @@ public class PixelClassifierPane {
 		GridPaneUtils.addGridRow(paneFeatures, 1, 0, null,
 				sliderFeatureOpacity, spinFeatureMin, spinFeatureMax, btnFeatureAuto);
 
-		
-		var factory = new Callback<ListView<String>, ListCell<String>>() {
-
-			@Override
-			public ListCell<String> call(ListView<String> param) {
-				var listCell = new ListCell<String>() {
-					@Override
-					public void updateItem(String value, boolean empty) {
-						super.updateItem(value, empty);
-						if (value == null || empty)
-							setText(null);
-						else
-							setText(value);
-					}
-				};
-				listCell.setTextOverrun(OverrunStyle.ELLIPSIS);
-				return listCell;
-			}
-		};
-		comboDisplayFeatures.setCellFactory(factory);
-		comboDisplayFeatures.setButtonCell(factory.call(null));
+		comboDisplayFeatures.setCellFactory(l -> new OverrunListCell<>());
+		comboDisplayFeatures.setButtonCell(new OverrunListCell<>());
 		
 		GridPaneUtils.setMaxWidth(Double.MAX_VALUE, comboDisplayFeatures, sliderFeatureOpacity);
 		GridPaneUtils.setFillWidth(Boolean.TRUE, comboDisplayFeatures, sliderFeatureOpacity);
@@ -525,13 +499,8 @@ public class PixelClassifierPane {
 		stage.sizeToScene();
 
 		stage.initOwner(QuPathGUI.getInstance().getStage());
-		
-//		stage.getScene().getRoot().disableProperty().bind(
-//				QuPathGUI.getInstance().viewerProperty().isNotEqualTo(viewer)
-//				);
-		
-		updateTitle();
-		
+		stage.setTitle("Train pixel classifier");
+
 		updateFeatureCalculator();
 		
 		GridPaneUtils.setMinWidth(
@@ -573,6 +542,7 @@ public class PixelClassifierPane {
 		});
 		
 	}
+
 	
 	/**
 	 * Get all the training images currently requested.
@@ -624,10 +594,10 @@ public class PixelClassifierPane {
 	}
 	
 	private static boolean compatibleChannels(ImageServer<?> server, ImageServer<?> server2) {
+		if (server == null || server2 == null || server.nChannels() != server2.nChannels())
+			return false;
 		if (server == server2)
 			return true;
-		if (server.nChannels() != server2.nChannels())
-			return false;
 		for (int c = 0; c < server.nChannels(); c++) {
 			if (!server.getChannel(c).getName().equals(server2.getChannel(c).getName()))
 				return false;
@@ -647,27 +617,17 @@ public class PixelClassifierPane {
 	 * 
 	 * @return true if the builder was added, false otherwise.
 	 */
-	public static synchronized boolean installDefaultFeatureClassificationBuilder(ImageDataTransformerBuilder builder) {
+	public static synchronized boolean installDefaultFeatureClassificationBuilder(ImageDataOpBuilder builder) {
+		if (!Platform.isFxApplicationThread()) {
+			logger.debug("Delegating installDefaultFeatureClassificationBuilder to the application thread");
+			return FXUtils.callOnApplicationThread(() -> installDefaultFeatureClassificationBuilder(builder));
+		}
 		if (!defaultFeatureCalculatorBuilders.contains(builder)) {
 			defaultFeatureCalculatorBuilders.add(builder);
 			return true;
 		}
 		return false;
 	}
-	
-	
-	private void updateTitle() {
-		if (stage == null)
-			return;
-		stage.setTitle("Train pixel classifier");
-	}
-	
-	private MouseListener mouseListener = new MouseListener();
-	
-	private PixelClassifierTraining helper;
-
-	private FeatureNormalization normalization = new FeatureNormalization();
-	private ImageOp preprocessingOp = null;
 
 		
 	/**
@@ -677,10 +637,6 @@ public class PixelClassifierPane {
 	private void updateAvailableResolutions(ImageData<BufferedImage> imageData) {
 		var selected = selectedResolution.get();
 		if (imageData == null) {
-//			if (selected != null)
-//				resolutions.setAll(selected);
-//			else
-//				resolutions.clear();
 			return;
 		}
 		var requestedResolutions = ClassificationResolution.getDefaultResolutions(imageData, selected);
@@ -696,18 +652,17 @@ public class PixelClassifierPane {
 		var imageData = qupath.getImageData();
 		
 		// Check we can support the requested channels before proceeding
-		// This is a bit of a hack for the DefaultFeatureCalculatorBuilder because we know it will fail with too many channels 
-		// on a call to OpenCVTools.mergeChannels - and we'd rather show a notification instead of just logging the error
+		// This is a bit of a hack because we know some implementations will fail with more channels than OpenCV
+		// can handle (on a call to OpenCVTools.mergeChannels).
+		// We'd rather show a notification instead of just logging the error - although this risks being a problem
+		// for an implementation that *would* work, so we may consider restricting the check to only know failures.
 		var featureOpBuilder = selectedFeatureCalculatorBuilder.get();
 		var featureOp = featureOpBuilder.build(imageData, cal);
-		if (featureOpBuilder instanceof DefaultFeatureCalculatorBuilder) {
-			int nFeatures = featureOp.getChannels(imageData).size();
-			if (nFeatures > opencv_core.CV_CN_MAX) {
-				Dialogs.showErrorNotification("Pixel classifier", "Too many features! Requested " + featureOp.getChannels(imageData).size() + " but maximum is " + opencv_core.CV_CN_MAX + 
-						".\nFeatures will not be updated - please select a smaller number and continue training.");
-//				comboDisplayFeatures.getItems().setAll(DEFAULT_CLASSIFICATION_OVERLAY);
-				return;		
-			}
+		int nFeatures = featureOp.getChannels(imageData).size();
+		if (nFeatures > opencv_core.CV_CN_MAX) {
+			Dialogs.showErrorNotification("Pixel classifier", "Too many features! Requested " + nFeatures + " but maximum is " + opencv_core.CV_CN_MAX +
+					".\nFeatures will not be updated - please select a smaller number and continue training.");
+			return;
 		}
 		helper.setFeatureOp(featureOp);
 		var featureServer = helper.getFeatureServer(imageData);
@@ -769,7 +724,7 @@ public class PixelClassifierPane {
 				featureRenderer.setChannel(featureServer, channel, spinFeatureMin.getValue(), spinFeatureMax.getValue());
 				featureOverlay = PixelClassificationOverlay.create(qupath.getOverlayOptions(), data -> helper.getFeatureServer(data), featureRenderer);
 				featureOverlay.setMaxThreads(getLivePredictionThreads());
-				((PixelClassificationOverlay)featureOverlay).setLivePrediction(true);
+				featureOverlay.setLivePrediction(true);
 				featureOverlay.setOpacity(sliderFeatureOpacity.getValue());
 				featureOverlay.setLivePrediction(livePrediction.get());
 				autoFeatureContrast();
@@ -782,7 +737,7 @@ public class PixelClassifierPane {
 	}
 	
 	
-	int getLivePredictionThreads() {
+	private int getLivePredictionThreads() {
 		int n = nThreads.get();
 		return  n < 0 ? PathPrefs.numCommandThreadsProperty().get() : Math.max(n, 1);
 	}
@@ -807,13 +762,13 @@ public class PixelClassifierPane {
 		else
 			replaceOverlay(null);
 	}
-	
+
 	private boolean reweightSamples = false;
 	private int maxSamples = 100_000;
 	private int rngSeed = 100;
-	
-	private IntegerProperty nThreads = PathPrefs.createPersistentPreference("pixelClassificationThreads", -1);
-	
+
+	private final IntegerProperty nThreads = PathPrefs.createPersistentPreference("pixelClassificationThreads", -1);
+
 	private boolean showAdvancedOptions() {
 		
 		var existingStrategy = helper.getBoundaryStrategy();
@@ -886,17 +841,9 @@ public class PixelClassifierPane {
 	
 	
 	private void doClassification() {
-//		if (helper == null || helper.getFeatureServer() == null) {
-////			updateFeatureCalculator();
-////			updateClassifier();
-//			if (helper == null) {
-//				logger.error("No pixel classifier helper available!");
-//				return;
-//			}
-//		}
 		var imageData = qupath.getImageData();
 		if (imageData == null) {
-			if (!qupath.getAllViewers().stream().anyMatch(v -> v.getImageData() != null)) {
+			if (qupath.getAllViewers().stream().noneMatch(v -> v.getImageData() != null)) {
 				logger.debug("doClassification() called, but no images are open"); 
 				return;			
 			}
@@ -968,7 +915,6 @@ public class PixelClassifierPane {
 			 float[] weightArray = new float[rawCounts.length];
 			 for (int i = 0; i < weightArray.length; i++) {
 				 int c = rawCounts[i];
-//				 weightArray[i] = c == 0 ? 1 : (float)1.f/c;
 				 weightArray[i] = c == 0 ? 1 : (float)n/c;
 			 }
 			 for (int i = 0; i < n; i++) {
@@ -1047,7 +993,6 @@ public class PixelClassifierPane {
 				 .inputResolution(cal)
 				 .inputShape(inputWidth, inputHeight)
 				 .setChannelType(channelType)
-//				 .classificationLabels(labels2)
 				 .outputChannels(channels)
 				 .build();
 
@@ -1212,13 +1157,13 @@ public class PixelClassifierPane {
 		}
 		
 		try {
-//			var imp = IJExtension.extractROI(server, selected, request, true, null).getImage();
 			var pathImage = IJTools.convertToImagePlus(
 					server,
 					request);
 			var imp = pathImage.getImage();
-			if (imp instanceof CompositeImage && server.getMetadata().getChannelType() != ChannelType.CLASSIFICATION)
-				((CompositeImage)imp).setDisplayMode(CompositeImage.GRAYSCALE);
+			if (imp instanceof CompositeImage && server.getMetadata().getChannelType() != ChannelType.CLASSIFICATION) {
+				imp.setDisplayMode(CompositeImage.GRAYSCALE);
+			}
 			if (roi != null && !(roi instanceof RectangleROI)) {
 				imp.setRoi(IJTools.convertToIJRoi(roi, pathImage));
 			}
@@ -1232,30 +1177,19 @@ public class PixelClassifierPane {
 	}
 	
 	
-	private boolean showFeatures() {
+	private void showFeatures() {
 		var viewer = qupath.getViewer();
 		ImageData<BufferedImage> imageData = viewer.getImageData();
 		double cx = viewer.getCenterPixelX();
 		double cy = viewer.getCenterPixelY();
 		if (imageData == null)
-			return false;
+			return;
 
-		try {
-			// Create a new FeatureServer if we need one
-			ImageServer<BufferedImage> featureServer;
-			
-			var op = helper.getFeatureOp();
-			if (preprocessingOp != null)
-				op = op.appendOps(preprocessingOp);
-			featureServer = ImageOps.buildServer(imageData, op, helper.getResolution());
-			
-//			boolean tempFeatureServer = false;
-//			if (helper.getImageData() == imageData) {
-//				featureServer = helper.getFeatureServer();
-//			} else {
-//				tempFeatureServer = true;
-//				featureServer = ImageOps.buildServer(imageData, helper.getFeatureOp(), helper.getResolution());
-//			}
+		var op = helper.getFeatureOp();
+		if (preprocessingOp != null)
+			op = op.appendOps(preprocessingOp);
+
+		try (var featureServer = ImageOps.buildServer(imageData, op, helper.getResolution())) {
 			double downsample = featureServer.getDownsampleForResolution(0);
 			int tw = (int)(featureServer.getMetadata().getPreferredTileWidth() * downsample);
 			int th = (int)(featureServer.getMetadata().getPreferredTileHeight() * downsample);
@@ -1265,15 +1199,6 @@ public class PixelClassifierPane {
 					featureServer.getPath(),
 					downsample,
 					x, y, tw, th, viewer.getZPosition(), viewer.getTPosition());
-//			var tile = featureServer.getTileRequestManager().getTileRequest(
-//					0,
-//					(int)cx,
-//					(int)cy,
-//					viewer.getZPosition(), viewer.getTPosition());
-//			if (tile == null) {
-//				DisplayHelpers.showErrorMessage("Show features", "To file found - center the image within the viewer, then try again");
-//				return false;
-//			}
 			
 			var imp = IJTools.convertToImagePlus(featureServer, request).getImage();
 
@@ -1282,19 +1207,13 @@ public class PixelClassifierPane {
 			for (int s = 1; s <= imp.getStackSize(); s++) {
 				impComp.setPosition(s);
 				impComp.resetDisplayRange();
-//				impComp.getStack().setSliceLabel(feature.getName(), s++);
 			}
 			impComp.setPosition(1);
 			IJExtension.getImageJInstance();
 			impComp.show();
-			
-//			if (tempFeatureServer)
-				featureServer.close();
-			return true;
 		} catch (Exception e) {
 			logger.error("Error calculating features", e);
 		}
-		return false;
 	}
 	
 	private boolean addResolution() {
@@ -1326,7 +1245,7 @@ public class PixelClassifierPane {
 
 		List<ClassificationResolution> temp = new ArrayList<>(resolutions);
 		temp.add(res);
-		Collections.sort(temp, Comparator.comparingDouble((ClassificationResolution w) -> w.cal.getAveragedPixelSize().doubleValue()));
+		temp.sort(Comparator.comparingDouble((ClassificationResolution w) -> w.cal.getAveragedPixelSize().doubleValue()));
 		resolutions.setAll(temp);
 		comboResolutions.getSelectionModel().select(res);
 		
@@ -1431,5 +1350,18 @@ public class PixelClassifierPane {
 		
 	}
 
+
+	private static class OverrunListCell<T> extends ListCell<T> {
+
+		public OverrunListCell() {
+			this(OverrunStyle.ELLIPSIS);
+		}
+
+		public OverrunListCell(OverrunStyle style) {
+			super();
+			setTextOverrun(style);
+		}
+
+	}
 
 }
