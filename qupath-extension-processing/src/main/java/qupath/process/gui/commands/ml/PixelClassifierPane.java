@@ -72,7 +72,6 @@ import qupath.fx.utils.FXUtils;
 import qupath.fx.utils.GridPaneUtils;
 import qupath.imagej.gui.IJExtension;
 import qupath.imagej.tools.IJTools;
-import qupath.lib.classifiers.Normalization;
 import qupath.lib.classifiers.pixel.PixelClassifier;
 import qupath.lib.classifiers.pixel.PixelClassifierMetadata;
 import qupath.lib.common.GeneralTools;
@@ -186,7 +185,6 @@ public class PixelClassifierPane {
 	private final PixelClassifierTraining helper = new PixelClassifierTraining(null);
 	private final PixelClassifierAdvancedOptions advancedOptions = new PixelClassifierAdvancedOptions();
 
-	private final FeatureNormalization normalization = new FeatureNormalization();
 	private ImageOp preprocessingOp = null;
 
 	private final ChangeListener<ImageData<BufferedImage>> imageDataListener = this::handleImageDataChange;
@@ -799,7 +797,7 @@ public class PixelClassifierPane {
 			 trainData.shuffleTrainTest();
 
 		 // Apply normalization, if we need to
-		 FeaturePreprocessor preprocessor = normalization.build(trainData.getTrainSamples(), false);
+		 FeaturePreprocessor preprocessor = advancedOptions.getNormalization().build(trainData.getTrainSamples(), false);
 		 if (preprocessor.doesSomething()) {
 			 preprocessingOp = ImageOps.ML.preprocessor(preprocessor);
 		 } else
