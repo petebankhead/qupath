@@ -30,9 +30,9 @@ import qupath.opencv.ops.ImageOp;
 import qupath.opencv.ops.ImageOps;
 import qupath.opencv.tools.MultiscaleFeatures;
 
-public class DefaultMultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
+public class MultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
 
-    private static final Logger logger = LoggerFactory.getLogger(qupath.process.gui.commands.ml.op.DefaultMultiscaleImageDataOpBuilder.class);
+    private static final Logger logger = LoggerFactory.getLogger(MultiscaleImageDataOpBuilder.class);
 
     private enum NormalizationType {
         NONE,
@@ -66,10 +66,19 @@ public class DefaultMultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
     private final ObservableObjectValue<NormalizationType> normalization;
     private final ObservableObjectValue<Double> normalizationSigma;
 
-    private final boolean do3D = false; // We don't support 3D features yet...
+    private final boolean do3D;
 
-    public DefaultMultiscaleImageDataOpBuilder(ImageData<BufferedImage> imageData) {
+    public static MultiscaleImageDataOpBuilder create2D(ImageData<BufferedImage> imageData) {
+        return new MultiscaleImageDataOpBuilder(imageData, false);
+    }
 
+    public static MultiscaleImageDataOpBuilder create3D(ImageData<BufferedImage> imageData) {
+        return new MultiscaleImageDataOpBuilder(imageData, true);
+    }
+
+    public MultiscaleImageDataOpBuilder(ImageData<BufferedImage> imageData, boolean do3D) {
+
+        this.do3D = do3D;
         int row = 0;
 
         pane = new GridPane();
@@ -160,13 +169,16 @@ public class DefaultMultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
                 "Choose the features",
                 labelFeatures, comboFeatures);
 
-        GridPaneUtils.addGridRow(pane, row++, 0,
-                "Apply local intensity (Gaussian-weighted) normalization before calculating features",
-                labelNormalize, comboNormalize);
+        if (!do3D) {
+            // Intensity normalization isn't currently supported for 3D
+            GridPaneUtils.addGridRow(pane, row++, 0,
+                    "Apply local intensity (Gaussian-weighted) normalization before calculating features",
+                    labelNormalize, comboNormalize);
 
-        GridPaneUtils.addGridRow(pane, row++, 0,
-                "Amount of smoothing to apply for local normalization",
-                labelNormalizeScale, spinnerNormalize);
+            GridPaneUtils.addGridRow(pane, row++, 0,
+                    "Amount of smoothing to apply for local normalization",
+                    labelNormalizeScale, spinnerNormalize);
+        }
 
         pane.setHgap(5);
         pane.setVgap(6);
@@ -176,15 +188,33 @@ public class DefaultMultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
 
     @Override
     public ImageDataOp build(ImageData<BufferedImage> imageData, PixelCalibration resolution) {
+        if (do3D) {
+            return buildOp3D();
+        } else {
+            return buildOp2D();
+        }
+    }
 
-        if (selectedFeatures == null || selectedSigmas == null)
+    private ImageDataOp buildOp3D() {
+        var features = getSelectedFeatures();
+        double[] sigmas = getSelectedScales();
+
+        if (features.isEmpty() || sigmas.length == 0)
             throw new IllegalArgumentException("Features and scales must be selected!");
 
+        return new Multiscale3DOp(
+                getSelectedChannels(),
+                features,
+                sigmas
+        );
+    }
 
-        // Extract features, removing any that are incompatible
-        MultiscaleFeatures.MultiscaleFeature[] features = selectedFeatures.toArray(MultiscaleFeatures.MultiscaleFeature[]::new);
+    private ImageDataOp buildOp2D() {
+        var features = getSelectedFeatures();
+        double[] sigmas = getSelectedScales();
 
-        double[] sigmas = selectedSigmas.stream().mapToDouble(d -> d).toArray();
+        if (features.isEmpty() || sigmas.length == 0)
+            throw new IllegalArgumentException("Features and scales must be selected!");
 
         // This allows the Gaussian filter used for variance to be different from the one used for weighted means
         // It *could* be editable... but currently isn't
@@ -197,7 +227,7 @@ public class DefaultMultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
 
         List<ImageOp> ops = new ArrayList<>();
         for (var sigma : sigmas) {
-            ops.add(ImageOps.Filters.features(Arrays.asList(features), sigma, sigma));
+            ops.add(ImageOps.Filters.features(features, sigma, sigma));
         }
 
         // Provide same input to each op, then concatenate channels at the end
@@ -228,12 +258,25 @@ public class DefaultMultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
                     break;
             }
         }
-        if (opNormalize != null)
+        if (opNormalize != null) {
             op = ImageOps.Core.sequential(opNormalize, op);
-//				op = ImageOps.Core.sequential(op, opNormalize);
+        }
 
-        return ImageOps.buildImageDataOp(selectedChannels).appendOps(op);
+        return ImageOps.buildImageDataOp(getSelectedChannels()).appendOps(op);
     }
+
+    private double[] getSelectedScales() {
+        return selectedSigmas.stream().mapToDouble(d -> d).toArray();
+    }
+
+    private List<MultiscaleFeatures.MultiscaleFeature> getSelectedFeatures() {
+        return List.copyOf(selectedFeatures);
+    }
+
+    private List<ColorTransforms.ColorTransform> getSelectedChannels() {
+        return List.copyOf(selectedChannels);
+    }
+
 
     @Override
     public boolean canCustomize(ImageData<BufferedImage> imageData) {
@@ -272,7 +315,7 @@ public class DefaultMultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
 
     @Override
     public String toString() {
-        return "Default multiscale features " + (do3D ? "3D" : "2D");
+        return "Multiscale features " + (do3D ? "3D" : "2D");
     }
 
 

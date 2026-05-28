@@ -105,7 +105,7 @@ import qupath.opencv.ml.OpenCVClassifiers.RTreesClassifier;
 import qupath.opencv.ml.pixel.PixelClassifiers;
 import qupath.opencv.ops.ImageOp;
 import qupath.opencv.ops.ImageOps;
-import qupath.process.gui.commands.ml.op.DefaultMultiscaleImageDataOpBuilder;
+import qupath.process.gui.commands.ml.op.MultiscaleImageDataOpBuilder;
 import qupath.process.gui.commands.ml.op.ImageDataOpBuilder;
 import qupath.process.gui.commands.ml.PixelClassifierTraining.ClassifierTrainingData;
 
@@ -122,7 +122,6 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.WeakHashMap;
 import java.util.stream.IntStream;
-import qupath.process.gui.commands.ml.op.Multiscale3DImageDataOpBuilder;
 
 /**
  * Main user interface for interactively training a {@link PixelClassifier}.
@@ -252,12 +251,12 @@ public class PixelClassifierPane {
 		var comboFeatures = new ComboBox<ImageDataOpBuilder>();
 		comboFeatures.setButtonCell(new OverrunListCell<>());
 		comboFeatures.setCellFactory(l -> new OverrunListCell<>());
-		comboFeatures.getItems().add(new DefaultMultiscaleImageDataOpBuilder(imageData));
+		comboFeatures.getItems().add(MultiscaleImageDataOpBuilder.create2D(imageData));
 
 		// TODO: Handle 3D serialization and remove warning
 		if (imageData != null && imageData.getServer().nZSlices() > 1) {
 			logger.warn("Adding 3D support (experimental, doesn't support saving/reloading classifiers!)");
-			comboFeatures.getItems().add(new Multiscale3DImageDataOpBuilder());
+			comboFeatures.getItems().add(MultiscaleImageDataOpBuilder.create3D(imageData));
 		}
 
 		labelFeatures.setLabelFor(comboFeatures);
