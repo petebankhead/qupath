@@ -19,4 +19,15 @@ class  OverrunListCell<T> extends ListCell<T> {
         setTextOverrun(style);
     }
 
+    @Override
+    protected void updateItem(T item, boolean empty) {
+        super.updateItem(item, empty);
+        if (empty || item == null) {
+            setText(null);
+            setGraphic(null);
+            return;
+        }
+        setText(item.toString());
+    }
+
 }
