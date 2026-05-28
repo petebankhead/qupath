@@ -122,6 +122,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.WeakHashMap;
 import java.util.stream.IntStream;
+import qupath.process.gui.commands.ml.op.Multiscale3DImageDataOpBuilder;
 
 /**
  * Main user interface for interactively training a {@link PixelClassifier}.
@@ -252,6 +253,13 @@ public class PixelClassifierPane {
 		comboFeatures.setButtonCell(new OverrunListCell<>());
 		comboFeatures.setCellFactory(l -> new OverrunListCell<>());
 		comboFeatures.getItems().add(new DefaultMultiscaleImageDataOpBuilder(imageData));
+
+		// TODO: Handle 3D serialization and remove warning
+		if (imageData != null && imageData.getServer().nZSlices() > 1) {
+			logger.warn("Adding 3D support (experimental, doesn't support saving/reloading classifiers!)");
+			comboFeatures.getItems().add(new Multiscale3DImageDataOpBuilder());
+		}
+
 		labelFeatures.setLabelFor(comboFeatures);
 		selectedFeatureCalculatorBuilder = comboFeatures.getSelectionModel().selectedItemProperty();
 		
@@ -931,10 +939,10 @@ public class PixelClassifierPane {
 	}
 	
 	
-	static boolean logVariableImportance(final RTreesClassifier trees, final List<String> features) {
+	static void logVariableImportance(final RTreesClassifier trees, final List<String> features) {
 		var importance = trees.getFeatureImportance();
 		if (importance == null)
-			return false;
+			return;
 		try {
 			var sorted = IntStream.range(0, importance.length)
 					.boxed()
@@ -942,7 +950,7 @@ public class PixelClassifierPane {
 					.mapToInt(i -> i).toArray();
 			
 			if (sorted.length != features.size())
-				return false;
+				return;
 			
 			var sb = new StringBuilder("Variable importance:");
 			for (int ind : sorted) {
@@ -950,10 +958,10 @@ public class PixelClassifierPane {
 				sb.append(String.format("%.4f \t %s", importance[ind], features.get(ind)));
 			}
 			logger.info(sb.toString());
-			return true;
+			return;
 		} catch (Exception e) {
 			logger.debug("Error logging feature importance: {}", e.getLocalizedMessage());
-			return false;
+			return;
 		}
 	}
 	

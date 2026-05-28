@@ -186,16 +186,21 @@ public class DefaultMultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
 
         double[] sigmas = selectedSigmas.stream().mapToDouble(d -> d).toArray();
 
-        double varianceScaleRatio = 1.0; // TODO: Make the variance scale ratio editable
+        // This allows the Gaussian filter used for variance to be different from the one used for weighted means
+        // It *could* be editable... but currently isn't
+        double varianceScaleRatio = 1.0;
+
         // TODO: Consider reinstating 3D
-//			SmoothingScale scale;
-//				scale = SmoothingScale.get3DIsotropic(localNormalizeSigma);
-//			scale = SmoothingScale.get2D(localNormalizeSigma);
+//        LocalNormalization.SmoothingScale scale;
+//				scale = LocalNormalization.SmoothingScale.get3DIsotropic(localNormalizeSigma);
+//			scale = LocalNormalization.SmoothingScale.get2D(localNormalizeSigma);
 
         List<ImageOp> ops = new ArrayList<>();
         for (var sigma : sigmas) {
             ops.add(ImageOps.Filters.features(Arrays.asList(features), sigma, sigma));
         }
+
+        // Provide same input to each op, then concatenate channels at the end
         var op = ImageOps.Core.splitMerge(ops);
 
         // Handle normalization if needed

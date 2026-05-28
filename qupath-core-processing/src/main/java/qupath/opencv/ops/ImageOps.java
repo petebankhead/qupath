@@ -3198,13 +3198,17 @@ public class ImageOps {
 		}
 		
 	}
-	
-	
-	static Mat stripPadding(Mat mat, Padding padding) {
+
+	/**
+	 * Utility function to strip the padding from a mat.
+	 * @param mat the input mat
+	 * @param padding the padding to remove
+	 * @return a copy of the central portion of the mat with padding remove,
+	 *         or the original mat if the padding was empty
+	 */
+	public static Mat stripPadding(Mat mat, Padding padding) {
 		if (padding.isEmpty())
 			return mat;
-//		return OpenCVTools.crop(mat, padding.getX1(), padding.getY1(),
-//				mat.cols()-padding.getXSum(), mat.rows()-padding.getYSum());
 		return mat.apply(new Rect(
 				padding.getX1(), padding.getY1(),
 				mat.cols()-padding.getXSum(), mat.rows()-padding.getYSum())).clone();
