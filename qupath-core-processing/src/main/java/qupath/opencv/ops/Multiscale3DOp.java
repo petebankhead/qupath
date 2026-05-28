@@ -1,4 +1,4 @@
-package qupath.process.gui.commands.ml.op;
+package qupath.opencv.ops;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -20,14 +20,12 @@ import qupath.lib.images.servers.PixelType;
 import qupath.lib.images.servers.ServerTools;
 import qupath.lib.regions.Padding;
 import qupath.lib.regions.RegionRequest;
-import qupath.opencv.ops.ImageDataOp;
-import qupath.opencv.ops.ImageOp;
-import qupath.opencv.ops.ImageOps;
 import qupath.opencv.tools.MultiscaleFeatures;
 import qupath.opencv.tools.OpenCVTools;
 
 // TODO: Call ImageOps.registerDataOps at a suitable point
-// TODO: Consider use of LocalNormalization.SmoothingScale
+// TODO: Consider use of LocalNormalization.SmoothingScale to adjust how smoothing is performed.
+//       This could also make the op work for both 2D and 3D.
 class Multiscale3DOp implements ImageDataOp {
 
     private final List<ColorTransforms.ColorTransform> colorTransforms;
@@ -37,13 +35,15 @@ class Multiscale3DOp implements ImageDataOp {
 
     private transient volatile Padding basePadding;
 
-    Multiscale3DOp(Collection<ColorTransforms.ColorTransform> colorTransforms,
+    Multiscale3DOp(Collection<? extends ColorTransforms.ColorTransform> colorTransforms,
                    Collection<MultiscaleFeatures.MultiscaleFeature> features,
                    double[] scales) {
         this(colorTransforms, features, scales, null);
     }
 
-    private Multiscale3DOp(Collection<ColorTransforms.ColorTransform> colorTransforms, Collection<MultiscaleFeatures.MultiscaleFeature> features, double[] scales,
+    private Multiscale3DOp(Collection<? extends ColorTransforms.ColorTransform> colorTransforms,
+                           Collection<MultiscaleFeatures.MultiscaleFeature> features,
+                           double[] scales,
                            ImageOp postprocessing) {
         this.colorTransforms = List.copyOf(colorTransforms);
         this.features = new LinkedHashSet<>(features);
@@ -72,7 +72,7 @@ class Multiscale3DOp implements ImageDataOp {
 
         float[] pixels = null;
         // Loop through channels / color transforms
-        for (var channel : colorTransforms) {
+        for (var channel : getColorTransforms(imageData)) {
             // Loop through z-slices to build a list of Mat for input
             for (int z = 0; z < server.nZSlices(); z++) {
                 var img = images.get(z);
@@ -90,23 +90,23 @@ class Multiscale3DOp implements ImageDataOp {
                 }
                 OpenCVTools.putPixelsFloat(mat, pixels);
             }
-        }
 
-        // Loop through scales
-        for (double sigma : scales) {
-            // Sigma is defined in terms of pixels - so we don't pass the pixel calibration to the results builder
-            var cal = server.getPixelCalibration();
-            double zScale = 1.0;
-            if (cal.hasPixelSizeMicrons() && cal.hasZSpacingMicrons()) {
-                zScale = cal.getAveragedPixelSizeMicrons() / cal.getZSpacingMicrons();
-            }
-            var featureMap = builder
-                    .sigmaXY(sigma)
-                    .sigmaZ(sigma * zScale)
-                    .build(matsInput, request.getZ());
+            // Loop through scales
+            for (double sigma : scales) {
+                // Sigma is defined in terms of pixels - so we don't pass the pixel calibration to the results builder
+                var cal = server.getPixelCalibration();
+                double zScale = 1.0;
+                if (cal.hasPixelSizeMicrons() && cal.hasZSpacingMicrons()) {
+                    zScale = cal.getAveragedPixelSizeMicrons() / cal.getZSpacingMicrons();
+                }
+                var featureMap = builder
+                        .sigmaXY(sigma)
+                        .sigmaZ(sigma * zScale)
+                        .build(matsInput, request.getZ());
 
-            for (var feature : features) {
-                matsOutput.add(featureMap.get(feature));
+                for (var feature : features) {
+                    matsOutput.add(featureMap.get(feature));
+                }
             }
         }
 
@@ -125,6 +125,18 @@ class Multiscale3DOp implements ImageDataOp {
             }
         }
         return basePadding;
+    }
+
+    private List<ColorTransforms.ColorTransform> getColorTransforms(ImageData<?> imageData) {
+        if (colorTransforms.isEmpty()) {
+            List<ColorTransforms.ColorTransform> transforms = new ArrayList<>();
+            for (int i = 0; i < imageData.getServer().nChannels(); i++) {
+                transforms.add(ColorTransforms.createChannelExtractor(i));
+            }
+            return transforms;
+        } else {
+            return colorTransforms;
+        }
     }
 
     private synchronized Padding computeBasePadding() {
@@ -166,7 +178,7 @@ class Multiscale3DOp implements ImageDataOp {
     @Override
     public List<ImageChannel> getChannels(ImageData<BufferedImage> imageData) {
         List<String> names = new ArrayList<>();
-        for (var transform : colorTransforms) {
+        for (var transform : getColorTransforms(imageData)) {
             for (var scale : scales) {
                 for (var feature : features) {
                     names.add(
@@ -202,12 +214,12 @@ class Multiscale3DOp implements ImageDataOp {
     }
 
     @Override
-    public Collection<URI> getURIs() throws IOException {
+    public Collection<URI> getURIs() {
         return List.of();
     }
 
     @Override
-    public boolean updateURIs(Map<URI, URI> replacements) throws IOException {
+    public boolean updateURIs(Map<URI, URI> replacements) {
         return false;
     }
 }

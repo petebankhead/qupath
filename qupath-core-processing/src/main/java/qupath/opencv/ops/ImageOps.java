@@ -151,6 +151,7 @@ public class ImageOps {
 		factoryDataOps = GsonTools.createSubTypeAdapterFactory(ImageDataOp.class, "type");
 		GsonTools.getDefaultBuilder().registerTypeAdapterFactory(factoryDataOps);
 		registerTypes(factoryDataOps, ImageDataOp.class, ImageOps.class, "data.op");
+		registerDataOp(Multiscale3DOp.class, "multiscale");
 	}
 	
 	/**
@@ -253,6 +254,35 @@ public class ImageOps {
 	 */
 	public static ImageDataOp buildImageDataOp(Collection<? extends ColorTransform> inputChannels) {
 		return buildImageDataOp(inputChannels.toArray(ColorTransform[]::new));
+	}
+
+	/**
+	 * Create an {@link ImageDataOp} that can compute multiscale features using 3D filters,
+	 * giving the output as concatenated channels.
+	 * <p>
+	 * Because an {@link ImageOp} takes a single {@link Mat} as input, representing a 2D image,
+	 * it is not generally possible to use ops to compute 3D features.
+	 * This data op overcomes that by computing the features early, then permitting additional
+	 * (standard, 2D) ops to be appended for postprocessing if needed.
+	 * @param inputChannels collection of {@link ColorTransform} objects used to extract the pixels that will form the channels of the output {@link Mat}.
+	 * 						If empty, the original image channels will be used.
+	 * @param features requested features
+	 * @param scales the Gaussian sigma values corresponding to the feature scales.
+	 *               These are in pixel units at the resolution of the region request.
+	 *               For anisotropic pixels (z-spacing is different from x and y), the scale values
+	 *               are given for xy and then internally will be recalibrated so that z is similar.
+	 *               If this is undesirable, set the pixel calibration for the image server to be uncalibrated
+	 *               so that the correction cannot be applied.
+	 * @return the {@link ImageDataOp}
+	 * @see qupath.opencv.tools.MultiscaleFeatures
+	 */
+	public static ImageDataOp buildMultiscale3DOp(Collection<? extends ColorTransform> inputChannels,
+												  Collection<MultiscaleFeature> features,
+												  double[] scales) {
+		return new Multiscale3DOp(
+				inputChannels,
+				features,
+				scales);
 	}
 	
 	

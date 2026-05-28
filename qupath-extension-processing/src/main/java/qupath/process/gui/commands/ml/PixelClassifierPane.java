@@ -22,6 +22,7 @@
 package qupath.process.gui.commands.ml;
 
 import ij.CompositeImage;
+import java.util.Objects;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
@@ -712,13 +713,17 @@ public class PixelClassifierPane {
 				}
 			}
 			if (channel >= 0) {
+				var channelBefore = featureRenderer.getSelectedChannel();
 				featureRenderer.setChannel(featureServer, channel, spinFeatureMin.getValue(), spinFeatureMax.getValue());
+				var channelAfter = featureRenderer.getSelectedChannel();
 				featureOverlay = PixelClassificationOverlay.create(qupath.getOverlayOptions(), data -> helper.getFeatureServer(data), featureRenderer);
 				featureOverlay.setMaxThreads(getLivePredictionThreads());
 				featureOverlay.setLivePrediction(true);
 				featureOverlay.setOpacity(sliderFeatureOpacity.getValue());
 				featureOverlay.setLivePrediction(livePrediction.get());
-				autoFeatureContrast();
+				if (channelBefore == null || !Objects.equals(channelBefore.getName(), channelAfter.getName())) {
+					autoFeatureContrast();
+				}
 			}
 		}
 		if (featureOverlay != null) {
