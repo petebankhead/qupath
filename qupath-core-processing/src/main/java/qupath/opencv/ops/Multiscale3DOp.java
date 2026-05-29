@@ -187,7 +187,11 @@ class Multiscale3DOp implements ImageDataOp {
                 }
             }
         }
-        return ImageChannel.getChannelList(names.toArray(String[]::new));
+        var channels = ImageChannel.getChannelList(names.toArray(String[]::new));
+        if (postprocessing == null)
+            return channels;
+        else
+            return postprocessing.getChannels(channels);
     }
 
     @Override
@@ -210,7 +214,11 @@ class Multiscale3DOp implements ImageDataOp {
 
     @Override
     public PixelType getOutputType(PixelType inputType) {
-        return PixelType.FLOAT32;
+        // Feature output is float32
+        if (postprocessing == null)
+            return PixelType.FLOAT32;
+        else
+            return postprocessing.getOutputType(PixelType.FLOAT32);
     }
 
     @Override

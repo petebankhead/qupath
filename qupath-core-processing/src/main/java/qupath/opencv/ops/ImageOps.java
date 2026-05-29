@@ -284,6 +284,39 @@ public class ImageOps {
 				features,
 				scales);
 	}
+
+
+	/**
+	 * Wrap an existing data op to cache its results, using a default cache size.
+	 * This is useful if the op takes a long time to process, and may be reused
+	 * with different (postprocessing) ImageOps appended.
+	 * @param dataOp the op to wrap
+	 * @return the caching data op, or the original op if it is already caching
+	 * @since v0.8.0
+	 * @see #makeCachingDataOp(ImageDataOp, long)
+	 */
+	public static ImageDataOp makeCachingDataOp(ImageDataOp dataOp) {
+		if (dataOp instanceof CachingDataOp)
+			return dataOp;
+		else
+			return new CachingDataOp(dataOp);
+	}
+
+	/**
+	 * Wrap an existing data op to cache its results.
+	 * This is useful if the op takes a long time to process, and may be reused
+	 * with different (postprocessing) ImageOps appended.
+	 * @param dataOp the op to wrap
+	 * @param cacheSizeBytes maximum cache size, in bytes
+	 * @return the caching data op, or the original op if it is already caching
+	 * @since v0.8.0
+	 */
+	public static ImageDataOp makeCachingDataOp(ImageDataOp dataOp, long cacheSizeBytes) {
+		if (dataOp instanceof CachingDataOp)
+			return dataOp;
+		else
+			return new CachingDataOp(dataOp, null, cacheSizeBytes);
+	}
 	
 	
 	

@@ -202,11 +202,12 @@ public class MultiscaleImageDataOpBuilder implements ImageDataOpBuilder {
         if (features.isEmpty() || sigmas.length == 0)
             throw new IllegalArgumentException("Features and scales must be selected!");
 
-        return ImageOps.buildMultiscale3DOp(
+        var dataOp = ImageOps.buildMultiscale3DOp(
                 getSelectedChannels(),
                 features,
                 sigmas
         );
+        return ImageOps.makeCachingDataOp(dataOp);
     }
 
     private ImageDataOp buildOp2D() {
