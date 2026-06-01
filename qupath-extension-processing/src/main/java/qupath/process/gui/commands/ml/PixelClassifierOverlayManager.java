@@ -1,0 +1,288 @@
+package qupath.process.gui.commands.ml;
+
+import java.util.Objects;
+import javafx.application.Platform;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.DoubleProperty;
+import javafx.beans.property.IntegerProperty;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.ReadOnlyStringProperty;
+import javafx.beans.property.ReadOnlyStringWrapper;
+import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.property.SimpleDoubleProperty;
+import javafx.beans.property.SimpleIntegerProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
+import javafx.event.EventHandler;
+import javafx.geometry.Point2D;
+import javafx.scene.input.MouseEvent;
+import javafx.util.Subscription;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import qupath.lib.classifiers.pixel.PixelClassifier;
+import qupath.lib.gui.QuPathGUI;
+import qupath.lib.gui.viewer.QuPathViewer;
+import qupath.lib.gui.viewer.overlays.PixelClassificationOverlay;
+
+class PixelClassifierOverlayManager implements AutoCloseable{
+
+    private static final Logger logger = LoggerFactory.getLogger(PixelClassifierOverlayManager.class);
+
+    public static final String DEFAULT_CLASSIFICATION_OVERLAY = "Show classification";
+
+    private final QuPathGUI qupath;
+    private final PixelClassifierTraining training;
+    private final FeatureRenderer featureRenderer;
+
+    private final ObjectProperty<PixelClassifier> classifier = new SimpleObjectProperty<>();
+
+    private final IntegerProperty predictionThreads = new SimpleIntegerProperty(1);
+
+    private final DoubleProperty overlayOpacity = new SimpleDoubleProperty(1.0);
+    private final BooleanProperty livePrediction = new SimpleBooleanProperty(false);
+
+    private final DoubleProperty featureMinDisplay = new SimpleDoubleProperty(0.0);
+    private final DoubleProperty featureMaxDisplay = new SimpleDoubleProperty(1.0);
+
+    private final StringProperty selectedName = new SimpleStringProperty();
+
+    private final ReadOnlyStringWrapper cursorLocation = new ReadOnlyStringWrapper();
+
+    private final EventHandler<MouseEvent> mouseListener = this::handleMouseMoved;
+
+    private PixelClassificationOverlay overlay;
+    private PixelClassificationOverlay featureOverlay;
+
+    private final Subscription subscription;
+
+    PixelClassifierOverlayManager(QuPathGUI qupath, PixelClassifierTraining training) {
+        this.qupath = qupath;
+        this.training = training;
+        this.featureRenderer = new FeatureRenderer(qupath.getImageRegionStore());
+        this.subscription = this.overlayOpacity.subscribe(this::updateOpacity)
+                .and(this.livePrediction.subscribe(this::updateLivePrediction))
+                .and(this.classifier.subscribe(this::updateClassifier))
+                .and(this.featureMinDisplay.subscribe(this::updateFeatureDisplayRange))
+                .and(this.featureMaxDisplay.subscribe(this::updateFeatureDisplayRange));
+
+        qupath.getStage().addEventFilter(MouseEvent.MOUSE_MOVED, mouseListener);
+    }
+
+    private void updateClassifier(PixelClassifier classifier) {
+        if (classifier == null) {
+            resetOverlay();
+        } else {
+            replaceOverlay(
+                    PixelClassificationOverlay.create(
+                            qupath.getOverlayOptions(),
+                            classifier,
+                            predictionThreads.get())
+            );
+        }
+    }
+
+    public void resetOverlay() {
+        replaceOverlay(null);
+    }
+
+    /**
+     * Replace the overlay - making sure to do this on the application thread
+     *
+     * @param newOverlay
+     */
+    private void replaceOverlay(PixelClassificationOverlay newOverlay) {
+        if (!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> replaceOverlay(newOverlay));
+            return;
+        }
+        if (overlay != null) {
+            overlay.stop();
+        }
+        overlay = newOverlay;
+        if (overlay != null) {
+            overlay.setLivePrediction(livePrediction.get());
+            overlay.setOpacity(overlayOpacityProperty().get());
+        }
+        ensureOverlaySet();
+    }
+
+
+    private void updateLivePrediction(boolean live) {
+        if (overlay != null)
+            overlay.setLivePrediction(live);
+        if (featureOverlay != null)
+            featureOverlay.setLivePrediction(live);
+    }
+
+    private void updateOpacity(Number opacity) {
+        if (opacity == null || !Double.isFinite(opacity.doubleValue()))
+            return;
+        if (featureOverlay != null) {
+            featureOverlay.setOpacity(opacity.doubleValue());
+        }
+        if (overlay != null)
+            overlay.setOpacity(opacity.doubleValue());
+        qupath.getViewerManager().repaintAllViewers();
+    }
+
+
+
+
+
+
+    void ensureOverlaySet() {
+        if (featureOverlay != null) {
+            featureOverlay.stop();
+            featureOverlay = null;
+        }
+
+        for (var viewer : qupath.getAllViewers()) {
+            if (viewer.getCustomPixelLayerOverlay() == featureOverlay)
+                viewer.resetCustomPixelLayerOverlay();
+        }
+
+        var imageData = qupath.getImageData();
+        if (imageData == null)
+            return;
+        String featureName = selectedName.get();
+        if (DEFAULT_CLASSIFICATION_OVERLAY.equals(featureName)) {
+            for (var viewer : qupath.getAllViewers())
+                viewer.setCustomPixelLayerOverlay(overlay);
+            return;
+        }
+        int channel = -1;
+        var featureServer = training.getFeatureServer(imageData);
+        if (featureServer != null && featureName != null) {
+            for (int c = 0; c < featureServer.nChannels(); c++) {
+                if (featureName.equals(featureServer.getChannel(c).getName())) {
+                    channel = c;
+                    break;
+                }
+            }
+            if (channel >= 0) {
+                var channelBefore = featureRenderer.getSelectedChannel();
+                featureRenderer.setChannel(featureServer, channel, featureMinDisplay.get(), featureMaxDisplay.get());
+                var channelAfter = featureRenderer.getSelectedChannel();
+                featureOverlay = PixelClassificationOverlay.create(qupath.getOverlayOptions(), data -> training.getFeatureServer(data), featureRenderer);
+                featureOverlay.setMaxThreads(predictionThreads.get());
+                featureOverlay.setLivePrediction(true);
+                featureOverlay.setOpacity(overlayOpacity.get());
+                featureOverlay.setLivePrediction(livePrediction.get());
+                if (channelBefore == null || !Objects.equals(channelBefore.getName(), channelAfter.getName())) {
+                    autoFeatureContrast();
+                }
+            }
+        }
+        if (featureOverlay != null) {
+            for (var viewer : qupath.getAllViewers())
+                viewer.setCustomPixelLayerOverlay(featureOverlay);
+        }
+    }
+
+    public void autoFeatureContrast() {
+        var selectedChannel = featureRenderer == null ? null : featureRenderer.getSelectedChannel();
+        if (selectedChannel != null) {
+            featureRenderer.autoSetDisplayRange();
+            double min = selectedChannel.getMinDisplay();
+            double max = selectedChannel.getMaxDisplay();
+            featureMinDisplay.set(min);
+            featureMaxDisplay.set(max);
+        }
+    }
+
+    private void updateFeatureDisplayRange() {
+        if (featureRenderer == null || featureMinDisplay.getValue() == null || featureMaxDisplay.getValue() == null)
+            return;
+        featureRenderer.setRange(featureMinDisplay.get(), featureMaxDisplay.get());
+        qupath.getViewerManager().repaintAllViewers();
+    }
+
+    public StringProperty selectedNameProperty() {
+        return selectedName;
+    }
+
+    public BooleanProperty livePredictionProperty() {
+        return livePrediction;
+    }
+
+    public DoubleProperty featureMinDisplayProperty() {
+        return featureMinDisplay;
+    }
+
+    public DoubleProperty featureMaxDisplayProperty() {
+        return featureMaxDisplay;
+    }
+
+    public DoubleProperty overlayOpacityProperty() {
+        return overlayOpacity;
+    }
+
+    public IntegerProperty predictionThreadsProperty() {
+        return predictionThreads;
+    }
+
+    public ObjectProperty<PixelClassifier> classifierProperty() {
+        return classifier;
+    }
+
+    public ReadOnlyStringProperty cursorLocationProperty() {
+        return cursorLocation.getReadOnlyProperty();
+    }
+
+    public PixelClassificationOverlay getOverlay() {
+        return overlay;
+    }
+
+    public PixelClassificationOverlay getFeatureOverlay() {
+        return featureOverlay;
+    }
+
+    private void handleMouseMoved(MouseEvent event) {
+        if (overlay == null)
+            return;
+        for (var viewer : qupath.getAllViewers()) {
+            var view = viewer.getView();
+            var local = view.screenToLocal(event.getScreenX(), event.getScreenY());
+            if (view.contains(local)) {
+                updateCursorLocation(viewer, local);
+                return;
+            }
+        }
+    }
+
+    private void updateCursorLocation(QuPathViewer viewer, Point2D localPoint) {
+        var p = viewer.componentPointToImagePoint(localPoint.getX(), localPoint.getY(), null, false);
+        var server = overlay.getPixelClassificationServer(viewer.getImageData());
+        String results = null;
+        if (server != null)
+            results = PixelClassificationOverlay.getDefaultLocationString(server,
+                    null, p.getX(), p.getY(), viewer.getZPosition(), viewer.getTPosition());
+        if (results == null)
+            cursorLocation.set("");
+        else
+            cursorLocation.set(results);
+    }
+
+
+    @Override
+    public void close() {
+        if (overlay != null)
+            overlay.stop();
+
+        subscription.unsubscribe();
+
+        for (var viewer : qupath.getAllViewers()) {
+            viewer.resetCustomPixelLayerOverlay();
+            if (featureOverlay != null) {
+                viewer.getCustomOverlayLayers().remove(featureOverlay);
+                featureOverlay.stop();
+            }
+        }
+
+        featureOverlay = null;
+        overlay = null;
+
+        qupath.getStage().removeEventFilter(MouseEvent.MOUSE_MOVED, mouseListener);
+    }
+}

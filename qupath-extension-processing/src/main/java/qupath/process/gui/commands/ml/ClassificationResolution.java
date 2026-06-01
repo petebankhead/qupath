@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -40,7 +40,15 @@ import java.util.Objects;
  */
 public class ClassificationResolution {
 	
-	private static List<String> resolutionNames = Arrays.asList("Full", "Very high", "High", "Moderate", "Low", "Very low", "Extremely low");
+	private static final List<String> resolutionNames = List.of(
+			"Full",
+			"Very high",
+			"High",
+			"Moderate",
+			"Low",
+			"Very low",
+			"Extremely low"
+	);
 
 	
 	private final String name;
@@ -125,9 +133,7 @@ public class ClassificationResolution {
 				temp.add(newResolution);
 			scale *= 2;
 		}
-		if (selected == null)
-			selected = temp.get(0);
-		else if (!temp.contains(selected))
+		if (selected != null && !temp.contains(selected))
 			temp.add(selected);
 		
 		return temp;
