@@ -184,8 +184,11 @@ public class PixelClassifierPane {
 		
 		var imageData = qupath.getImageData();
 		
-		// Classifier
         GridPane pane = new GridPane();
+		pane.setHgap(5);
+		pane.setVgap(6);
+		pane.setMinWidth(400);
+		pane.setPadding(new Insets(5));
 
 		// Add main options
 		addClassifierSelectionControls(pane);
@@ -197,102 +200,33 @@ public class PixelClassifierPane {
 		addAdvancedOptions(pane);
 		addLivePredictionButton(pane);
 
-		pane.add(createPieChartPane(), 0, pane.getRowCount(), pane.getColumnCount(), 1);
+		addPieChart(pane);
+		addCursorLabel(pane);
+		
+		addStandardPixelClassifierButtons(pane);
 
-		var viewerPane = miniViewer.getPane();
-		Tooltip.install(viewerPane, new Tooltip("View image at classification resolution"));
-		
-		updateAvailableResolutions(imageData);
-		resolution.addListener((v, o, n) -> {
-			updateResolution(n);
-			updateClassifier();
-			overlayManager.ensureOverlaySet();
-		});
-		if (!comboResolutions.getItems().isEmpty())
-			comboResolutions.getSelectionModel().clearAndSelect(resolutions.size()/2);
-		
-		pane.setHgap(5);
-		pane.setVgap(6);
-		
-		var classifierName = new SimpleStringProperty(null);
-		var panePostProcess = GridPaneUtils.createRowGrid(
-				PixelClassifierUI.createSavePixelClassifierPane(qupath.projectProperty(), currentClassifier, classifierName),
-				PixelClassifierUI.createPixelClassifierButtons(qupath.imageDataProperty(), currentClassifier, classifierName)
-				);
-		panePostProcess.setVgap(5);
-		
-		pane.add(panePostProcess, 0, pane.getRowCount(), pane.getColumnCount(), 1);
-
-		GridPaneUtils.setMaxWidth(Double.MAX_VALUE, pane.getChildren().stream().filter(p -> p instanceof Region).toArray(Region[]::new));
-		
-		var viewerBorderPane = new BorderPane(viewerPane);
-		
-		comboDisplayFeatures.getSelectionModel().selectedItemProperty().addListener((v, o, n) -> overlayManager.ensureOverlaySet());
-		comboDisplayFeatures.setMaxWidth(Double.MAX_VALUE);
-		spinFeatureMin.setPrefWidth(100);
-		spinFeatureMax.setPrefWidth(100);
-
-
-		var btnFeatureAuto = new Button("Auto");
-		btnFeatureAuto.setOnAction(e -> overlayManager.autoFeatureContrast());
-		comboDisplayFeatures.getItems().setAll(PixelClassifierOverlayManager.DEFAULT_CLASSIFICATION_OVERLAY);
-		comboDisplayFeatures.getSelectionModel().select(PixelClassifierOverlayManager.DEFAULT_CLASSIFICATION_OVERLAY);
-		overlayManager.selectedNameProperty().bind(comboDisplayFeatures.getSelectionModel().selectedItemProperty());
-		var featureDisableBinding = comboDisplayFeatures.valueProperty().isEqualTo(PixelClassifierOverlayManager.DEFAULT_CLASSIFICATION_OVERLAY).or(comboDisplayFeatures.valueProperty().isNull());
-		btnFeatureAuto.disableProperty().bind(featureDisableBinding);
-		btnFeatureAuto.setMaxHeight(Double.MAX_VALUE);
-		spinFeatureMin.disableProperty().bind(featureDisableBinding);
-		spinFeatureMin.setEditable(true);
-		FXUtils.restrictTextFieldInputToNumber(spinFeatureMin.getEditor(), true);
-		FXUtils.resetSpinnerNullToPrevious(spinFeatureMin);
-		
-		spinFeatureMax.disableProperty().bind(featureDisableBinding);
-		spinFeatureMax.setEditable(true);
-		FXUtils.restrictTextFieldInputToNumber(spinFeatureMax.getEditor(), true);
-		FXUtils.resetSpinnerNullToPrevious(spinFeatureMax);
-		
-		var paneFeatures = new GridPane();spinFeatureMax.setTooltip(new Tooltip("Choose classification result or feature overlay to display (Warning: This requires a lot of memory & computation!)"));
-		spinFeatureMin.setTooltip(new Tooltip("Min display value for feature overlay"));
-		spinFeatureMax.setTooltip(new Tooltip("Max display value for feature overlay"));
-		sliderFeatureOpacity.setTooltip(new Tooltip("Adjust classification/feature overlay opacity"));
-		
-		GridPaneUtils.addGridRow(paneFeatures, 0, 0, null,
-				comboDisplayFeatures, comboDisplayFeatures, comboDisplayFeatures, comboDisplayFeatures);
-		GridPaneUtils.addGridRow(paneFeatures, 1, 0, null,
-				sliderFeatureOpacity, spinFeatureMin, spinFeatureMax, btnFeatureAuto);
-
-		comboDisplayFeatures.setCellFactory(l -> new OverrunListCell<>());
-		comboDisplayFeatures.setButtonCell(new OverrunListCell<>());
-		
-		GridPaneUtils.setMaxWidth(Double.MAX_VALUE, comboDisplayFeatures, sliderFeatureOpacity);
-		GridPaneUtils.setFillWidth(Boolean.TRUE, comboDisplayFeatures, sliderFeatureOpacity);
-		GridPaneUtils.setHGrowPriority(Priority.ALWAYS, comboDisplayFeatures, sliderFeatureOpacity);
-		paneFeatures.setHgap(5);
-		paneFeatures.setVgap(5);
-		paneFeatures.setPadding(new Insets(5));
-		paneFeatures.prefWidthProperty().bind(viewerBorderPane.prefWidthProperty());
-		viewerBorderPane.setBottom(paneFeatures);
-		
+		var viewerBorderPane = createViewerPane();
 		var splitPane = new BorderPane(viewerBorderPane);
 		splitPane.setLeft(pane);
-		pane.setMinWidth(400);
-		
-		pane.setPadding(new Insets(5));
-
-		updateFeatureCalculator();
 
 		var stage = createStage(splitPane);
 
+		GridPaneUtils.setMaxWidth(
+				Double.MAX_VALUE,
+				pane.getChildren().stream().filter(p -> p instanceof Region).toArray(Region[]::new));
+
 		GridPaneUtils.setMinWidth(
 				Region.USE_PREF_SIZE,
-				FXUtils.getContentsOfType(stage.getScene().getRoot(), Region.class, true).toArray(Region[]::new));
+				FXUtils.getContentsOfType(splitPane, Region.class, true).toArray(Region[]::new));
 
 		stage.show();
+
+		updateAvailableResolutions(imageData);
+		updateFeatureCalculator();
 
 		qupath.imageDataProperty().addListener(imageDataListener);
 		if (qupath.getImageData() != null)
 			qupath.getImageData().getHierarchy().addListener(hierarchyListener);
-		
 	}
 
 	private Stage createStage(Pane content) {
@@ -430,6 +364,42 @@ public class PixelClassifierPane {
 		pane.add(btnLive, 0, pane.getRowCount(), GridPane.REMAINING, 1);
 	}
 
+	private void addPieChart(GridPane pane) {
+		GridPaneUtils.setFillWidth(Boolean.TRUE, pieChart);
+		GridPaneUtils.setFillHeight(Boolean.TRUE, pieChart);
+		GridPaneUtils.setVGrowPriority(Priority.ALWAYS, pieChart);
+		GridPaneUtils.setHGrowPriority(Priority.ALWAYS, pieChart);
+		pane.add(pieChart, 0, pane.getRowCount(), pane.getColumnCount(), 1);
+	}
+
+	private void addCursorLabel(GridPane pane) {
+		// Label showing cursor location (below pie chart)
+		var labelCursor = new Label();
+		labelCursor.textProperty().bind(overlayManager.cursorLocationProperty());
+		labelCursor.setAlignment(Pos.CENTER);
+		labelCursor.setTextAlignment(TextAlignment.CENTER);
+		labelCursor.setContentDisplay(ContentDisplay.CENTER);
+		labelCursor.setWrapText(true);
+		labelCursor.setMaxHeight(Double.MAX_VALUE);
+		labelCursor.setMinWidth(100);
+		labelCursor.setPrefWidth(390);
+		labelCursor.setMaxWidth(390);
+
+		labelCursor.setTooltip(new Tooltip("Prediction for current cursor location"));
+		pane.add(labelCursor, 0, pane.getRowCount(), GridPane.REMAINING, 1);
+	}
+
+	private void addStandardPixelClassifierButtons(GridPane pane) {
+		var classifierName = new SimpleStringProperty(null);
+		var panePostProcess = GridPaneUtils.createRowGrid(
+				PixelClassifierUI.createSavePixelClassifierPane(qupath.projectProperty(), currentClassifier, classifierName),
+				PixelClassifierUI.createPixelClassifierButtons(qupath.imageDataProperty(), currentClassifier, classifierName)
+		);
+		panePostProcess.setVgap(5);
+
+		pane.add(panePostProcess, 0, pane.getRowCount(), pane.getColumnCount(), 1);
+	}
+
 	private void addRegionSelectionControls(GridPane pane) {
 		var labelRegion = new Label("Region");
 		var comboRegionFilter = PixelClassifierUI.createRegionFilterCombo(qupath.getOverlayOptions());
@@ -477,38 +447,74 @@ public class PixelClassifierPane {
 	}
 
 
+	private Pane createViewerPane() {
+		var viewerPane = miniViewer.getPane();
+		Tooltip.install(viewerPane, new Tooltip("View image at classification resolution"));
+
+		resolution.addListener((v, o, n) -> {
+			updateResolution(n);
+			updateClassifier();
+			overlayManager.ensureOverlaySet();
+		});
+		if (!comboResolutions.getItems().isEmpty())
+			comboResolutions.getSelectionModel().clearAndSelect(resolutions.size()/2);
+
+		var viewerBorderPane = new BorderPane(viewerPane);
+
+		comboDisplayFeatures.getSelectionModel().selectedItemProperty().addListener((v, o, n) -> overlayManager.ensureOverlaySet());
+		comboDisplayFeatures.setMaxWidth(Double.MAX_VALUE);
+		spinFeatureMin.setPrefWidth(100);
+		spinFeatureMax.setPrefWidth(100);
+
+
+		var btnFeatureAuto = new Button("Auto");
+		btnFeatureAuto.setOnAction(e -> overlayManager.autoFeatureContrast());
+		comboDisplayFeatures.getItems().setAll(PixelClassifierOverlayManager.DEFAULT_CLASSIFICATION_OVERLAY);
+		comboDisplayFeatures.getSelectionModel().select(PixelClassifierOverlayManager.DEFAULT_CLASSIFICATION_OVERLAY);
+		overlayManager.selectedNameProperty().bind(comboDisplayFeatures.getSelectionModel().selectedItemProperty());
+		var featureDisableBinding = comboDisplayFeatures.valueProperty().isEqualTo(PixelClassifierOverlayManager.DEFAULT_CLASSIFICATION_OVERLAY).or(comboDisplayFeatures.valueProperty().isNull());
+		btnFeatureAuto.disableProperty().bind(featureDisableBinding);
+		btnFeatureAuto.setMaxHeight(Double.MAX_VALUE);
+		spinFeatureMin.disableProperty().bind(featureDisableBinding);
+		spinFeatureMin.setEditable(true);
+		FXUtils.restrictTextFieldInputToNumber(spinFeatureMin.getEditor(), true);
+		FXUtils.resetSpinnerNullToPrevious(spinFeatureMin);
+
+		spinFeatureMax.disableProperty().bind(featureDisableBinding);
+		spinFeatureMax.setEditable(true);
+		FXUtils.restrictTextFieldInputToNumber(spinFeatureMax.getEditor(), true);
+		FXUtils.resetSpinnerNullToPrevious(spinFeatureMax);
+
+		var paneFeatures = new GridPane();
+		spinFeatureMax.setTooltip(new Tooltip("Choose classification result or feature overlay to display (Warning: This requires a lot of memory & computation!)"));
+		spinFeatureMin.setTooltip(new Tooltip("Min display value for feature overlay"));
+		spinFeatureMax.setTooltip(new Tooltip("Max display value for feature overlay"));
+		sliderFeatureOpacity.setTooltip(new Tooltip("Adjust classification/feature overlay opacity"));
+
+		GridPaneUtils.addGridRow(paneFeatures, 0, 0, null,
+				comboDisplayFeatures, comboDisplayFeatures, comboDisplayFeatures, comboDisplayFeatures);
+		GridPaneUtils.addGridRow(paneFeatures, 1, 0, null,
+				sliderFeatureOpacity, spinFeatureMin, spinFeatureMax, btnFeatureAuto);
+
+		comboDisplayFeatures.setCellFactory(l -> new OverrunListCell<>());
+		comboDisplayFeatures.setButtonCell(new OverrunListCell<>());
+
+		GridPaneUtils.setMaxWidth(Double.MAX_VALUE, comboDisplayFeatures, sliderFeatureOpacity);
+		GridPaneUtils.setFillWidth(Boolean.TRUE, comboDisplayFeatures, sliderFeatureOpacity);
+		GridPaneUtils.setHGrowPriority(Priority.ALWAYS, comboDisplayFeatures, sliderFeatureOpacity);
+		paneFeatures.setHgap(5);
+		paneFeatures.setVgap(5);
+		paneFeatures.setPadding(new Insets(5));
+		paneFeatures.prefWidthProperty().bind(viewerBorderPane.prefWidthProperty());
+		viewerBorderPane.setBottom(paneFeatures);
+		return viewerBorderPane;
+	}
+
+
 	private void handleStageFocussed(boolean isFocused) {
 		if (isFocused) {
 			overlayManager.ensureOverlaySet();
 		}
-	}
-
-
-	private Pane createPieChartPane() {
-		var paneChart = new BorderPane(pieChart);
-
-		GridPaneUtils.setFillWidth(Boolean.TRUE, paneChart);
-		GridPaneUtils.setFillHeight(Boolean.TRUE, paneChart);
-		GridPaneUtils.setVGrowPriority(Priority.ALWAYS, paneChart);
-		GridPaneUtils.setHGrowPriority(Priority.ALWAYS, paneChart);
-
-		// Label showing cursor location (below pie chart)
-		var labelCursor = new Label();
-		labelCursor.textProperty().bind(overlayManager.cursorLocationProperty());
-		labelCursor.setAlignment(Pos.CENTER);
-		labelCursor.setTextAlignment(TextAlignment.CENTER);
-		labelCursor.setContentDisplay(ContentDisplay.CENTER);
-		labelCursor.setWrapText(true);
-		labelCursor.setMaxHeight(Double.MAX_VALUE);
-		labelCursor.setMinWidth(100);
-		labelCursor.setPrefWidth(390);
-		labelCursor.setMaxWidth(390);
-
-		labelCursor.setTooltip(new Tooltip("Prediction for current cursor location"));
-		paneChart.setBottom(labelCursor);
-
-		paneChart.setMaxWidth(400);
-		return paneChart;
 	}
 
 
