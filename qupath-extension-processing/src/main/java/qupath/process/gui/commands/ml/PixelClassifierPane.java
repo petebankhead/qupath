@@ -21,11 +21,9 @@
 
 package qupath.process.gui.commands.ml;
 
-import ij.CompositeImage;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
-import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleObjectProperty;
@@ -68,8 +66,6 @@ import org.slf4j.LoggerFactory;
 import qupath.fx.dialogs.Dialogs;
 import qupath.fx.utils.FXUtils;
 import qupath.fx.utils.GridPaneUtils;
-import qupath.imagej.gui.IJExtension;
-import qupath.imagej.tools.IJTools;
 import qupath.lib.classifiers.pixel.PixelClassifier;
 import qupath.lib.classifiers.pixel.PixelClassifierMetadata;
 import qupath.lib.common.GeneralTools;
@@ -84,7 +80,6 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageChannel;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
-import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.images.servers.PixelCalibration;
 import qupath.lib.images.servers.ServerTools;
 import qupath.lib.objects.PathObject;
@@ -92,8 +87,6 @@ import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyListener;
 import qupath.lib.projects.ProjectImageEntry;
-import qupath.lib.regions.RegionRequest;
-import qupath.lib.roi.RectangleROI;
 import qupath.opencv.ml.FeaturePreprocessor;
 import qupath.opencv.ml.OpenCVClassifiers;
 import qupath.opencv.ml.OpenCVClassifiers.OpenCVStatModel;
@@ -106,7 +99,6 @@ import qupath.process.gui.commands.ml.op.ImageDataOpBuilder;
 import qupath.process.gui.commands.ml.PixelClassifierTraining.ClassifierTrainingData;
 
 import java.awt.image.BufferedImage;
-import java.io.IOException;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -117,7 +109,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.WeakHashMap;
-import java.util.stream.IntStream;
 
 /**
  * Main user interface for interactively training a {@link PixelClassifier}.
@@ -199,20 +190,13 @@ public class PixelClassifierPane {
 	}
 
 	private void initializeOverlayManager() {
-		bindBidirectional(overlayManager.featureMinDisplayProperty(), spinFeatureMin);
-		bindBidirectional(overlayManager.featureMaxDisplayProperty(), spinFeatureMax);
+		PixelClassifierUtils.bindBidirectional(overlayManager.featureMinDisplayProperty(), spinFeatureMin);
+		PixelClassifierUtils.bindBidirectional(overlayManager.featureMaxDisplayProperty(), spinFeatureMax);
 		overlayManager.classifierProperty().bind(currentClassifier);
 		overlayManager.livePredictionProperty().bind(livePrediction);
 	}
 
-	private static void bindBidirectional(DoubleProperty value, Spinner<Double> spinner) {
-		// Hack to prevent object property being garbage collected
-		var objProperty = value.asObject();
-		spinner.getValueFactory().valueProperty().bindBidirectional(objProperty);
-		spinner.getProperties().put("_BOUND", objProperty);
-	}
 
-	
 	private void initialize() {
 		
 		var imageData = qupath.getImageData();
@@ -229,7 +213,7 @@ public class PixelClassifierPane {
 		statModel.bind(comboClassifier.getSelectionModel().selectedItemProperty());
 		statModel.addListener((v, o, n) -> updateClassifier());
 		var btnEditClassifier = new Button("Edit");
-		btnEditClassifier.setOnAction(e -> editClassifierParameters());
+		btnEditClassifier.setOnAction(e -> promptToEditClassifierParameters());
 		btnEditClassifier.disableProperty().bind(statModel.isNull());
 		
 		GridPaneUtils.addGridRow(pane, row++, 0,
@@ -265,7 +249,7 @@ public class PixelClassifierPane {
 		opBuilder.bind(comboFeatures.getSelectionModel().selectedItemProperty());
 		
 		var btnShowFeatures = new Button("Show");
-		btnShowFeatures.setOnAction(e -> showImageJFeatureStack());
+		btnShowFeatures.setOnAction(e -> PixelClassifierUtils.showImageJFeatureStack(qupath.getViewer(), helper, preprocessingOp));
 		
 		var btnCustomizeFeatures = new Button("Edit");
 		btnCustomizeFeatures.disableProperty().bind(Bindings.createBooleanBinding(() -> {
@@ -298,7 +282,7 @@ public class PixelClassifierPane {
 		});
 		comboOutput.getSelectionModel().clearAndSelect(0);
 		var btnShowOutput = new Button("Show");
-		btnShowOutput.setOnAction(e -> showImageJClassifierOutput());
+		btnShowOutput.setOnAction(e -> PixelClassifierUtils.showImageJClassifierOutput(qupath.getViewer(), overlayManager.getOverlay()));
 		
 		GridPaneUtils.addGridRow(pane, row++, 0,
 				"Choose whether to output classifications only, or estimated probabilities per class (not all classifiers support probabilities, which also require more memory)",
@@ -473,16 +457,8 @@ public class PixelClassifierPane {
 	}
 
 	private void handleStageFocussed(boolean isFocused) {
-		if (!isFocused)
-			return;
-		for (var viewer : qupath.getAllViewers()) {
-			var currentOverlay = viewer.getCustomPixelLayerOverlay();
-			var classifierOverlay = overlayManager.getOverlay();
-			var featureOverlay = overlayManager.getFeatureOverlay();
-			if (currentOverlay != featureOverlay && currentOverlay != classifierOverlay) {
-				overlayManager.ensureOverlaySet();
-				break;
-			}
+		if (isFocused) {
+			overlayManager.ensureOverlaySet();
 		}
 	}
 
@@ -545,7 +521,7 @@ public class PixelClassifierPane {
 		List<ImageData<BufferedImage>> list = new ArrayList<>();
 		for (var viewer : qupath.getAllViewers()) {
 			var tempData = viewer.getImageData();
-			if (tempData != null && compatibleChannels(imageData.getServer(), tempData.getServer()))
+			if (tempData != null && PixelClassifierUtils.compatibleChannels(imageData.getServer(), tempData.getServer()))
 				list.add(tempData);
 		}
 		
@@ -565,7 +541,7 @@ public class PixelClassifierPane {
 							tempData = entry.readImageData();
 							trainingMap.put(entry, tempData);
 						}
-						if (compatibleChannels(imageData.getServer(), tempData.getServer()))
+						if (PixelClassifierUtils.compatibleChannels(imageData.getServer(), tempData.getServer()))
 							list.add(tempData);
 					}
 				} catch (Exception e) {
@@ -576,20 +552,8 @@ public class PixelClassifierPane {
 		
 		return list;
 	}
-	
-	private static boolean compatibleChannels(ImageServer<?> server, ImageServer<?> server2) {
-		if (server == null || server2 == null || server.nChannels() != server2.nChannels())
-			return false;
-		if (server == server2)
-			return true;
-		for (int c = 0; c < server.nChannels(); c++) {
-			if (!server.getChannel(c).getName().equals(server2.getChannel(c).getName()))
-				return false;
-		}
-		return true;
-	}
-	
-	
+
+
 	/**
 	 * Add to the list of default feature calculator builders that will be available when 
 	 * this pane is opened.
@@ -805,10 +769,11 @@ public class PixelClassifierPane {
 		 logger.info("Current accuracy on the {}: {} %", testSet, GeneralTools.formatNumber(nCorrect*100.0/n, 1));
 
 		 if (model instanceof RTreesClassifier trees) {
-             if (trees.hasFeatureImportance() && imageData != null)
-				 logVariableImportance(trees,
-						 helper.getFeatureOp().getChannels(imageData).stream()
-						 .map(ImageChannel::getName).toList());
+             if (trees.hasFeatureImportance() && imageData != null) {
+				 var featureNames = helper.getFeatureOp().getChannels(imageData).stream()
+						.map(ImageChannel::getName).toList();
+				 trees.logVariableImportance(featureNames);
+			 }
 		 }
 		 
 		 trainData.close();
@@ -865,39 +830,9 @@ public class PixelClassifierPane {
 		else
 			pieChart.setTitle("Training data");
 	}
-	
-	
-	private static void logVariableImportance(final RTreesClassifier trees, final List<String> features) {
-		var importance = trees.getFeatureImportance();
-		if (importance == null)
-			return;
-		try {
-			var sorted = IntStream.range(0, importance.length)
-					.boxed()
-					.sorted((a, b) -> -Double.compare(importance[a], importance[b]))
-					.mapToInt(i -> i).toArray();
-			
-			if (sorted.length != features.size())
-				return;
-			
-			var sb = new StringBuilder("Variable importance:");
-			for (int ind : sorted) {
-				sb.append("\n");
-				sb.append(String.format("%.4f \t %s", importance[ind], features.get(ind)));
-			}
-			logger.info(sb.toString());
-		} catch (Exception e) {
-			logger.debug("Error logging feature importance: {}", e.getMessage());
-		}
-	}
 
 
-		
-	
-
-
-
-	private void handleStageCloseRequest(WindowEvent event) {
+    private void handleStageCloseRequest(WindowEvent event) {
 		qupath.imageDataProperty().removeListener(imageDataListener);
 
 		for (var viewer : qupath.getAllViewers()) {
@@ -925,112 +860,18 @@ public class PixelClassifierPane {
 	
 	
 	
-	private boolean editClassifierParameters() {
+	private void promptToEditClassifierParameters() {
 		var model = statModel.get();
 		if (model == null) {
 			Dialogs.showErrorMessage("Edit parameters", "No classifier selected!");
-			return false;
+			return;
 		}
 		GuiTools.showParameterDialog("Edit parameters", model.getParameterList());
 		updateClassifier();
-		return true;
 	}
-	
-	
-	private boolean showImageJClassifierOutput() {
-		var overlay = overlayManager.getOverlay();
-		if (overlay == null) {
-			Dialogs.showErrorMessage("Show output", "No pixel classifier has been trained yet!");
-			return false;
-		}
-		var viewer = qupath.getViewer();
-		var imageData = viewer.getImageData();
-		var server = imageData == null ? null : overlay.getPixelClassificationServer(imageData);
-		if (server == null)
-			return false;
-		var selected = viewer.getSelectedObject();
-		var roi = selected == null ? null : selected.getROI();
-		double downsample = server.getDownsampleForResolution(0);
-		RegionRequest request;
-		if (roi == null) {
-			request = RegionRequest.createInstance(
-					server.getPath(), downsample, 
-					0, 0, server.getWidth(), server.getHeight(), viewer.getZPosition(), viewer.getTPosition());			
-		} else {
-			request = RegionRequest.createInstance(server.getPath(), downsample, selected.getROI());
-		}
-		long estimatedPixels = (long)Math.ceil(request.getWidth()/request.getDownsample()) * (long)Math.ceil(request.getHeight()/request.getDownsample());
-		double estimatedMB = (estimatedPixels * server.nChannels() * (server.getPixelType().getBytesPerPixel())) / (1024.0 * 1024.0);
-		if (estimatedPixels >= Integer.MAX_VALUE - 16) {
-			Dialogs.showErrorMessage("Extract output", "Requested region is too big! Try selecting a smaller region.");
-			return false;
-		} else if (estimatedMB >= 200.0) {
-			if (!Dialogs.showConfirmDialog("Extract output",
-					String.format("Extracting this region will require approximately %.1f MB - are you sure you want to try this?", estimatedMB)))
-				return false;
-		}
-		
-		try {
-			var pathImage = IJTools.convertToImagePlus(
-					server,
-					request);
-			var imp = pathImage.getImage();
-			if (imp instanceof CompositeImage && server.getMetadata().getChannelType() != ChannelType.CLASSIFICATION) {
-				imp.setDisplayMode(CompositeImage.GRAYSCALE);
-			}
-			if (roi != null && !(roi instanceof RectangleROI)) {
-				imp.setRoi(IJTools.convertToIJRoi(roi, pathImage));
-			}
-			IJExtension.getImageJInstance();
-			imp.show();
-			return true;
-		} catch (IOException e) {
-			logger.error("Error showing output", e);
-		}
-		return false;
-	}
-	
-	
-	private void showImageJFeatureStack() {
-		var viewer = qupath.getViewer();
-		ImageData<BufferedImage> imageData = viewer.getImageData();
-		double cx = viewer.getCenterPixelX();
-		double cy = viewer.getCenterPixelY();
-		if (imageData == null)
-			return;
 
-		var op = helper.getFeatureOp();
-		if (preprocessingOp != null)
-			op = op.appendOps(preprocessingOp);
 
-		try (var featureServer = ImageOps.buildServer(imageData, op, helper.getResolution())) {
-			double downsample = featureServer.getDownsampleForResolution(0);
-			int tw = (int)(featureServer.getMetadata().getPreferredTileWidth() * downsample);
-			int th = (int)(featureServer.getMetadata().getPreferredTileHeight() * downsample);
-			int x = (int)GeneralTools.clipValue(cx - tw/2.0, 0, featureServer.getWidth() - tw);
-			int y = (int)GeneralTools.clipValue(cy - th/2.0, 0, featureServer.getHeight() - th);
-			var request = RegionRequest.createInstance(
-					featureServer.getPath(),
-					downsample,
-					x, y, tw, th, viewer.getZPosition(), viewer.getTPosition());
-			
-			var imp = IJTools.convertToImagePlus(featureServer, request).getImage();
-
-			CompositeImage impComp = new CompositeImage(imp, CompositeImage.GRAYSCALE);
-			impComp.setDimensions(imp.getStackSize(), 1, 1);
-			for (int s = 1; s <= imp.getStackSize(); s++) {
-				impComp.setPosition(s);
-				impComp.resetDisplayRange();
-			}
-			impComp.setPosition(1);
-			IJExtension.getImageJInstance();
-			impComp.show();
-		} catch (Exception e) {
-			logger.error("Error calculating features", e);
-		}
-	}
-	
-	private void promptToAddResolution() {
+    private void promptToAddResolution() {
 		var imageData = qupath.getImageData();
 		ImageServer<BufferedImage> server = imageData == null ? null : imageData.getServer();
 		if (server == null) {

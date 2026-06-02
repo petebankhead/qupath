@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -21,6 +21,7 @@
 
 package qupath.process.gui.commands.ml;
 
+import java.util.Comparator;
 import org.bytedeco.javacpp.indexer.FloatIndexer;
 import org.bytedeco.javacpp.indexer.IntIndexer;
 import org.bytedeco.opencv.global.opencv_core;
@@ -67,7 +68,9 @@ import java.util.WeakHashMap;
 public class PixelClassifierTraining {
 	
 	private static final Logger logger = LoggerFactory.getLogger(PixelClassifierTraining.class);
-	
+
+	private static final PathClass REGION_CLASS = PathClass.StandardPathClasses.REGION;
+
 	private BoundaryStrategy boundaryStrategy = BoundaryStrategy.getSkipBoundaryStrategy();
 
 	private PixelCalibration resolution = PixelCalibration.getDefaultInstance();
@@ -91,6 +94,8 @@ public class PixelClassifierTraining {
 		if (featureCalculator != null && imageData != null) {
 			if (featureCalculator.supportsImage(imageData)) {
     			return ImageOps.buildServer(imageData, featureCalculator, resolution);
+			} else {
+				logger.warn("Feature calculator does not support {}", imageData);
 			}
 		}
 		return null;
@@ -143,7 +148,7 @@ public class PixelClassifierTraining {
         
         boolean hasLockedAnnotations = false;
         if (labelMap == null) {
-            Set<PathClass> pathClasses = new TreeSet<>((p1, p2) -> p1.toString().compareTo(p2.toString()));
+            Set<PathClass> pathClasses = new TreeSet<>(Comparator.comparing(PathClass::toString));
         	for (var imageData : imageDataCollection) {
 	        	// Get labels for all annotations
 	            Collection<PathObject> annotations = imageData.getHierarchy().getAnnotationObjects();
@@ -218,11 +223,6 @@ public class PixelClassifierTraining {
         
         return new ClassifierTrainingData(labels, matTraining, matTargets);
     }
-    
-    
-
-    
-	private static PathClass REGION_CLASS = PathClass.StandardPathClasses.REGION;
 
     /**
      * Test is a PathObject can be used as a classifier training annotation.
@@ -230,7 +230,7 @@ public class PixelClassifierTraining {
      * @param checkLocked 
      * @return
      */
-    static boolean isTrainableAnnotation(PathObject pathObject, boolean checkLocked) {
+    private static boolean isTrainableAnnotation(PathObject pathObject, boolean checkLocked) {
     	return pathObject != null &&
     			pathObject.hasROI() &&
     			!pathObject.getROI().isEmpty() &&
@@ -278,10 +278,10 @@ public class PixelClassifierTraining {
      */
     public static class ClassifierTrainingData {
 
-    	private Mat matTraining;
-    	private Mat matTargets;
+    	private final Mat matTraining;
+    	private final Mat matTargets;
 
-    	private Map<PathClass, Integer> pathClassesLabels;
+    	private final Map<PathClass, Integer> pathClassesLabels;
 
     	private ClassifierTrainingData(Map<PathClass, Integer> pathClassesLabels, Mat matTraining, Mat matTargets) {
     		this.pathClassesLabels = Collections.unmodifiableMap(new LinkedHashMap<>(pathClassesLabels));
@@ -340,8 +340,8 @@ public class PixelClassifierTraining {
     }
     
     
-	private static Map<RegionRequest, TileFeatures> cache = Collections.synchronizedMap(new WeakHashMap<>());
-    
+	private static final Map<RegionRequest, TileFeatures> cache = Collections.synchronizedMap(new WeakHashMap<>());
+
     private static TileFeatures getTileFeatures(RegionRequest request, ImageDataServer<BufferedImage> featureServer, BoundaryStrategy strategy, Map<PathClass, Integer> labels) {
 		TileFeatures features = cache.get(request);
 		Map<ROI, PathClass> rois = null;
@@ -407,11 +407,11 @@ public class PixelClassifierTraining {
     
     private static class TileFeatures {
     	    	    	
-    	private Map<PathClass, Integer> labels;
-    	private ImageDataServer<BufferedImage> featureServer;
-    	private RegionRequest request;
-    	private Map<ROI, PathClass> rois;
-    	private BoundaryStrategy strategy;
+    	private final Map<PathClass, Integer> labels;
+    	private final ImageDataServer<BufferedImage> featureServer;
+    	private final RegionRequest request;
+    	private final Map<ROI, PathClass> rois;
+    	private final BoundaryStrategy strategy;
     	private Mat matFeatures;
     	private Mat matTargets;
     	

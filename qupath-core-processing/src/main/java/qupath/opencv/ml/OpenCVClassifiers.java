@@ -25,6 +25,8 @@ import com.google.gson.TypeAdapter;
 import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import java.util.List;
+import java.util.stream.IntStream;
 import org.bytedeco.javacpp.indexer.DoubleIndexer;
 import org.bytedeco.javacpp.indexer.FloatIndexer;
 import org.bytedeco.javacpp.indexer.IntIndexer;
@@ -48,6 +50,7 @@ import org.bytedeco.opencv.opencv_ml.StatModel;
 import org.bytedeco.opencv.opencv_ml.TrainData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.io.GsonTools;
 import qupath.lib.plugins.parameters.ParameterList;
@@ -645,11 +648,11 @@ public class OpenCVClassifiers {
 			int minSampleCount = params.getIntParameterValue("minSampleCount");
 //			float regressionAccuracy = params.getDoubleParameterValue("regressionAccuracy").floatValue();
 			boolean use1SERule = params.getBooleanParameterValue("use1SERule");
-			
+
 //			model.setCVFolds(cvFolds < 1 ? 1 : cvFolds);
 			model.setCVFolds(0);
 			model.setMaxDepth(maxDepth <= 0 ? Integer.MAX_VALUE : maxDepth);
-			model.setMinSampleCount(minSampleCount < 1 ? 1 : minSampleCount);
+			model.setMinSampleCount(Math.max(minSampleCount, 1));
 //			model.setRegressionAccuracy(regressionAccuracy < 1e-6f ? 1e-6f : regressionAccuracy);
 			model.setUse1SERule(use1SERule);
 		}
@@ -686,7 +689,9 @@ public class OpenCVClassifiers {
 	 * Classifier based on {@link RTrees}.
 	 */
 	public static class RTreesClassifier extends AbstractTreeClassifier<RTrees> {
-		
+
+		private static final Logger logger = LoggerFactory.getLogger(RTreesClassifier.class);
+
 		private double[] featureImportance;
 		
 		RTreesClassifier() {
@@ -851,7 +856,53 @@ public class OpenCVClassifiers {
 			idxResults.release();
 			votes.close();
 		}
-		
+
+		/**
+		 * Log the variable importance, if this has been calculated.
+		 * @param features the feature names. This is required for logging;
+		 *                 if unknown, {@link #getFeatureImportance()} may still be used.
+		 * @param level the log level to use
+		 * @see #hasFeatureImportance()
+		 * @see #getFeatureImportance()
+		 * @see #logVariableImportance(List)
+		 */
+		public void logVariableImportance(final List<String> features, Level level) {
+			var importance = getFeatureImportance();
+			if (importance == null) {
+				logger.atLevel(level).log("Feature importance has not been calculated");
+				return;
+			}
+			try {
+				var sorted = IntStream.range(0, importance.length)
+						.boxed()
+						.sorted((a, b) -> -Double.compare(importance[a], importance[b]))
+						.mapToInt(i -> i).toArray();
+
+				if (sorted.length != features.size()) {
+					logger.warn("Length of variable importance array {} does not match length of feature names {}",
+							sorted.length, features.size());
+					return;
+				}
+
+				var sb = new StringBuilder("Variable importance:");
+				for (int ind : sorted) {
+					sb.append("\n");
+					sb.append(String.format("%.4f \t %s", importance[ind], features.get(ind)));
+				}
+				logger.atLevel(level).log(sb.toString());
+			} catch (Exception e) {
+				logger.warn("Error logging feature importance: {}", e.getMessage());
+			}
+		}
+
+		/**
+		 * Log the variable importance, if this has been calculated, at the default INFO level.
+		 * @param features the feature names
+		 */
+		public void logVariableImportance(final List<String> features) {
+			logVariableImportance(features, Level.INFO);
+		}
+
 		
 	}
 	

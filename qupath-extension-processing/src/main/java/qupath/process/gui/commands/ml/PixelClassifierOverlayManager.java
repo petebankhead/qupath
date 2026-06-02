@@ -25,6 +25,10 @@ import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.gui.viewer.overlays.PixelClassificationOverlay;
 
+/**
+ * Class to manage viewer overlays when training a pixel classifier,
+ * both for the classifier output and for feature display.
+ */
 class PixelClassifierOverlayManager implements AutoCloseable{
 
     private static final Logger logger = LoggerFactory.getLogger(PixelClassifierOverlayManager.class);
@@ -125,10 +129,6 @@ class PixelClassifierOverlayManager implements AutoCloseable{
             overlay.setOpacity(opacity.doubleValue());
         qupath.getViewerManager().repaintAllViewers();
     }
-
-
-
-
 
 
     void ensureOverlaySet() {

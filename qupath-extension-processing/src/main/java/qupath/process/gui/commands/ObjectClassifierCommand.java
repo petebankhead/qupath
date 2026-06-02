@@ -1008,23 +1008,8 @@ public class ObjectClassifierCommand implements Runnable {
 		}
 
 
-		static boolean tryLoggingVariableImportance(final RTreesClassifier trees, final FeatureExtractor<?> extractor) {
-			var importance = trees.getFeatureImportance();
-			if (importance == null)
-				return false;
-			var sorted = IntStream.range(0, importance.length)
-					.boxed()
-					.sorted((a, b) -> -Double.compare(importance[a], importance[b]))
-					.mapToInt(i -> i).toArray();
-
-			var names = extractor.getFeatureNames();
-			var sb = new StringBuilder("Variable importance:");
-			for (int ind : sorted) {
-				sb.append("\n");
-				sb.append(String.format("%.4f \t %s", importance[ind], names.get(ind)));
-			}
-			logger.info(sb.toString());
-			return true;
+		static void tryLoggingVariableImportance(final RTreesClassifier trees, final FeatureExtractor<?> extractor) {
+			trees.logVariableImportance(extractor.getFeatureNames());
 		}
 
 

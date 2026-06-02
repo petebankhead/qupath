@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2025 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -76,9 +76,8 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Helper class for generating standardized UI components for pixel classification.
- * 
- * @author Pete Bankhead
+ * Helper class for generating standardized UI components for pixel classification
+ * when both training and loading classifiers.
  */
 public class PixelClassifierUI {
 	
@@ -433,7 +432,7 @@ public class PixelClassifierUI {
 	
 	
 	
-	private static enum SelectionChoice {
+	private enum SelectionChoice {
 		CURRENT_SELECTION, ANNOTATIONS, DETECTIONS, CELLS, TILES, TMA, FULL_IMAGE;
 		
 		private void handleSelection(ImageData<?> imageData) {
@@ -455,42 +454,28 @@ public class PixelClassifierUI {
 		}
 		
 		private Class<? extends PathObject> getObjectClass() {
-			switch (this) {
-			case ANNOTATIONS:
-				return PathAnnotationObject.class;
-			case CELLS:
-				return PathCellObject.class;
-			case DETECTIONS:
-				return PathDetectionObject.class;
-			case TMA:
-				return TMACoreObject.class;
-			case TILES:
-				return PathTileObject.class;
-			default:
-				return null;
-			}
+            return switch (this) {
+                case ANNOTATIONS -> PathAnnotationObject.class;
+                case CELLS -> PathCellObject.class;
+                case DETECTIONS -> PathDetectionObject.class;
+                case TMA -> TMACoreObject.class;
+                case TILES -> PathTileObject.class;
+                default -> null;
+            };
 		}
 		
 		@Override
 		public String toString() {
-			switch (this) {
-			case ANNOTATIONS:
-				return "All annotations";
-			case CELLS:
-				return "All cells";
-			case CURRENT_SELECTION:
-				return "Current selection";
-			case DETECTIONS:
-				return "All detections";
-			case TMA:
-				return "TMA cores";
-			case FULL_IMAGE:
-				return "Full image";
-			case TILES:
-				return "All tiles";
-			default:
-				throw new IllegalArgumentException("Unknown enum " + this);
-			}
+            return switch (this) {
+                case ANNOTATIONS -> "All annotations";
+                case CELLS -> "All cells";
+                case CURRENT_SELECTION -> "Current selection";
+                case DETECTIONS -> "All detections";
+                case TMA -> "TMA cores";
+                case FULL_IMAGE -> "Full image";
+                case TILES -> "All tiles";
+                default -> throw new IllegalArgumentException("Unknown enum " + this);
+            };
 		}
 	}
 	
