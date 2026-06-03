@@ -709,6 +709,7 @@ public class OpenCVClassifiers {
 			model.setMaxDepth(0);
 			model.setTermCriteria(
 					new TermCriteria(TermCriteria.COUNT, 50, 0));
+			model.setCalculateVarImportance(true);
 			return model;
 		}
 
@@ -721,7 +722,7 @@ public class OpenCVClassifiers {
 			int maxTrees = termCrit.maxCount();
 			double epsilon = termCrit.epsilon();
 			boolean calcImportance = model.getCalculateVarImportance();
-			
+
 			params.addIntParameter("activeVarCount", "Active variable count", activeVarCount, null, "Number of features per tree node (if <=0, will use square root of number of features)");
 			params.addIntParameter("maxTrees", "Maximum number of trees", maxTrees, null, "Maximum possible number of trees - but viewer may be used if 'Termination epsilon' is high");
 			params.addDoubleParameter("epsilon", "Termination epsilon", epsilon, null, "Termination criterion - if this is high, viewer trees may be used for classification");
@@ -747,7 +748,12 @@ public class OpenCVClassifiers {
 			} else
 				featureImportance = null;
 		}
-		
+
+		@Override
+		protected int getTrainFlags() {
+			return super.getTrainFlags();
+		}
+
 		/**
 		 * Check if the last time train was called, variable (feature) importance was calculated.
 		 * @return
@@ -1302,28 +1308,22 @@ public class OpenCVClassifiers {
 	 */
 	static class ANNClassifierCV extends AbstractOpenCVClassifierML<ANN_MLP> {
 		
-		private static Logger logger = LoggerFactory.getLogger(ANNClassifierCV.class);
+		private static final Logger logger = LoggerFactory.getLogger(ANNClassifierCV.class);
 		
 		private int MAX_HIDDEN_LAYERS = 5;
 		
-		static enum ActivationFunction {
+		enum ActivationFunction {
 			IDENTITY, SIGMOID_SYM, GAUSSIAN, RELU, LEAKY_RELU;
 			
 			public int getActivationFunction() {
-				switch(this) {
-				case GAUSSIAN:
-					return ANN_MLP.GAUSSIAN;
-				case IDENTITY:
-					return ANN_MLP.IDENTITY;
-				case SIGMOID_SYM:
-					return ANN_MLP.SIGMOID_SYM;
-				case RELU:
-					return ANN_MLP.RELU;
-				case LEAKY_RELU:
-					return ANN_MLP.LEAKYRELU;
-				default:
-					return ANN_MLP.SIGMOID_SYM;
-				}
+                return switch (this) {
+                    case GAUSSIAN -> ANN_MLP.GAUSSIAN;
+                    case IDENTITY -> ANN_MLP.IDENTITY;
+                    case SIGMOID_SYM -> ANN_MLP.SIGMOID_SYM;
+                    case RELU -> ANN_MLP.RELU;
+                    case LEAKY_RELU -> ANN_MLP.LEAKYRELU;
+                    default -> ANN_MLP.SIGMOID_SYM;
+                };
 			}
 		}
 		
@@ -1461,7 +1461,7 @@ public class OpenCVClassifiers {
 //			double beta = params.getDoubleParameterValue("activationBeta");
 			
 			// For now, we only support SIGMOID_SYM as an activation function
-			// (Not least because we must save/reload models, and there is not get method for this)
+			// (Not least because we must save/reload models, and there is no get method for this)
 			boolean isSigmoidSym = true;
 			double beta = 1.0;
 			
