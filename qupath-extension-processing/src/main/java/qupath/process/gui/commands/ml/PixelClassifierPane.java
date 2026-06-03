@@ -777,8 +777,13 @@ public class PixelClassifierPane {
 		 trainData = model.createTrainData(trainSamples, trainResponses, weights, false);
 
 //		 logger.info("Training data: {} x {}, Target data: {} x {}", trainSamples.rows(), trainSamples.cols(), trainResponses.rows(), trainResponses.cols());
+		 long startTime = System.currentTimeMillis();
+		 // TODO: Use this or cross-validation; need to handle ANN outputs being different
+//		 trainData.setTrainTestSplitRatio(0.8, true);
 		 model.train(trainData);
-		 
+		long endTime = System.currentTimeMillis();
+		long trainingTimeMillis = endTime - startTime;
+
 		 // Calculate accuracy using whatever we can, as a rough guide to progress
 		 var test = trainData.getTestSamples();
 		 String testSet = "HELD-OUT TRAINING SET";
@@ -787,7 +792,9 @@ public class PixelClassifierPane {
 			 testSet = "TRAINING SET";
 		 } else {
 			 preprocessor.apply(test, false);
-			 buffer = trainData.getTestNormCatResponses().createBuffer();
+			 // TODO: For ANN this doesn't work, need to request raw responses
+			 var result = trainData.getTestNormCatResponses();
+			 buffer = result.createBuffer();
 		 }
 		 var testResults = new Mat();
 		 model.predict(test, testResults, null);
@@ -799,16 +806,6 @@ public class PixelClassifierPane {
 				 nCorrect++;
 		 }
 
-//		 logger.info("Current accuracy on the {}: {} %", testSet, GeneralTools.formatNumber(nCorrect*100.0/n, 1));
-
-		 if (model instanceof RTreesClassifier trees) {
-             if (trees.hasFeatureImportance() && imageData != null) {
-				 var featureNames = helper.getFeatureOp().getChannels(imageData).stream()
-						.map(ImageChannel::getName).toList();
-				 trees.logVariableImportance(featureNames);
-			 }
-		 }
-		 
 		 trainData.close();
 
 		 
@@ -845,58 +842,59 @@ public class PixelClassifierPane {
 
 		 currentClassifier.set(PixelClassifiers.createClassifier(model, featureCalculator, metadata, true));
 
-		StringBuilder sbSummary = new StringBuilder()
+		StringBuilder sb = new StringBuilder()
 				.append("CLASSIFIER")
 				.append("\n - ")
 				.append(model.getName())
+				.append("\nTrained in ").append(trainingTimeMillis).append(" ms")
 				.append("\n")
 				.append("\n");
 		var params = model.getParameterList();
 		if (params != null) {
-			sbSummary.append("PARAMETERS");
+			sb.append("PARAMETERS");
 			for (var entry : params.getParameters().entrySet()) {
 				var p = entry.getValue();
 				if (p.isHidden())
 					continue;
-				sbSummary.append("\n - ")
+				sb.append("\n - ")
 						.append(p.getPrompt());
 				if (!(p instanceof EmptyParameter)) {
-					sbSummary.append(" = ")
+					sb.append(" = ")
 							.append(p.getValueOrDefault());
 					if (Objects.equals(p.getValueOrDefault(), p.getDefaultValue()))
-						sbSummary.append(" (default)");
+						sb.append(" (default)");
 				}
 			}
-			sbSummary.append("\n\n");
+			sb.append("\n\n");
 		}
-		sbSummary.append("RESOLUTION")
+		sb.append("RESOLUTION")
 				.append("\n - ")
 				.append(helper.getResolution())
 				.append("\n")
 				.append("\n");
 
-		sbSummary.append("OUTPUTS");
+		sb.append("OUTPUTS");
 		for (var entry : labels.entrySet()) {
-				sbSummary.append("\n - ")
+				sb.append("\n - ")
 						.append(entry.getKey())
 						.append(" = ")
 						.append(entry.getValue());
 		}
-		sbSummary.append("\n")
+		sb.append("\n")
 				.append("\n");
 
 		var featureChannels = helper.getFeatureOp().getChannels(imageData);
-		sbSummary.append("FEATURES (")
+		sb.append("FEATURES (")
 				.append(featureChannels.size())
 				.append(")");
 		for (var channel : featureChannels) {
-			sbSummary.append("\n - ")
+			sb.append("\n - ")
 					.append(channel.getName());
 		}
-		sbSummary.append("\n")
+		sb.append("\n")
 				.append("\n");
 
-		sbSummary.append("TRAINING DATA")
+		sb.append("TRAINING DATA")
 				.append("\n - ")
 				.append("Training data: ").append(trainSamples.rows()).append(" x ").append(trainSamples.cols())
 				.append("\n - ")
@@ -906,26 +904,26 @@ public class PixelClassifierPane {
 				.append("Current accuracy on the ")
 					.append(testSet)
 					.append(": ")
-					.append(GeneralTools.formatNumber(nCorrect*100.0/n, 3))
+					.append(GeneralTools.formatNumber(nCorrect*100.0/nTest, 3))
 					.append("%")
 				.append("\n");
 
 		if (model instanceof RTreesClassifier rtrees) {
-			sbSummary.append("\nOOB error = ").append(rtrees.getOOBError());
+			sb.append("\nOOB error = ").append(rtrees.getOOBError());
 			var importance = rtrees.getVariableImportance(featureChannels.stream().map(ImageChannel::getName).toList())
 					.stream()
 					.sorted(Comparator.comparing(RTreesClassifier.VariableImportance::importance).reversed()
 							.thenComparing(RTreesClassifier.VariableImportance::name))
 					.toList();
 			if (!importance.isEmpty()) {
-				sbSummary.append("\n\nFEATURE IMPORTANCE");
+				sb.append("\n\nFEATURE IMPORTANCE");
 				for (var variable : importance) {
-					sbSummary.append("\n - ").append(variable.name()).append(" = ").append(variable.importance());
+					sb.append("\n - ").append(variable.name()).append(" = ").append(variable.importance());
 				}
 			}
 		}
 
-		lastClassifierSummary.set(sbSummary.toString());
+		lastClassifierSummary.set(sb.toString());
 	}
 
 
