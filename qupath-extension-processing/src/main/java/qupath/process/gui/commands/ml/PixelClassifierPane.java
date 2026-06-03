@@ -21,6 +21,7 @@
 
 package qupath.process.gui.commands.ml;
 
+import java.util.Objects;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
@@ -28,6 +29,7 @@ import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
@@ -40,9 +42,13 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
+import javafx.scene.control.Separator;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SplitPane;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
@@ -79,10 +85,12 @@ import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.PixelCalibration;
 import qupath.lib.images.servers.ServerTools;
+import qupath.lib.io.GsonTools;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyListener;
+import qupath.lib.plugins.parameters.EmptyParameter;
 import qupath.opencv.ml.FeaturePreprocessor;
 import qupath.opencv.ml.OpenCVClassifiers;
 import qupath.opencv.ml.OpenCVClassifiers.OpenCVStatModel;
@@ -116,8 +124,12 @@ public class PixelClassifierPane {
 
 	private final QuPathGUI qupath;
 
+	private final StringProperty lastClassifierSummary = new SimpleStringProperty();
+
 	private final ObservableList<ImageDataOpBuilder> featureOpBuilders = FXCollections.observableArrayList();
     private final ObservableList<ClassificationResolution> resolutions = FXCollections.observableArrayList();
+
+	private final BooleanProperty showMore = new SimpleBooleanProperty(true);
 
 	private final ComboBox<ClassificationResolution> comboResolutions = createHGrowComboBox(resolutions);
 	private final ComboBox<String> comboDisplayFeatures = createHGrowComboBox();
@@ -210,12 +222,43 @@ public class PixelClassifierPane {
 
 		addPieChart(pane);
 		addCursorLabel(pane);
+
+		var paneShowDetails = new BorderPane(new Label("Classifier stuff here"));
+		var btnShowDetails = new ToggleButton("More >>");
+		btnShowDetails.selectedProperty().bindBidirectional(showMore);
+		btnShowDetails.textProperty().bind(Bindings.when(showMore)
+				.then("Less <<")
+				.otherwise("More >>"));
+		paneShowDetails.setRight(btnShowDetails);
+		pane.add(paneShowDetails, 0, pane.getRowCount(), GridPane.REMAINING, 1);
+		pane.add(new Separator(), 0, pane.getRowCount(), GridPane.REMAINING, 1);
 		
 		addStandardPixelClassifierButtons(pane);
 
-		var viewerPane = createViewerPane();
-		var splitPane = new SplitPane(pane, viewerPane);
-		splitPane.setDividerPosition(0, 0.5);
+		var morePane = new TabPane();
+		morePane.getTabs().add(
+				new Tab("View", createViewerPane())
+		);
+		var textAreaDetails = new TextArea();
+		textAreaDetails.setWrapText(true);
+		textAreaDetails.textProperty().bind(lastClassifierSummary);
+		morePane.getTabs().add(
+				new Tab("Details", textAreaDetails)
+		);
+		for (var tab : morePane.getTabs()) {
+			tab.setClosable(false);
+		}
+
+		var splitPane = new BorderPane();
+		splitPane.setLeft(pane);
+		splitPane.centerProperty().bind(Bindings.when(showMore)
+				.then((Node)morePane)
+				.otherwise((Node)null));
+		splitPane.centerProperty().subscribe(() -> splitPane.getScene().getWindow().sizeToScene());
+//		splitPane.setDividerPosition(0, 0.5);
+
+//		var splitPane = new SplitPane(pane, viewerPane);
+//		splitPane.setDividerPosition(0, 0.5);
 
 		var stage = createStage(new BorderPane(splitPane));
 		stage.show();
@@ -232,7 +275,7 @@ public class PixelClassifierPane {
 		stage.setScene(new Scene(content));
 
 		stage.setMinHeight(400);
-		stage.setMinWidth(600);
+		stage.setMinWidth(400);
 		stage.sizeToScene();
 
 		stage.initOwner(QuPathGUI.getInstance().getStage());
@@ -732,8 +775,8 @@ public class PixelClassifierPane {
 		 var trainResponses = trainData.getTrainResponses();
 		 preprocessor.apply(trainSamples, false);
 		 trainData = model.createTrainData(trainSamples, trainResponses, weights, false);
-		 
-		 logger.info("Training data: {} x {}, Target data: {} x {}", trainSamples.rows(), trainSamples.cols(), trainResponses.rows(), trainResponses.cols());
+
+//		 logger.info("Training data: {} x {}, Target data: {} x {}", trainSamples.rows(), trainSamples.cols(), trainResponses.rows(), trainResponses.cols());
 		 model.train(trainData);
 		 
 		 // Calculate accuracy using whatever we can, as a rough guide to progress
@@ -755,7 +798,8 @@ public class PixelClassifierPane {
 			 if (bufferResults.get(i) == buffer.get(i))
 				 nCorrect++;
 		 }
-		 logger.info("Current accuracy on the {}: {} %", testSet, GeneralTools.formatNumber(nCorrect*100.0/n, 1));
+
+//		 logger.info("Current accuracy on the {}: {} %", testSet, GeneralTools.formatNumber(nCorrect*100.0/n, 1));
 
 		 if (model instanceof RTreesClassifier trees) {
              if (trees.hasFeatureImportance() && imageData != null) {
@@ -800,6 +844,88 @@ public class PixelClassifierPane {
 				 .build();
 
 		 currentClassifier.set(PixelClassifiers.createClassifier(model, featureCalculator, metadata, true));
+
+		StringBuilder sbSummary = new StringBuilder()
+				.append("CLASSIFIER")
+				.append("\n - ")
+				.append(model.getName())
+				.append("\n")
+				.append("\n");
+		var params = model.getParameterList();
+		if (params != null) {
+			sbSummary.append("PARAMETERS");
+			for (var entry : params.getParameters().entrySet()) {
+				var p = entry.getValue();
+				if (p.isHidden())
+					continue;
+				sbSummary.append("\n - ")
+						.append(p.getPrompt());
+				if (!(p instanceof EmptyParameter)) {
+					sbSummary.append(" = ")
+							.append(p.getValueOrDefault());
+					if (Objects.equals(p.getValueOrDefault(), p.getDefaultValue()))
+						sbSummary.append(" (default)");
+				}
+			}
+			sbSummary.append("\n\n");
+		}
+		sbSummary.append("RESOLUTION")
+				.append("\n - ")
+				.append(helper.getResolution())
+				.append("\n")
+				.append("\n");
+
+		sbSummary.append("OUTPUTS");
+		for (var entry : labels.entrySet()) {
+				sbSummary.append("\n - ")
+						.append(entry.getKey())
+						.append(" = ")
+						.append(entry.getValue());
+		}
+		sbSummary.append("\n")
+				.append("\n");
+
+		var featureChannels = helper.getFeatureOp().getChannels(imageData);
+		sbSummary.append("FEATURES (")
+				.append(featureChannels.size())
+				.append(")");
+		for (var channel : featureChannels) {
+			sbSummary.append("\n - ")
+					.append(channel.getName());
+		}
+		sbSummary.append("\n")
+				.append("\n");
+
+		sbSummary.append("TRAINING DATA")
+				.append("\n - ")
+				.append("Training data: ").append(trainSamples.rows()).append(" x ").append(trainSamples.cols())
+				.append("\n - ")
+				.append("Target data: ").append(targets.rows()).append(" x ").append(targets.cols())
+				.append("\n")
+				.append("\n")
+				.append("Current accuracy on the ")
+					.append(testSet)
+					.append(": ")
+					.append(GeneralTools.formatNumber(nCorrect*100.0/n, 3))
+					.append("%")
+				.append("\n");
+
+		if (model instanceof RTreesClassifier rtrees) {
+			sbSummary.append("\nOOB error = ").append(rtrees.getOOBError());
+			var importance = rtrees.getVariableImportance(featureChannels.stream().map(ImageChannel::getName).toList())
+					.stream()
+					.sorted(Comparator.comparing(RTreesClassifier.VariableImportance::importance).reversed()
+							.thenComparing(RTreesClassifier.VariableImportance::name))
+					.toList();
+			if (!importance.isEmpty()) {
+				sbSummary.append("\n\nFEATURE IMPORTANCE");
+				for (var variable : importance) {
+					sbSummary.append("\n - ").append(variable.name()).append(" = ").append(variable.importance());
+				}
+			}
+		}
+
+		lastClassifierSummary.set(sbSummary.toString());
 	}
 
 

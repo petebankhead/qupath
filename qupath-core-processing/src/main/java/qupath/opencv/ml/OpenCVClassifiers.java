@@ -25,6 +25,7 @@ import com.google.gson.TypeAdapter;
 import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.IntStream;
 import org.bytedeco.javacpp.indexer.DoubleIndexer;
@@ -903,7 +904,42 @@ public class OpenCVClassifiers {
 			logVariableImportance(features, Level.INFO);
 		}
 
-		
+		/**
+		 * Get the OOB error, if the model is trained and the OOB error is available.
+		 * @return the OOB error, or 0 if not available.
+		 */
+		public double getOOBError() {
+			return getStatModel().getOOBError();
+		}
+
+		/**
+		 * Get a list of variable importance values.
+		 * @param names the variable names.
+		 * @return a list of variable importance values, or an empty list if these are not available.
+		 *         This occurs if importance has not been calculated, or the feature names array is
+		 *         not of a matching length.
+		 * @since v0.8.0
+		 * @see #getFeatureImportance()
+		 */
+		public List<VariableImportance> getVariableImportance(List<String> names) {
+			double[] importance = getFeatureImportance();
+			if (importance == null || importance.length != names.size())
+				return List.of();
+			List<VariableImportance> list = new ArrayList<>();
+			for (int i = 0; i < importance.length; i++) {
+				list.add(new VariableImportance(names.get(i), importance[i]));
+			}
+			return list;
+		}
+
+		/**
+		 * Record to store a feature (variable) name and its importance,
+		 * as calculated using RTrees.
+		 * @param name the variable name
+		 * @param importance the importance value
+		 */
+		public record VariableImportance(String name, double importance) {}
+
 	}
 	
 	/**

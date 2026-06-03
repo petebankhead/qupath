@@ -9,7 +9,7 @@ import qupath.lib.gui.charts.ChartTools;
 import qupath.lib.gui.tools.ColorToolsFX;
 import qupath.lib.objects.classes.PathClass;
 
-class TrainingPieChart extends PieChart{
+class TrainingPieChart extends PieChart {
 
     TrainingPieChart() {
         initialize();
