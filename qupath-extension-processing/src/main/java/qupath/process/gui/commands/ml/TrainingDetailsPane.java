@@ -1,8 +1,6 @@
 package qupath.process.gui.commands.ml;
 
 import java.time.Duration;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import javafx.beans.property.SimpleStringProperty;
@@ -25,7 +23,6 @@ class TrainingDetailsPane extends Control implements Skinnable {
     }
 
     void update(OpenCVClassifiers.OpenCVStatModel model,
-                List<String> featureNames,
                 Map<PathClass, Integer> labels,
                 Duration trainingTime) {
 
@@ -66,16 +63,6 @@ class TrainingDetailsPane extends Control implements Skinnable {
         sb.append("\n")
                 .append("\n");
 
-        sb.append("FEATURES (")
-                .append(featureNames.size())
-                .append(")");
-        for (var name : featureNames) {
-            sb.append("\n - ")
-                    .append(name);
-        }
-        sb.append("\n")
-                .append("\n");
-
 //        sb.append("TRAINING DATA")
 //                .append("\n - ")
 //                .append("Training data: ").append(trainSamples.rows()).append(" x ").append(trainSamples.cols())
@@ -90,20 +77,6 @@ class TrainingDetailsPane extends Control implements Skinnable {
 //                .append("%")
 //                .append("\n");
 
-        if (model instanceof OpenCVClassifiers.RTreesClassifier rtrees) {
-            sb.append("\nOOB error = ").append(rtrees.getOOBError());
-            var importance = rtrees.getVariableImportance(featureNames)
-                    .stream()
-                    .sorted(Comparator.comparing(OpenCVClassifiers.RTreesClassifier.VariableImportance::importance).reversed()
-                            .thenComparing(OpenCVClassifiers.RTreesClassifier.VariableImportance::name))
-                    .toList();
-            if (!importance.isEmpty()) {
-                sb.append("\n\nFEATURE IMPORTANCE");
-                for (var variable : importance) {
-                    sb.append("\n - ").append(variable.name()).append(" = ").append(variable.importance());
-                }
-            }
-        }
         this.text.set(sb.toString());
     }
 

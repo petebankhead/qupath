@@ -22,8 +22,6 @@
 package qupath.process.gui.commands.ml;
 
 import java.time.Duration;
-import java.util.Objects;
-import java.util.stream.Collectors;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
@@ -31,7 +29,6 @@ import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
-import javafx.beans.property.StringProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
@@ -47,10 +44,8 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Spinner;
-import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.BorderPane;
@@ -62,6 +57,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.TextAlignment;
 import javafx.stage.Stage;
 import javafx.stage.WindowEvent;
+import javafx.util.Subscription;
 import org.bytedeco.javacpp.indexer.FloatIndexer;
 import org.bytedeco.opencv.global.opencv_core;
 import org.bytedeco.opencv.opencv_core.Mat;
@@ -69,6 +65,7 @@ import org.bytedeco.opencv.opencv_ml.ANN_MLP;
 import org.bytedeco.opencv.opencv_ml.KNearest;
 import org.bytedeco.opencv.opencv_ml.LogisticRegression;
 import org.bytedeco.opencv.opencv_ml.RTrees;
+import org.controlsfx.glyphfont.FontAwesome;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.fx.dialogs.Dialogs;
@@ -81,22 +78,20 @@ import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.commands.MiniViewers;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.tools.GuiTools;
+import qupath.lib.gui.tools.IconFactory;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageChannel;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.PixelCalibration;
 import qupath.lib.images.servers.ServerTools;
-import qupath.lib.io.GsonTools;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyListener;
-import qupath.lib.plugins.parameters.EmptyParameter;
 import qupath.opencv.ml.FeaturePreprocessor;
 import qupath.opencv.ml.OpenCVClassifiers;
 import qupath.opencv.ml.OpenCVClassifiers.OpenCVStatModel;
-import qupath.opencv.ml.OpenCVClassifiers.RTreesClassifier;
 import qupath.opencv.ml.pixel.PixelClassifiers;
 import qupath.opencv.ops.ImageOp;
 import qupath.opencv.ops.ImageOps;
@@ -130,6 +125,7 @@ public class PixelClassifierPane {
     private final ObservableList<ClassificationResolution> resolutions = FXCollections.observableArrayList();
 
 	private final TrainingDetailsPane trainingDetailsPane = new TrainingDetailsPane();
+	private final FeatureDetailsPane featureDetailsPane = new FeatureDetailsPane();
 
 	private final BooleanProperty showMore = new SimpleBooleanProperty(true);
 
@@ -167,6 +163,8 @@ public class PixelClassifierPane {
 
 	private final ChangeListener<ImageData<BufferedImage>> imageDataListener = this::handleImageDataChange;
 
+	private Subscription subscription = Subscription.EMPTY;
+
 	private void handleImageDataChange(ObservableValue<? extends ImageData<BufferedImage>> observable,
 						ImageData<BufferedImage> oldValue, ImageData<BufferedImage> newValue) {
 		if (oldValue != null)
@@ -185,8 +183,37 @@ public class PixelClassifierPane {
 		this.overlayManager = new PixelClassifierOverlayManager(qupath, helper);
 		this.trainingImageManager = new TrainingImageManager(qupath);
 		this.miniViewer = MiniViewers.createManager(qupath.getViewer());
-		initializeOverlayManager();
 		initialize();
+	}
+
+	private void initialize() {
+		initializeSubscriptions();
+		initializeOverlayManager();
+		initializeUI();
+	}
+
+	private void initializeSubscriptions() {
+		appendAllSubscriptions(
+				livePrediction.subscribe(this::updateClassifier),
+				statModel.subscribe(this::updateClassifier),
+				outputType.subscribe(this::updateClassifier),
+				resolution.subscribe(n -> {
+					updateResolution(n);
+					updateClassifier();
+					overlayManager.ensureOverlaySet();
+				}),
+				opBuilder.subscribe(this::updateFeatureCalculator)
+		);
+	}
+
+	private void appendAllSubscriptions(Subscription... subscriptions) {
+		for (var subscription : subscriptions) {
+			appendSubscription(subscription);
+		}
+	}
+
+	private void appendSubscription(Subscription subscription) {
+		this.subscription = this.subscription.and(subscription);
 	}
 
 	private void initializeOverlayManager() {
@@ -197,8 +224,9 @@ public class PixelClassifierPane {
 	}
 
 
-	private void initialize() {
-		
+
+	private void initializeUI() {
+
 		var imageData = qupath.getImageData();
 		
         GridPane pane = new GridPane();
@@ -223,26 +251,22 @@ public class PixelClassifierPane {
 		addLivePredictionButton(pane);
 
 		addPieChart(pane);
-		addCursorLabel(pane);
 
-		var paneShowDetails = new BorderPane(new Label("Classifier stuff here"));
-		var btnShowDetails = new ToggleButton("More >>");
-		btnShowDetails.selectedProperty().bindBidirectional(showMore);
-		btnShowDetails.textProperty().bind(Bindings.when(showMore)
-				.then("Less <<")
-				.otherwise("More >>"));
-		paneShowDetails.setRight(btnShowDetails);
-		pane.add(paneShowDetails, 0, pane.getRowCount(), GridPane.REMAINING, 1);
+		addShowDetailsPane(pane);
+
 		pane.add(new Separator(), 0, pane.getRowCount(), GridPane.REMAINING, 1);
 		
 		addStandardPixelClassifierButtons(pane);
 
 		var morePane = new TabPane();
 		morePane.getTabs().add(
-				new Tab("View", createViewerPane())
+				new Tab("Viewer", createViewerPane())
 		);
 		morePane.getTabs().add(
-				new Tab("Details", trainingDetailsPane)
+				new Tab("Classifier", trainingDetailsPane)
+		);
+		morePane.getTabs().add(
+				new Tab("Features", featureDetailsPane)
 		);
 		for (var tab : morePane.getTabs()) {
 			tab.setClosable(false);
@@ -322,7 +346,6 @@ public class PixelClassifierPane {
 		labelClassifier.setLabelFor(comboClassifier);
 
 		statModel.bind(comboClassifier.getSelectionModel().selectedItemProperty());
-		statModel.addListener((v, o, n) -> updateClassifier());
 		var btnEditClassifier = createFixedWidthButton("Edit");
 		btnEditClassifier.setOnAction(e -> promptToEditClassifierParameters());
 		btnEditClassifier.disableProperty().bind(statModel.isNull());
@@ -382,7 +405,6 @@ public class PixelClassifierPane {
 		});
 
 		comboFeatures.getSelectionModel().select(0);
-		comboFeatures.getSelectionModel().selectedItemProperty().addListener((v, o, n) -> updateFeatureCalculator());
 
 		var innerPane = new HBox(comboFeatures, btnCustomizeFeatures);
 		innerPane.setSpacing(5);
@@ -397,9 +419,7 @@ public class PixelClassifierPane {
 		ComboBox<ImageServerMetadata.ChannelType> comboOutput = createHGrowComboBox();
 		comboOutput.getItems().addAll(ImageServerMetadata.ChannelType.CLASSIFICATION, ImageServerMetadata.ChannelType.PROBABILITY);
 		outputType.bind(comboOutput.getSelectionModel().selectedItemProperty());
-		outputType.addListener((v, o, n) -> {
-			updateClassifier();
-		});
+
 		comboOutput.getSelectionModel().clearAndSelect(0);
 		var btnShowOutput = createFixedWidthButton("Show");
 		btnShowOutput.setOnAction(e -> PixelClassifierUtils.showImageJClassifierOutput(qupath.getViewer(), overlayManager.getOverlay()));
@@ -433,8 +453,14 @@ public class PixelClassifierPane {
 		pane.add(pieChart, 0, pane.getRowCount(), GridPane.REMAINING, 1);
 	}
 
-	private void addCursorLabel(GridPane pane) {
-		// Label showing cursor location (below pie chart)
+	private void addShowDetailsPane(GridPane pane) {
+		var paneShowDetails = new BorderPane(createCursorLabel());
+		paneShowDetails.setRight(createShowDetailsButton());
+		pane.add(paneShowDetails, 0, pane.getRowCount(), GridPane.REMAINING, 1);
+	}
+
+	private Label createCursorLabel() {
+		// Label showing classification at cursor location
 		var labelCursor = new Label();
 		labelCursor.textProperty().bind(overlayManager.cursorLocationProperty());
 		labelCursor.setAlignment(Pos.CENTER);
@@ -445,8 +471,25 @@ public class PixelClassifierPane {
 		labelCursor.setMaxWidth(Double.MAX_VALUE);
 
 		labelCursor.setTooltip(new Tooltip("Prediction for current cursor location"));
-		pane.add(labelCursor, 0, pane.getRowCount(), GridPane.REMAINING, 1);
+		return labelCursor;
 	}
+
+	private ToggleButton createShowDetailsButton() {
+		var btnShowDetails = new ToggleButton();
+		btnShowDetails.setContentDisplay(ContentDisplay.RIGHT);
+		btnShowDetails.selectedProperty().bindBidirectional(showMore);
+		btnShowDetails.textProperty().bind(Bindings.when(showMore)
+				.then("Less")
+				.otherwise("More"));
+
+		var iconMore = IconFactory.createNode(FontAwesome.Glyph.ANGLE_DOUBLE_RIGHT);
+		var iconLess = IconFactory.createNode(FontAwesome.Glyph.ANGLE_DOUBLE_LEFT);
+		btnShowDetails.graphicProperty().bind(Bindings.when(showMore)
+				.then(iconLess)
+				.otherwise(iconMore));
+		return btnShowDetails;
+	}
+
 
 	private void addStandardPixelClassifierButtons(GridPane pane) {
 		var classifierName = new SimpleStringProperty(null);
@@ -510,11 +553,6 @@ public class PixelClassifierPane {
 		var viewerPane = miniViewer.getPane();
 		Tooltip.install(viewerPane, new Tooltip("View image at classification resolution"));
 
-		resolution.addListener((v, o, n) -> {
-			updateResolution(n);
-			updateClassifier();
-			overlayManager.ensureOverlaySet();
-		});
 		if (!comboResolutions.getItems().isEmpty())
 			comboResolutions.getSelectionModel().clearAndSelect(resolutions.size()/2);
 
@@ -669,13 +707,7 @@ public class PixelClassifierPane {
 
 	
 	private void updateClassifier() {
-		updateClassifier(livePrediction.get());
-	}
-	
-	
-	
-	private void updateClassifier(boolean doClassification) {
-		if (doClassification)
+		if (livePrediction.get())
 			doClassification();
 		else
 			overlayManager.resetOverlay();
@@ -815,9 +847,11 @@ public class PixelClassifierPane {
 
 				 trainingDetailsPane.update(
 						 model,
-						 featureNames,
 						 labels,
 						 trainingTime);
+				 featureDetailsPane.update(
+						 model,
+						 featureNames);
 			 }
 
 			 // TODO: CHECK IF INPUT SIZE SHOULD BE DEFINED
@@ -861,11 +895,9 @@ public class PixelClassifierPane {
 				hierarchy.removeListener(hierarchyListener);
 		}
 		overlayManager.close();
-
-//		if (stage != null && stage.isShowing())
-//			stage.close();
-		
 		trainingImageManager.close();
+
+		subscription.unsubscribe();
 	}
 	
 	
