@@ -127,7 +127,7 @@ public class PixelClassifierPane {
 	private final TrainingDetailsPane trainingDetailsPane = new TrainingDetailsPane();
 	private final FeatureDetailsPane featureDetailsPane = new FeatureDetailsPane();
 
-	private final BooleanProperty showMore = new SimpleBooleanProperty(true);
+	private final BooleanProperty showMore = new SimpleBooleanProperty(false);
 
 	private final ComboBox<ClassificationResolution> comboResolutions = createHGrowComboBox(resolutions);
 	private final ComboBox<String> comboDisplayFeatures = createHGrowComboBox();
