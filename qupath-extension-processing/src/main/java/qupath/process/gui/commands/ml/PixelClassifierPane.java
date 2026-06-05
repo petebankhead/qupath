@@ -123,6 +123,7 @@ public class PixelClassifierPane {
 	private final TrainingViewerPane trainingViewerPane;
 	private final TrainingDetailsPane trainingDetailsPane = new TrainingDetailsPane();
 	private final FeatureDetailsPane featureDetailsPane = new FeatureDetailsPane();
+	private final JsonDisplay<PixelClassifier> jsonDisplay = new JsonDisplay<>();
 
 	private final BooleanProperty showMore = new SimpleBooleanProperty(false);
 
@@ -243,34 +244,16 @@ public class PixelClassifierPane {
 
 		addShowDetailsPane(pane);
 
-		pane.add(new Separator(), 0, pane.getRowCount(), GridPane.REMAINING, 1);
+		addSeparator(pane);
 		
 		addStandardPixelClassifierButtons(pane);
-
-		var morePane = new TabPane();
-		morePane.getTabs().add(
-				new Tab("Viewer", trainingViewerPane)
-		);
-		morePane.getTabs().add(
-				new Tab("Classifier", trainingDetailsPane)
-		);
-		morePane.getTabs().add(
-				new Tab("Features", featureDetailsPane)
-		);
-		for (var tab : morePane.getTabs()) {
-			tab.setClosable(false);
-		}
 
 		var splitPane = new BorderPane();
 		splitPane.setLeft(pane);
 		splitPane.centerProperty().bind(Bindings.when(showMore)
-				.then((Node)morePane)
-				.otherwise((Node)null));
+				.then(createMorePane())
+				.otherwise((TabPane) null));
 		splitPane.centerProperty().subscribe(() -> splitPane.getScene().getWindow().sizeToScene());
-//		splitPane.setDividerPosition(0, 0.5);
-
-//		var splitPane = new SplitPane(pane, viewerPane);
-//		splitPane.setDividerPosition(0, 0.5);
 
 		var stage = createStage(new BorderPane(splitPane));
 		stage.show();
@@ -281,6 +264,27 @@ public class PixelClassifierPane {
 		qupath.imageDataProperty().addListener(imageDataListener);
 		if (qupath.getImageData() != null)
 			qupath.getImageData().getHierarchy().addListener(hierarchyListener);
+	}
+
+	private TabPane createMorePane() {
+		var morePane = new TabPane();
+		morePane.getTabs().add(
+				new Tab("Viewer", trainingViewerPane)
+		);
+		morePane.getTabs().add(
+				new Tab("Classifier", trainingDetailsPane)
+		);
+		morePane.getTabs().add(
+				new Tab("Features", featureDetailsPane)
+		);
+		jsonDisplay.itemProperty().bind(currentClassifier);
+		morePane.getTabs().add(
+				new Tab("JSON", jsonDisplay)
+		);
+		for (var tab : morePane.getTabs()) {
+			tab.setClosable(false);
+		}
+		return morePane;
 	}
 
 	private void ensureResolutionSelected(ImageData<?> imageData) {
@@ -507,6 +511,10 @@ public class PixelClassifierPane {
 		);
 		panePostProcess.setSpacing(5);
 		pane.add(panePostProcess, 0, pane.getRowCount(), GridPane.REMAINING, 1);
+	}
+
+	private void addSeparator(GridPane pane) {
+		pane.add(new Separator(), 0, pane.getRowCount(), GridPane.REMAINING, 1);
 	}
 
 	private void addRegionSelectionControls(GridPane pane) {
