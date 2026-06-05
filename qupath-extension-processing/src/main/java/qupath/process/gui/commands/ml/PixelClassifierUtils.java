@@ -3,11 +3,13 @@ package qupath.process.gui.commands.ml;
 import ij.CompositeImage;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import javafx.beans.property.DoubleProperty;
-import javafx.scene.control.Spinner;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.scene.control.ComboBox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.fx.dialogs.Dialogs;
+import qupath.fx.utils.GridPaneUtils;
 import qupath.imagej.gui.IJExtension;
 import qupath.imagej.tools.IJTools;
 import qupath.lib.common.GeneralTools;
@@ -44,20 +46,6 @@ class PixelClassifierUtils {
         return true;
     }
 
-    /**
-     * Bind a {@link DoubleProperty} to a spinner bidirectionally.
-     * This is a convenience method because the required process is non-obvious
-     * and slightly convoluted, since an object property needs to be created and
-     * retained to prevent premature garbage collection.
-     * @param value the property to bind
-     * @param spinner the spinner
-     */
-    static void bindBidirectional(DoubleProperty value, Spinner<Double> spinner) {
-        // Hack to prevent object property being garbage collected
-        var objProperty = value.asObject();
-        spinner.getValueFactory().valueProperty().bindBidirectional(objProperty);
-        spinner.getProperties().put(PixelClassifierPane.class.getSimpleName() + "_BOUND", objProperty);
-    }
 
     /**
      * Show features as an ImageJ stack, corresponding to what is visible at the center of the current viewer.
@@ -156,4 +144,28 @@ class PixelClassifierUtils {
             logger.error("Error showing output", e);
         }
     }
+
+    /**
+     * Create a combo box that grows to the full width of a {@link javafx.scene.layout.GridPane}.
+     * @return the combo box
+     * @param <T> generic parameter for the combo box contents
+     */
+    static <T> ComboBox<T> createHGrowComboBox() {
+        return createHGrowComboBox(FXCollections.observableArrayList());
+    }
+
+    /**
+     * Create a combo box that grows to the full width of a {@link javafx.scene.layout.GridPane}.
+     * @param list optional list to pass to the combo box constructor.
+     * @return the combo box
+     * @param <T> generic parameter for the combo box contents
+     */
+    static <T> ComboBox<T> createHGrowComboBox(ObservableList<T> list) {
+        ComboBox<T> combo = list == null ? new ComboBox<>() : new ComboBox<>(list);
+        GridPaneUtils.setToExpandGridPaneWidth(combo);
+        combo.setButtonCell(new OverrunListCell<>());
+        combo.setCellFactory(l -> new OverrunListCell<>());
+        return combo;
+    }
+
 }

@@ -162,6 +162,8 @@ class TrainingDetailsPane extends Control implements Skinnable {
             this.subscription = skinnable.classifierType.subscribe(this::updateClassifier)
                     .and(skinnable.trainingTime.subscribe(this::updateClassifier))
                     .and(skinnable.parameters.subscribe(this::updateParameters));
+            updateClassifier();
+            updateParameters();
         }
 
         @Override

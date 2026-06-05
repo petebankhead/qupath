@@ -49,7 +49,7 @@ class PixelClassifierOverlayManager implements AutoCloseable{
     private final DoubleProperty featureMinDisplay = new SimpleDoubleProperty(0.0);
     private final DoubleProperty featureMaxDisplay = new SimpleDoubleProperty(1.0);
 
-    private final StringProperty selectedName = new SimpleStringProperty();
+    private final StringProperty selectedName = new SimpleStringProperty(DEFAULT_CLASSIFICATION_OVERLAY);
 
     private final ReadOnlyStringWrapper cursorLocation = new ReadOnlyStringWrapper();
 
