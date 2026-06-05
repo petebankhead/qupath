@@ -398,9 +398,6 @@ public class PixelClassifierPane {
 		opBuilder.bind(comboFeatures.getSelectionModel().selectedItemProperty());
 		comboFeatures.getSelectionModel().selectFirst();
 
-		var btnShowFeatures = createFixedWidthButton("Show");
-		btnShowFeatures.setOnAction(e -> PixelClassifierUtils.showImageJFeatureStack(qupath.getViewer(), helper, preprocessingOp));
-
 		var btnCustomizeFeatures = new Button("Edit");
 		btnCustomizeFeatures.setMinWidth(Button.USE_PREF_SIZE);
 		btnCustomizeFeatures.setMaxWidth(Button.USE_PREF_SIZE);
@@ -417,13 +414,11 @@ public class PixelClassifierPane {
 
 		comboFeatures.getSelectionModel().select(0);
 
-		var innerPane = new HBox(comboFeatures, btnCustomizeFeatures);
-		innerPane.setSpacing(5);
 		HBox.setHgrow(comboFeatures, Priority.ALWAYS);
 		HBox.setHgrow(btnCustomizeFeatures, Priority.NEVER);
 		GridPaneUtils.addGridRow(pane, pane.getRowCount(), 0,
 				"Select features for the classifier",
-				labelFeatures, innerPane, btnShowFeatures);
+				labelFeatures, comboFeatures, btnCustomizeFeatures);
 	}
 
 	private void addOutputTypeControls(GridPane pane) {
@@ -432,13 +427,10 @@ public class PixelClassifierPane {
 		outputType.bind(comboOutput.getSelectionModel().selectedItemProperty());
 
 		comboOutput.getSelectionModel().clearAndSelect(0);
-		var btnShowOutput = createFixedWidthButton("Show");
-		btnShowOutput.setOnAction(e -> PixelClassifierUtils.showImageJClassifierOutput(qupath.getViewer(), overlayManager.getOverlay()));
-
 		var labelOutput = createFixedWidthLabelForNode("Output", comboOutput);
 		GridPaneUtils.addGridRow(pane, pane.getRowCount(), 0,
 				"Choose whether to output classifications only, or estimated probabilities per class (not all classifiers support probabilities, which also require more memory)",
-				labelOutput, comboOutput, btnShowOutput);
+				labelOutput, comboOutput, comboOutput);
 	}
 
 	private void addAdvancedOptions(GridPane pane) {

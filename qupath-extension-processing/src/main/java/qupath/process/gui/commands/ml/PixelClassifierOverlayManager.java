@@ -137,11 +137,6 @@ class PixelClassifierOverlayManager implements AutoCloseable{
             featureOverlay = null;
         }
 
-        for (var viewer : qupath.getAllViewers()) {
-            if (viewer.getCustomPixelLayerOverlay() == featureOverlay)
-                viewer.resetCustomPixelLayerOverlay();
-        }
-
         var imageData = qupath.getImageData();
         if (imageData == null)
             return;
@@ -164,7 +159,7 @@ class PixelClassifierOverlayManager implements AutoCloseable{
                 var channelBefore = featureRenderer.getSelectedChannel();
                 featureRenderer.setChannel(featureServer, channel, featureMinDisplay.get(), featureMaxDisplay.get());
                 var channelAfter = featureRenderer.getSelectedChannel();
-                featureOverlay = PixelClassificationOverlay.create(qupath.getOverlayOptions(), data -> training.getFeatureServer(data), featureRenderer);
+                featureOverlay = PixelClassificationOverlay.create(qupath.getOverlayOptions(), training::getFeatureServer, featureRenderer);
                 featureOverlay.setMaxThreads(predictionThreads.get());
                 featureOverlay.setLivePrediction(true);
                 featureOverlay.setOpacity(overlayOpacity.get());

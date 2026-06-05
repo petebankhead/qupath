@@ -48,50 +48,6 @@ class PixelClassifierUtils {
 
 
     /**
-     * Show features as an ImageJ stack, corresponding to what is visible at the center of the current viewer.
-     * @param viewer the viewer; if this does not contain an image, then nothing will be shown
-     * @param helper the training data helper, used to determine features and resolution
-     * @param preprocessingOp optional preprocessing op to apply to the features (may be null)
-     */
-    static void showImageJFeatureStack(QuPathViewer viewer, PixelClassifierTraining helper, ImageOp preprocessingOp) {
-        ImageData<BufferedImage> imageData = viewer.getImageData();
-        if (imageData == null)
-            return;
-        double cx = viewer.getCenterPixelX();
-        double cy = viewer.getCenterPixelY();
-
-        var op = helper.getFeatureOp();
-        if (preprocessingOp != null)
-            op = op.appendOps(preprocessingOp);
-
-        try (var featureServer = ImageOps.buildServer(imageData, op, helper.getResolution())) {
-            double downsample = featureServer.getDownsampleForResolution(0);
-            int tw = (int)(featureServer.getMetadata().getPreferredTileWidth() * downsample);
-            int th = (int)(featureServer.getMetadata().getPreferredTileHeight() * downsample);
-            int x = (int) GeneralTools.clipValue(cx - tw/2.0, 0, featureServer.getWidth() - tw);
-            int y = (int)GeneralTools.clipValue(cy - th/2.0, 0, featureServer.getHeight() - th);
-            var request = RegionRequest.createInstance(
-                    featureServer.getPath(),
-                    downsample,
-                    x, y, tw, th, viewer.getZPosition(), viewer.getTPosition());
-
-            var imp = IJTools.convertToImagePlus(featureServer, request).getImage();
-
-            CompositeImage impComp = new CompositeImage(imp, CompositeImage.GRAYSCALE);
-            impComp.setDimensions(imp.getStackSize(), 1, 1);
-            for (int s = 1; s <= imp.getStackSize(); s++) {
-                impComp.setPosition(s);
-                impComp.resetDisplayRange();
-            }
-            impComp.setPosition(1);
-            IJExtension.getImageJInstance();
-            impComp.show();
-        } catch (Exception e) {
-            logger.error("Error calculating features", e);
-        }
-    }
-
-    /**
      * Show the output of a pixel classifier as an ImageJ stack.
      * @param viewer the viewer
      * @param overlay an overlay that provides the classifier
@@ -134,6 +90,14 @@ class PixelClassifierUtils {
             var imp = pathImage.getImage();
             if (imp instanceof CompositeImage && server.getMetadata().getChannelType() != ImageServerMetadata.ChannelType.CLASSIFICATION) {
                 imp.setDisplayMode(CompositeImage.GRAYSCALE);
+                // Features may have very different scales
+                if (server.getMetadata().getChannelType() == ImageServerMetadata.ChannelType.FEATURE) {
+                    for (int s = 1; s <= imp.getStackSize(); s++) {
+                        imp.setPosition(s);
+                        imp.resetDisplayRange();
+                    }
+                    imp.setPosition(1);
+                }
             }
             if (roi != null && !(roi instanceof RectangleROI)) {
                 imp.setRoi(IJTools.convertToIJRoi(roi, pathImage));

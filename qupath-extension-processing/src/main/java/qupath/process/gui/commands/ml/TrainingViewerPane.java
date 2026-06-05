@@ -7,22 +7,26 @@ import javafx.beans.property.SimpleObjectProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Control;
 import javafx.scene.control.Skin;
 import javafx.scene.control.Skinnable;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
 import javafx.util.Subscription;
 import qupath.fx.utils.FXUtils;
 import qupath.fx.utils.GridPaneUtils;
+import qupath.imagej.gui.IJExtension;
 import qupath.lib.gui.commands.MiniViewers;
 import qupath.lib.gui.viewer.QuPathViewer;
 
@@ -122,6 +126,7 @@ class TrainingViewerPane extends Control implements Skinnable {
             spinFeatureMax.setPrefWidth(100);
 
             var btnFeatureAuto = new Button("Auto");
+            btnFeatureAuto.setMaxWidth(Double.MAX_VALUE);
             btnFeatureAuto.setMinWidth(Button.USE_PREF_SIZE);
             btnFeatureAuto.setOnAction(e -> overlayManager.autoFeatureContrast());
 
@@ -147,8 +152,18 @@ class TrainingViewerPane extends Control implements Skinnable {
             spinFeatureMax.setTooltip(new Tooltip("Max display value for feature overlay"));
             sliderFeatureOpacity.setTooltip(new Tooltip("Adjust classification/feature overlay opacity"));
 
+            Button btnShow = new Button("To IJ");
+            btnShow.setMinWidth(Button.USE_PREF_SIZE);
+            btnShow.setMaxWidth(Double.MAX_VALUE);
+            btnShow.setGraphic(new ImageView(IJExtension.getImageJIcon(16, 16)));
+            btnShow.setContentDisplay(ContentDisplay.RIGHT);
+            btnShow.setTooltip(new Tooltip("Send classification or features to ImageJ"));
+            btnShow.setOnAction(this::handleSendToImageJ);
+            btnShow.disableProperty().bind(skinnable.viewer.imageDataProperty().isNull()
+                    .or(overlayManager.classifierProperty().isNull()));
+
             GridPaneUtils.addGridRow(paneFeatures, 0, 0, null,
-                    comboDisplayFeatures, comboDisplayFeatures, comboDisplayFeatures, comboDisplayFeatures);
+                    comboDisplayFeatures, comboDisplayFeatures, comboDisplayFeatures, btnShow);
             GridPaneUtils.addGridRow(paneFeatures, 1, 0, null,
                     sliderFeatureOpacity, spinFeatureMin, spinFeatureMax, btnFeatureAuto);
 
@@ -161,6 +176,16 @@ class TrainingViewerPane extends Control implements Skinnable {
             paneFeatures.prefWidthProperty().bind(pane.prefWidthProperty());
 
             pane.setBottom(paneFeatures);
+        }
+
+        private void handleSendToImageJ(ActionEvent e) {
+            var overlay = PixelClassifierOverlayManager.DEFAULT_CLASSIFICATION_OVERLAY.equals(overlayManager.selectedNameProperty().get()) ?
+                    overlayManager.getOverlay() :
+                    overlayManager.getFeatureOverlay();
+            PixelClassifierUtils.showImageJClassifierOutput(
+                    skinnable.viewer,
+                    overlay
+            );
         }
 
         @Override
