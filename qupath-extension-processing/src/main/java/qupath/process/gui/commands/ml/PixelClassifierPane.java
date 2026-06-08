@@ -762,6 +762,8 @@ public class PixelClassifierPane {
 			 var trainSamples = trainData.getTrainSamples();
 			 var trainResponses = trainData.getTrainResponses();
 			 preprocessor.apply(trainSamples, false);
+
+			 Duration trainingTime;
 			 try (var modelTrainData = model.createTrainData(trainSamples, trainResponses, weights, false)) {
 
 				 //		 logger.info("Training data: {} x {}, Target data: {} x {}", trainSamples.rows(), trainSamples.cols(), trainResponses.rows(), trainResponses.cols());
@@ -770,38 +772,38 @@ public class PixelClassifierPane {
 				 //		 trainData.setTrainTestSplitRatio(0.8, true);
 				 model.train(modelTrainData);
 				 long endTime = System.nanoTime();
-				 var trainingTime = Duration.ofNanos(endTime - startTime);
-
-				 // Calculate accuracy using whatever we can, as a rough guide to progress
-				 var test = modelTrainData.getTestSamples();
-				 String testSet = "HELD-OUT TRAINING SET";
-				 if (test.empty()) {
-					 test = trainSamples;
-					 testSet = "TRAINING SET";
-				 } else {
-					 preprocessor.apply(test, false);
-					 // TODO: For ANN this doesn't work, need to request raw responses
-					 var result = modelTrainData.getTestNormCatResponses();
-					 buffer = result.createBuffer();
-				 }
-				 var testResults = new Mat();
-				 model.predict(test, testResults, null);
-				 IntBuffer bufferResults = testResults.createBuffer();
-				 int nTest = testResults.rows();
-				 int nCorrect = 0;
-				 for (int i = 0; i < nTest; i++) {
-					 if (bufferResults.get(i) == buffer.get(i))
-						 nCorrect++;
-				 }
-
-				 trainingDetailsPane.update(
-						 model,
-						 labels,
-						 trainingTime);
-				 featureDetailsPane.update(
-						 model,
-						 featureNames);
+				 trainingTime = Duration.ofNanos(endTime - startTime);
 			 }
+
+			 // Calculate accuracy using whatever we can, as a rough guide to progress
+			 var test = trainData.getTestSamples();
+			 String testSet = "HELD-OUT TRAINING SET";
+			 if (test.empty()) {
+				 test = trainSamples;
+				 testSet = "TRAINING SET";
+			 } else {
+				 preprocessor.apply(test, false);
+				 // TODO: For ANN this doesn't work, need to request raw responses
+				 var result = trainData.getTestNormCatResponses();
+				 buffer = result.createBuffer();
+			 }
+			 var testResults = new Mat();
+			 model.predict(test, testResults, null);
+			 IntBuffer bufferResults = testResults.createBuffer();
+			 int nTest = testResults.rows();
+			 int nCorrect = 0;
+			 for (int i = 0; i < nTest; i++) {
+				 if (bufferResults.get(i) == buffer.get(i))
+					 nCorrect++;
+			 }
+
+			 trainingDetailsPane.update(
+					 model,
+					 labels,
+					 trainingTime);
+			 featureDetailsPane.update(
+					 model,
+					 featureNames);
 
 			 // TODO: CHECK IF INPUT SIZE SHOULD BE DEFINED
 			 int inputWidth = 512;
