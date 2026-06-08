@@ -1008,28 +1008,20 @@ public class OpenCVClassifiers {
 			DISABLE, L1, L2;
 			
 			public int getRegularization() {
-				switch(this) {
-				case L1:
-					return LogisticRegression.REG_L1;
-				case L2:
-					return LogisticRegression.REG_L2;
-				case DISABLE:
-				default:
-					return LogisticRegression.REG_DISABLE;
-				}
+                return switch (this) {
+                    case L1 -> LogisticRegression.REG_L1;
+                    case L2 -> LogisticRegression.REG_L2;
+                    default -> LogisticRegression.REG_DISABLE;
+                };
 			}
 			
 			@Override
 			public String toString() {
-				switch(this) {
-				case L1:
-					return "L1";
-				case L2:
-					return "L2";
-				case DISABLE:
-				default:
-					return "None";
-				}
+                return switch (this) {
+                    case L1 -> "L1";
+                    case L2 -> "L2";
+                    default -> "None";
+                };
 			}
 		}
 		
