@@ -22,7 +22,6 @@
 package qupath.process.gui.commands.ml;
 
 import java.time.Duration;
-import java.util.stream.IntStream;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
@@ -788,9 +787,7 @@ public class PixelClassifierPane {
 			// TODO: Train models using cross validation in a background thread
 			if (allTrainingData.size() > 1) {
 				try (var scope = new PointerScope()) {
-					var modelTest = GsonTools.getInstance().fromJson(
-							GsonTools.getInstance().toJson(model, OpenCVStatModel.class), OpenCVStatModel.class
-					);
+					var modelTest = duplicateStatModel(model);
 					// TODO: Incorporate pre-processing, reweighting
 					for (int i = 0; i < allTrainingData.size(); i++) {
 						var holdOutData = allTrainingData.get(i);
@@ -815,19 +812,24 @@ public class PixelClassifierPane {
 					}
 				}
 			}
-
 		}
+	}
 
+	private static OpenCVStatModel duplicateStatModel(OpenCVStatModel model) {
+		var gson = GsonTools.getInstance();
+		return gson.fromJson(
+				gson.toJson(model, OpenCVStatModel.class), OpenCVStatModel.class
+		);
 	}
 
 
-	private static ConfusionMatrix evaluate(Mat samples, Mat normCatTargets, OpenCVStatModel model,
+	private static ConfusionMatrix<Integer> evaluate(Mat samples, Mat normCatTargets, OpenCVStatModel model,
 											FeaturePreprocessor preprocessor, int nLabels) {
 		if (preprocessor != null) {
 			samples = samples.clone();
 			preprocessor.apply(samples, false);
 		}
-		ConfusionMatrix confusion = new ConfusionMatrix(nLabels);
+		var confusion = new ConfusionMatrix<Integer>();
 		IntBuffer bufferGroundTruth = normCatTargets.createBuffer();
 
 		var testResults = new Mat();
@@ -838,93 +840,6 @@ public class PixelClassifierPane {
 			confusion.accumulate(bufferGroundTruth.get(i), bufferPrediction.get(i));
 		}
 		return confusion;
-	}
-
-	// TODO: Add tests (there's a fairly high chance there are errors here)
-	static class ConfusionMatrix {
-
-		private final int n;
-		private final int[][] matrix;
-		private int count;
-
-		ConfusionMatrix(final int n) {
-			this.n = n;
-			this.matrix = new int[n][n];
-		}
-
-		/**
-		 * Accumulate one prediction.
-		 * @param i actual label
-		 * @param j predicted label
-		 */
-		synchronized void accumulate(int i, int j) {
-			matrix[i][j]++; // [actual][predicted]
-			count++;
-		}
-
-		synchronized int getTotal() {
-			return count;
-		}
-
-		synchronized int getTruePositives(int i) {
-			return matrix[i][i];
-		}
-
-		synchronized int getFalsePositives(int i) {
-			int sum = 0;
-			for (int row = 0; row < n; row++) {
-				if (i != row) {
-					sum += matrix[row][i];
-				}
-			}
-			return sum;
-		}
-
-		synchronized int getFalseNegatives(int i) {
-			int sum = 0;
-			for (int col = 0; col < n; col++) {
-				if (i != col) {
-					sum += matrix[i][col];
-				}
-			}
-			return sum;
-		}
-
-		synchronized double getPrecision(int i) {
-			double truePos = getTruePositives(i);
-			double falsePos = getFalsePositives(i);
-			return truePos / (truePos + falsePos);
-		}
-
-		synchronized double getRecall(int i) {
-			double truePos = getTruePositives(i);
-			double falseNeg = getFalseNegatives(i);
-			return truePos / (truePos + falseNeg);
-		}
-
-		synchronized double getF1(int i) {
-			double precision = getPrecision(i);
-			double recall = getRecall(i);
-			return 2 * (precision * recall) / (precision + recall);
-		}
-
-		/**
-		 * Get average (unweighted) F1.
-		 * @return
-		 */
-		synchronized double getF1() {
-			return IntStream.range(0, n).mapToDouble(this::getF1).average().orElse(Double.NaN);
-		}
-
-		/**
-		 * Get average (unweighted) accuracy.
-		 * @return
-		 */
-		synchronized double getAccuracy() {
-			double nTruePositives = IntStream.range(0, n).mapToDouble(this::getTruePositives).sum();
-			return nTruePositives / getTotal();
-		}
-
 	}
 
 
