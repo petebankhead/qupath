@@ -2,6 +2,8 @@ package qupath.process.gui.commands.ml;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -10,6 +12,8 @@ import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 import javafx.beans.value.ObservableValue;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableMap;
 import javafx.scene.Node;
 import javafx.scene.control.Control;
 import javafx.scene.control.Skin;
@@ -20,6 +24,7 @@ import javafx.scene.control.TreeTableColumn;
 import javafx.scene.control.TreeTableRow;
 import javafx.scene.control.TreeTableView;
 import javafx.util.Subscription;
+import qupath.lib.common.GeneralTools;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.plugins.parameters.Parameter;
 import qupath.lib.plugins.parameters.ParameterList;
@@ -27,9 +32,9 @@ import qupath.opencv.ml.OpenCVClassifiers;
 
 class TrainingDetailsPane extends Control implements Skinnable {
 
-//    private final StringProperty text = new SimpleStringProperty();
+    private final ObservableMap<String, String> classifierDetails = FXCollections.observableMap(new LinkedHashMap<>());
 
-    private final StringProperty classifierType = new SimpleStringProperty();
+//    private final StringProperty classifierType = new SimpleStringProperty();
     private final ObjectProperty<Duration> trainingTime = new SimpleObjectProperty<>();
     private final ObjectProperty<ParameterList> parameters = new SimpleObjectProperty<>();
 
@@ -42,16 +47,43 @@ class TrainingDetailsPane extends Control implements Skinnable {
                 Duration trainingTime) {
 
         if (model == null) {
-            this.classifierType.set(null);
+            this.classifierDetails.clear();
             this.parameters.set(null);
             this.trainingTime.set(null);
         } else {
-            this.classifierType.set(model.getName());
+            var map = createClassifierDetailsMap(model);
+            classifierDetails.clear();
+            classifierDetails.putAll(map);
             var params = model.getParameterList();
             this.parameters.set(params == null ? null : params.duplicate());
             this.trainingTime.set(trainingTime);
         }
 
+    }
+
+    private static Map<String, String> createClassifierDetailsMap(OpenCVClassifiers.OpenCVStatModel model) {
+        if (model == null)
+            return Map.of();
+        var map = new LinkedHashMap<String, String>();
+        map.put("Type", model.getName());
+        if (model instanceof OpenCVClassifiers.RTreesClassifier rtrees) {
+            double oob = rtrees.getOOBError();
+            if (Double.isFinite(oob)) {
+                map.put("OOB error", GeneralTools.formatNumber(oob, 5));
+            }
+        } else if (model instanceof OpenCVClassifiers.ANNClassifier ann) {
+            int[] layers = ann.getLayerSizes();
+            String postfix = "";
+            if (layers.length >= 2) {
+                postfix = layers.length == 3 ?
+                        "   (1 hidden layer)" :
+                        "   (" + (layers.length - 2) + " hidden)";
+            }
+            map.put("Layers", Arrays.toString(layers) + postfix);
+        }
+        map.put("Supports missing values", Boolean.toString(model.supportsMissingValues()));
+        map.put("Supports probabilities", Boolean.toString(model.supportsProbabilities()));
+        return map;
     }
 
     protected Skin<?> createDefaultSkin() {
@@ -102,13 +134,16 @@ class TrainingDetailsPane extends Control implements Skinnable {
         }
 
         private void updateClassifier() {
-            var modelType = skinnable.classifierType.get();
-            if (modelType == null) {
+            var classifierDetails = skinnable.classifierDetails;
+            if (classifierDetails.isEmpty()) {
                 tiClassifier.getChildren().clear();
             } else {
                 var newItems = new ArrayList<TreeItem<Item>>();
-                newItems.add(
-                        createTreeItem("Type", modelType));
+                for (var entry : classifierDetails.entrySet()) {
+                    newItems.add(
+                            createTreeItem(entry.getKey(), entry.getValue())
+                    );
+                }
                 var duration = skinnable.trainingTime.get();
                 if (duration != null) {
                     long millis = duration.toMillis();
@@ -159,7 +194,7 @@ class TrainingDetailsPane extends Control implements Skinnable {
         @Override
         public void install() {
             Skin.super.install();
-            this.subscription = skinnable.classifierType.subscribe(this::updateClassifier)
+            this.subscription = skinnable.classifierDetails.subscribe(this::updateClassifier)
                     .and(skinnable.trainingTime.subscribe(this::updateClassifier))
                     .and(skinnable.parameters.subscribe(this::updateParameters));
             updateClassifier();

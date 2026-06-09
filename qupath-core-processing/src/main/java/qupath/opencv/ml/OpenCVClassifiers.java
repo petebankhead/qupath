@@ -43,7 +43,6 @@ import org.bytedeco.opencv.opencv_ml.DTrees;
 import org.bytedeco.opencv.opencv_ml.EM;
 import org.bytedeco.opencv.opencv_ml.KNearest;
 import org.bytedeco.opencv.opencv_ml.LogisticRegression;
-import org.bytedeco.opencv.opencv_ml.NormalBayesClassifier;
 import org.bytedeco.opencv.opencv_ml.RTrees;
 import org.bytedeco.opencv.opencv_ml.SVM;
 import org.bytedeco.opencv.opencv_ml.SVMSGD;
@@ -96,10 +95,10 @@ public class OpenCVClassifiers {
 			return new DTreesClassifier();
 		
 		if (KNearest.class.equals(cls))
-			return new KNearestClassifierCV();
+			return new KNearestClassifier();
 		
 		if (ANN_MLP.class.equals(cls))
-			return new ANNClassifierCV();
+			return new ANNClassifier();
 		
 		if (LogisticRegression.class.equals(cls))
 			return new LogisticRegressionClassifier();
@@ -107,14 +106,14 @@ public class OpenCVClassifiers {
 		if (EM.class.equals(cls))
 			return new EMClusterer();
 
-		if (NormalBayesClassifier.class.equals(cls))
-			return new NormalBayesClassifierCV();
+		if (org.bytedeco.opencv.opencv_ml.NormalBayesClassifier.class.equals(cls))
+			return new NormalBayesClassifier();
 		
 		if (SVM.class.equals(cls))
-			return new SVMClassifierCV();
+			return new SVMClassifier();
 		
 		if (SVMSGD.class.equals(cls))
-			return new SVMSGDClassifierCV();
+			return new SVMSGDClassifier();
 		
 		throw new IllegalArgumentException("Unknown StatModel class " + cls);
 	}
@@ -151,10 +150,10 @@ public class OpenCVClassifiers {
 			return new DTreesClassifier((DTrees)statModel);
 		
 		if (KNearest.class.equals(cls))
-			return new KNearestClassifierCV((KNearest)statModel);
+			return new KNearestClassifier((KNearest)statModel);
 		
 		if (ANN_MLP.class.equals(cls))
-			return new ANNClassifierCV((ANN_MLP)statModel);
+			return new ANNClassifier((ANN_MLP)statModel);
 		
 		if (LogisticRegression.class.equals(cls))
 			return new LogisticRegressionClassifier((LogisticRegression)statModel);
@@ -162,14 +161,14 @@ public class OpenCVClassifiers {
 		if (EM.class.equals(cls))
 			return new EMClusterer((EM)statModel);
 
-		if (NormalBayesClassifier.class.equals(cls))
-			return new NormalBayesClassifierCV((NormalBayesClassifier)statModel);
+		if (org.bytedeco.opencv.opencv_ml.NormalBayesClassifier.class.equals(cls))
+			return new NormalBayesClassifier((org.bytedeco.opencv.opencv_ml.NormalBayesClassifier)statModel);
 		
 		if (SVM.class.equals(cls))
-			return new SVMClassifierCV((SVM)statModel);
+			return new SVMClassifier((SVM)statModel);
 		
 		if (SVMSGD.class.equals(cls))
-			return new SVMSGDClassifierCV((SVMSGD)statModel);
+			return new SVMSGDClassifier((SVMSGD)statModel);
 		
 		throw new IllegalArgumentException("Unknown StatModel class " + cls);
 	}
@@ -334,7 +333,7 @@ public class OpenCVClassifiers {
 			var model = getStatModel();
 			return model instanceof RTrees ||
 					model instanceof ANN_MLP ||
-					model instanceof NormalBayesClassifier;
+					model instanceof org.bytedeco.opencv.opencv_ml.NormalBayesClassifier;
 		}
 		
 		@Override
@@ -433,7 +432,7 @@ public class OpenCVClassifiers {
 				return "K nearest neighbor";
 			else if (LogisticRegression.class.equals(cls))
 				return "Logistic regression";
-			else if (NormalBayesClassifier.class.equals(cls))
+			else if (org.bytedeco.opencv.opencv_ml.NormalBayesClassifier.class.equals(cls))
 				return "Normal Bayes classifier";
 			
 			return getStatModel().getClass().getSimpleName();
@@ -1091,37 +1090,37 @@ public class OpenCVClassifiers {
 	
 	
 	/**
-	 * Classifier based on {@link NormalBayesClassifier}.
+	 * Classifier based on {@link org.bytedeco.opencv.opencv_ml.NormalBayesClassifier}.
 	 */
-	public static class NormalBayesClassifierCV extends AbstractOpenCVClassifierML<NormalBayesClassifier> {
+	public static class NormalBayesClassifier extends AbstractOpenCVClassifierML<org.bytedeco.opencv.opencv_ml.NormalBayesClassifier> {
 
-		NormalBayesClassifierCV() {
+		NormalBayesClassifier() {
 			super();
 		}
 		
-		NormalBayesClassifierCV(final NormalBayesClassifier model) {
+		NormalBayesClassifier(final org.bytedeco.opencv.opencv_ml.NormalBayesClassifier model) {
 			super(model);
 		}
 		
 		@Override
-		ParameterList createParameterList(NormalBayesClassifier model) {
+		ParameterList createParameterList(org.bytedeco.opencv.opencv_ml.NormalBayesClassifier model) {
 			var params = new ParameterList();
 			params.addTitleParameter("No parameters to adjust!");
 			return params;
 		}
 
 		@Override
-		NormalBayesClassifier createStatModel() {
-			return NormalBayesClassifier.create();
+		org.bytedeco.opencv.opencv_ml.NormalBayesClassifier createStatModel() {
+			return org.bytedeco.opencv.opencv_ml.NormalBayesClassifier.create();
 		}
 		
 		@Override
 		Class<? extends StatModel> getStatModelClass() {
-			return NormalBayesClassifier.class;
+			return org.bytedeco.opencv.opencv_ml.NormalBayesClassifier.class;
 		}
 
 		@Override
-		void updateModel(NormalBayesClassifier model, ParameterList params, TrainData trainData) {}
+		void updateModel(org.bytedeco.opencv.opencv_ml.NormalBayesClassifier model, ParameterList params, TrainData trainData) {}
 		
 		@Override
 		public void predictWithLock(Mat samples, Mat results, Mat probabilities) {
@@ -1176,13 +1175,13 @@ public class OpenCVClassifiers {
 	/**
 	 * Classifier based on {@link SVM}.
 	 */
-	public static class SVMClassifierCV extends AbstractOpenCVClassifierML<SVM> {
+	public static class SVMClassifier extends AbstractOpenCVClassifierML<SVM> {
 
-		SVMClassifierCV() {
+		SVMClassifier() {
 			super();
 		}
 		
-		SVMClassifierCV(final SVM model) {
+		SVMClassifier(final SVM model) {
 			super(model);
 		}
 		
@@ -1217,13 +1216,13 @@ public class OpenCVClassifiers {
 	/**
 	 * Classifier based on {@link SVMSGD}.
 	 */
-	public static class SVMSGDClassifierCV extends AbstractOpenCVClassifierML<SVMSGD> {
+	public static class SVMSGDClassifier extends AbstractOpenCVClassifierML<SVMSGD> {
 
-		SVMSGDClassifierCV() {
+		SVMSGDClassifier() {
 			super();
 		}
 		
-		SVMSGDClassifierCV(final SVMSGD model) {
+		SVMSGDClassifier(final SVMSGD model) {
 			super(model);
 		}
 		
@@ -1258,13 +1257,13 @@ public class OpenCVClassifiers {
 	/**
 	 * Classifier based on {@link KNearest}.
 	 */
-	static class KNearestClassifierCV extends AbstractOpenCVClassifierML<KNearest> {
+	public static class KNearestClassifier extends AbstractOpenCVClassifierML<KNearest> {
 
-		KNearestClassifierCV() {
+		KNearestClassifier() {
 			super();
 		}
 		
-		KNearestClassifierCV(final KNearest model) {
+		KNearestClassifier(final KNearest model) {
 			super(model);
 		}
 		
@@ -1298,9 +1297,9 @@ public class OpenCVClassifiers {
 	/**
 	 * Classifier based on {@link ANN_MLP}.
 	 */
-	static class ANNClassifierCV extends AbstractOpenCVClassifierML<ANN_MLP> {
+	public static class ANNClassifier extends AbstractOpenCVClassifierML<ANN_MLP> {
 		
-		private static final Logger logger = LoggerFactory.getLogger(ANNClassifierCV.class);
+		private static final Logger logger = LoggerFactory.getLogger(ANNClassifier.class);
 		
 		private int MAX_HIDDEN_LAYERS = 5;
 		
@@ -1319,50 +1318,31 @@ public class OpenCVClassifiers {
 			}
 		}
 		
-		static enum TrainingMethod {
+		enum TrainingMethod {
 			BACKPROP, RPROP, ANNEAL;
 			
 			public int getTrainingMethod() {
-				switch(this) {
-				case BACKPROP:
-					return ANN_MLP.BACKPROP;
-				case RPROP:
-					return ANN_MLP.RPROP;
-				case ANNEAL:
-					return ANN_MLP.ANNEAL;
-				default:
-					return ANN_MLP.BACKPROP;
-				}
+                return switch (this) {
+                    case BACKPROP -> ANN_MLP.BACKPROP;
+                    case RPROP -> ANN_MLP.RPROP;
+                    case ANNEAL -> ANN_MLP.ANNEAL;
+                    default -> ANN_MLP.BACKPROP;
+                };
 			}
 		}
 		
 		
-		ANNClassifierCV() {
+		ANNClassifier() {
 			super();
 		}
 		
-		ANNClassifierCV(final ANN_MLP model) {
+		ANNClassifier(final ANN_MLP model) {
 			super(model);
 		}
 
 		@Override
 		ParameterList createParameterList(ANN_MLP model) {
-			// Parse existing layer sizes, if we have them
-			Mat sizes = model.getLayerSizes();
-			int[] layerSizes;
-			if (!sizes.empty()) {
-				var idx = sizes.createIndexer();
-				int n = (int)sizes.total();
-				layerSizes = new int[n];
-				for (int i = 0; i < n; i++)
-					layerSizes[i] = (int)idx.getDouble(i);
-				idx.release();
-				MAX_HIDDEN_LAYERS = n;
-			} else {
-				layerSizes = new int[MAX_HIDDEN_LAYERS];
-			}
-			
-			
+			int[] layerSizes = getLayerSizes(model, MAX_HIDDEN_LAYERS+2);
 			var params = new ParameterList();
 			
 //			// Set activation function
@@ -1381,7 +1361,7 @@ public class OpenCVClassifiers {
 			
 			// Hidden layer sizes
 			params.addTitleParameter("Hidden layers");
-			for (int i = 1; i <= layerSizes.length; i++) {
+			for (int i = 1; i < layerSizes.length; i++) {
 				params.addIntParameter("hidden" + i, "Layer " + i, layerSizes[i-1], "Nodes", "Size of first hidden layer (0 to omit layer)");				
 			}
 			
@@ -1403,6 +1383,36 @@ public class OpenCVClassifiers {
 		@Override
 		Class<? extends StatModel> getStatModelClass() {
 			return ANN_MLP.class;
+		}
+
+		/**
+		 * Get the layer sizes, including input, hidden and output layers.
+		 * @return the layer sizes, or an empty array if there is no model available.
+		 */
+		public int[] getLayerSizes() {
+			return getLayerSizes(getStatModel(), 0);
+		}
+
+		private int[] getLayerSizes(ANN_MLP model, int defaultLength) {
+			if (model == null)
+				return new int[defaultLength];
+			lock.writeLock().lock();
+			try {
+				Mat sizes = getStatModel().getLayerSizes();
+				if (!sizes.empty()) {
+					var idx = sizes.createIndexer();
+					int n = (int)sizes.total();
+					int[] layerSizes = new int[n];
+					for (int i = 0; i < n; i++)
+						layerSizes[i] = (int)idx.getDouble(i);
+					idx.release();
+					return layerSizes;
+				} else {
+					return new int[defaultLength];
+				}
+			} finally {
+				lock.writeLock().unlock();
+			}
 		}
 		
 		@Override
@@ -1544,7 +1554,7 @@ public class OpenCVClassifiers {
 	/**
 	 * A multiclass version of ANN.
 	 */
-	static class MulticlassANNClassifierCV extends ANNClassifierCV {
+	static class MulticlassANNClassifier extends ANNClassifier {
 		
 		@Override
 		public boolean supportsMulticlass() {
