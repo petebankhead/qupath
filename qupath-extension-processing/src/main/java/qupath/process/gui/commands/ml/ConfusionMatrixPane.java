@@ -1,0 +1,297 @@
+package qupath.process.gui.commands.ml;
+
+import java.util.Objects;
+import java.util.function.DoubleFunction;
+import java.util.function.Function;
+import javafx.beans.binding.Bindings;
+import javafx.beans.binding.ObjectBinding;
+import javafx.beans.binding.StringBinding;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
+import javafx.beans.value.ObservableValue;
+import javafx.geometry.HPos;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.geometry.VPos;
+import javafx.scene.Node;
+import javafx.scene.control.Control;
+import javafx.scene.control.Label;
+import javafx.scene.control.Skin;
+import javafx.scene.control.Skinnable;
+import javafx.scene.layout.Background;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Priority;
+import javafx.scene.paint.Color;
+import javafx.util.Subscription;
+import qupath.lib.color.ColorMaps;
+import qupath.lib.gui.tools.ColorToolsFX;
+
+
+class ConfusionMatrixPane<T> extends Control implements Skinnable {
+
+    public final Function<T, String> DEFAULT_STRING_EXTRACTOR = Objects::toString;
+    public final DoubleFunction<Color> DEFAULT_COLOR_EXTRACTOR = this::extractColor;
+
+    private final ObjectProperty<ConfusionMatrix<T>> confusionMatrix = new SimpleObjectProperty<>();
+    private final StringProperty rowLabel = new SimpleStringProperty("Target");
+    private final StringProperty columnLabel = new SimpleStringProperty("Prediction");
+
+    private final ObjectProperty<Function<T, String>> stringExtractor = new SimpleObjectProperty<>(DEFAULT_STRING_EXTRACTOR);
+    private final ObjectProperty<DoubleFunction<Color>> colorExtractor = new SimpleObjectProperty<>(DEFAULT_COLOR_EXTRACTOR);
+
+    private final ColorMaps.ColorMap DEFAULT_COLORMAP = createColorMap(
+            "Confusion colors",
+             Color.WHITE, Color.ROYALBLUE
+    );
+
+    private Color extractColor(double value) {
+        if (Double.isNaN(value))
+            return null;
+        return ColorToolsFX.getCachedColor(
+                DEFAULT_COLORMAP.getColor(value, 0.0, 1.0)
+        );
+    }
+
+    private static ColorMaps.ColorMap createColorMap(String name, Color... colors) {
+        int n = colors.length;
+        double[] r = new double[n];
+        double[] g = new double[n];
+        double[] b = new double[n];
+        for (int i = 0; i < n; i++) {
+            var c = colors[i];
+            r[i] = c.getRed();
+            g[i] = c.getGreen();
+            b[i] = c.getBlue();
+        }
+        return ColorMaps.createColorMap(name, r, g, b);
+    }
+
+    public ObjectProperty<ConfusionMatrix<T>> confusionMatrixProperty() {
+        return confusionMatrix;
+    }
+
+    public ConfusionMatrix<T> getConfusionMatrix() {
+        return confusionMatrixProperty().get();
+    }
+
+    public void setConfusionMatrix(ConfusionMatrix<T> confusionMatrix) {
+        confusionMatrixProperty().set(confusionMatrix);
+    }
+
+    public StringProperty rowLabelProperty() {
+        return rowLabel;
+    }
+
+    public String getRowLabel() {
+        return rowLabelProperty().get();
+    }
+
+    public void setRowLabel(String label) {
+        rowLabelProperty().set(label);
+    }
+
+    public StringProperty columnLabelProperty() {
+        return columnLabel;
+    }
+
+    public String getColumnLabel() {
+        return columnLabelProperty().get();
+    }
+
+    public void setColumnLabelLabel(String label) {
+        columnLabelProperty().set(label);
+    }
+
+    public ObjectProperty<Function<T, String>> stringExtractorProperty() {
+        return stringExtractor;
+    }
+
+    public Function<T, String> getStringExtractor() {
+        return stringExtractorProperty().get();
+    }
+
+    public void setStringExtractor(Function<T, String> extractor) {
+        stringExtractorProperty().set(extractor);
+    }
+
+    public ObjectProperty<DoubleFunction<Color>> colorExtractorProperty() {
+        return colorExtractor;
+    }
+
+    public DoubleFunction<Color> getColorExtractor() {
+        return colorExtractorProperty().get();
+    }
+
+    public void setColorExtractor(DoubleFunction<Color> extractor) {
+        colorExtractorProperty().set(extractor);
+    }
+
+    @Override
+    protected Skin<?> createDefaultSkin() {
+        return new ConfusionMatrixSkin<>(this);
+    }
+
+    private static class ConfusionMatrixSkin<T> implements Skin<ConfusionMatrixPane<T>> {
+
+        private final ConfusionMatrixPane<T> skinnable;
+
+        private final GridPane pane = new GridPane();
+        private Subscription subscription;
+
+        private ConfusionMatrixSkin(ConfusionMatrixPane<T> skinnable) {
+            this.skinnable = skinnable;
+            initialize();
+        }
+
+        private void initialize() {
+            pane.getChildren().clear();
+
+            var matrix = skinnable.confusionMatrix.get();
+            if (matrix == null) {
+                var labelPlaceholder = new Label("Nothing to show");
+                labelPlaceholder.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+                labelPlaceholder.setAlignment(Pos.CENTER);
+                pane.add(labelPlaceholder, 0, 0);
+                return;
+            }
+
+            var labels = matrix.getLabels();
+
+            double padding = 5.0;
+
+            var columnLabel = createHorizontalLabel(padding);
+            columnLabel.textProperty().bind(skinnable.columnLabel);
+            columnLabel.setStyle("-fx-font-weight: bold;");
+            pane.add(columnLabel, 2, 0, GridPane.REMAINING, 1);
+
+            var rowLabel = createVerticalLabel(padding);
+            rowLabel.textProperty().bind(skinnable.rowLabel);
+            rowLabel.setStyle("-fx-font-weight: bold;");
+            pane.add(rowLabel, 0, 2, 1, GridPane.REMAINING);
+
+            for (int i = 0; i < labels.size(); i++) {
+                var binding = createLabelStringBinding(labels.get(i));
+
+                var gridRowLabel = createHorizontalLabel(padding);
+                gridRowLabel.textProperty().bind(binding);
+                pane.add(gridRowLabel, 2+i, 1, 1, 1);
+
+                var gridColLabel = createVerticalLabel(padding);
+                gridColLabel.textProperty().bind(binding);
+                pane.add(gridColLabel, 1, 2+i, 1, 1);
+            }
+
+            int r = 2;
+            for (var row : labels) {
+                int c = 2;
+                for (var col : labels) {
+                    var label = createGridLabel(matrix, row, col);
+                    pane.add(label, r, c);
+                    c++;
+                }
+                r++;
+            }
+        }
+
+        private void subscribe() {
+            subscription = skinnable.confusionMatrixProperty().subscribe(this::initialize);
+        }
+
+        private void unsubscribe() {
+            if (subscription != null)
+                subscription.unsubscribe();
+        }
+
+        private StringBinding createLabelStringBinding(T label) {
+            return Bindings.createStringBinding(() -> {
+                return skinnable.getStringExtractor().apply(label);
+            }, skinnable.stringExtractor);
+        }
+
+        private Label createHorizontalLabel(double padding) {
+            var label = new Label();
+            label.setMaxWidth(Double.MAX_VALUE);
+            label.setAlignment(Pos.CENTER);
+            GridPane.setHgrow(label, Priority.ALWAYS);
+            GridPane.setHalignment(label, HPos.CENTER);
+            GridPane.setFillWidth(label, Boolean.TRUE);
+            if (padding > 0)
+                label.setPadding(new Insets(padding));
+            return label;
+        }
+
+        private Label createVerticalLabel(double padding) {
+            var label = new Label();
+            label.setMaxHeight(Double.MAX_VALUE);
+            label.setAlignment(Pos.CENTER);
+            label.setRotate(-90);
+            GridPane.setVgrow(label, Priority.ALWAYS);
+            GridPane.setValignment(label, VPos.CENTER);
+            GridPane.setFillHeight(label, Boolean.TRUE);
+            if (padding > 0)
+                label.setPadding(new Insets(padding));
+            return label;
+        }
+
+        private Label createGridLabel(ConfusionMatrix<T> matrix, T row, T col) {
+            int count = matrix.getCount(row, col);
+            var label = new Label(Integer.toString(count));
+            label.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+            label.setAlignment(Pos.CENTER);
+            var bgColorBinding = createBackgroundColorBinding(matrix.getNormalizedCount(row, col));
+            label.backgroundProperty().bind(bgColorBinding.map(ConfusionMatrixSkin::colorToBackground));
+            label.textFillProperty().bind(bgColorBinding.map(ConfusionMatrixSkin::backgroundColorToTextFill));
+            GridPane.setFillWidth(label, Boolean.TRUE);
+            GridPane.setFillHeight(label, Boolean.TRUE);
+            GridPane.setHgrow(label, Priority.ALWAYS);
+            GridPane.setVgrow(label, Priority.ALWAYS);
+            return label;
+        }
+
+        private ObjectBinding<Color> createBackgroundColorBinding(double normalizedCount) {
+            return Bindings.createObjectBinding(() -> {
+                return skinnable.colorExtractor.get().apply(normalizedCount);
+            }, skinnable.colorExtractor);
+        }
+
+        private static Background colorToBackground(Color color) {
+            return color == null ? null : Background.fill(color);
+        }
+
+        private static Color backgroundColorToTextFill(Color color) {
+            if (color == null)
+                return null;
+            if (color.getBrightness() < 0.9)
+                return Color.WHITE;
+            else
+                return Color.BLACK;
+        }
+
+        @Override
+        public ConfusionMatrixPane<T> getSkinnable() {
+            return skinnable;
+        }
+
+        @Override
+        public Node getNode() {
+            return pane;
+        }
+
+        @Override
+        public void install() {
+            Skin.super.install();
+            subscribe();
+            initialize();
+        }
+
+        @Override
+        public void dispose() {
+            pane.getChildren().clear();
+            unsubscribe();
+        }
+
+    }
+
+}

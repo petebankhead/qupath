@@ -1,6 +1,8 @@
 package qupath.process.gui.commands.ml;
 
+import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -15,6 +17,19 @@ class ConfusionMatrix<T> {
         this.matrix = new LinkedHashMap<>();
     }
 
+    public static <T> ConfusionMatrix<T> sum(Collection<? extends ConfusionMatrix<T>> matrices) {
+        var sum = new ConfusionMatrix<T>();
+        for (var mat : matrices) {
+            var labels = mat.getLabels();
+            for (var row : labels) {
+                for (var col : labels) {
+                    sum.accumulate(row, col, mat.getCount(row, col));
+                }
+            }
+        }
+        return sum;
+    }
+
     /**
      * Accumulate one prediction.
      *
@@ -22,17 +37,37 @@ class ConfusionMatrix<T> {
      * @param j predicted label
      */
     synchronized void accumulate(T i, T j) {
+        accumulate(i, j, 1);
+    }
+
+    synchronized void accumulate(T i, T j, int toAdd) {
         var counter = matrix.computeIfAbsent(i, _ -> new LinkedHashMap<>())
                 .computeIfAbsent(j, _ -> new AtomicInteger(0));
-        counter.incrementAndGet();
-        count++;
+        counter.addAndGet(toAdd);
+        count += toAdd;
+    }
+
+    synchronized List<T> getLabels() {
+        return List.copyOf(matrix.keySet());
     }
 
     synchronized int getTotal() {
         return count;
     }
 
-    private synchronized int getCount(T i, T j) {
+    public synchronized double getNormalizedCount(T row, T col) {
+        return (double)getCount(row, col) / getRowSum(row);
+    }
+
+    public synchronized int getRowSum(T row) {
+        int sum = 0;
+        for (var col : getLabels()) {
+            sum += getCount(row, col);
+        }
+        return sum;
+    }
+
+    public synchronized int getCount(T i, T j) {
         if (!matrix.containsKey(i))
             return 0;
         return matrix.get(i).computeIfAbsent(j, _ -> new AtomicInteger(0)).get();
@@ -42,24 +77,36 @@ class ConfusionMatrix<T> {
         return getCount(i, i);
     }
 
-    synchronized int getFalsePositives(T i) {
+    synchronized int getTruePositives() {
+        return getLabels().stream().mapToInt(this::getTruePositives).sum();
+    }
+
+    synchronized int getFalsePositives(T col) {
         int sum = 0;
-        for (var row : matrix.keySet()) {
-            if (!Objects.equals(i, row)) {
-                sum += getCount(row, i);
+        for (var row : getLabels()) {
+            if (!Objects.equals(col, row)) {
+                sum += getCount(row, col);
             }
         }
         return sum;
     }
 
-    synchronized int getFalseNegatives(T i) {
+    synchronized int getFalsePositives() {
+        return getLabels().stream().mapToInt(this::getFalsePositives).sum();
+    }
+
+    synchronized int getFalseNegatives(T row) {
         int sum = 0;
-        for (var col : matrix.keySet()) {
-            if (!Objects.equals(i, col)) {
-                sum += getCount(i, col);
+        for (var col : getLabels()) {
+            if (!Objects.equals(row, col)) {
+                sum += getCount(row, col);
             }
         }
         return sum;
+    }
+
+    synchronized int getFalseNegatives() {
+        return getLabels().stream().mapToInt(this::getFalseNegatives).sum();
     }
 
     synchronized double getPrecision(T i) {
@@ -68,10 +115,32 @@ class ConfusionMatrix<T> {
         return truePos / (truePos + falsePos);
     }
 
+    synchronized double getPrecision() {
+        return getLabels()
+                .stream()
+                .mapToDouble(this::getPrecision)
+                .average()
+                .orElse(Double.NaN);
+//        double truePos = getTruePositives();
+//        double falsePos = getFalsePositives();
+//        return truePos / (truePos + falsePos);
+    }
+
     synchronized double getRecall(T i) {
         double truePos = getTruePositives(i);
         double falseNeg = getFalseNegatives(i);
         return truePos / (truePos + falseNeg);
+    }
+
+    synchronized double getRecall() {
+        return getLabels()
+                .stream()
+                .mapToDouble(this::getRecall)
+                .average()
+                .orElse(Double.NaN);
+//        double truePos = getTruePositives();
+//        double falseNeg = getFalseNegatives();
+//        return truePos / (truePos + falseNeg);
     }
 
     synchronized double getF1(T i) {
@@ -86,7 +155,11 @@ class ConfusionMatrix<T> {
      * @return
      */
     synchronized double getF1() {
-        return matrix.keySet().stream().mapToDouble(this::getF1).average().orElse(Double.NaN);
+        return getLabels()
+                .stream()
+                .mapToDouble(this::getF1)
+                .average()
+                .orElse(Double.NaN);
     }
 
     /**
@@ -95,7 +168,7 @@ class ConfusionMatrix<T> {
      * @return
      */
     synchronized double getAccuracy() {
-        double nTruePositives = matrix.keySet().stream().mapToDouble(this::getTruePositives).sum();
+        double nTruePositives = getTruePositives();
         return nTruePositives / getTotal();
     }
 

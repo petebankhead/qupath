@@ -125,6 +125,7 @@ public class PixelClassifierPane {
 	private final TrainingDetailsPane trainingDetailsPane = new TrainingDetailsPane();
 	private final FeatureDetailsPane featureDetailsPane = new FeatureDetailsPane();
 	private final JsonDisplay<PixelClassifier> jsonDisplay = new JsonDisplay<>();
+	private final AccuracyPane<Integer> accuracyPane = new AccuracyPane<>();
 
 	private final BooleanProperty showMore = new SimpleBooleanProperty(false);
 
@@ -275,6 +276,9 @@ public class PixelClassifierPane {
 		);
 		morePane.getTabs().add(
 				new Tab("Features", featureDetailsPane)
+		);
+		morePane.getTabs().add(
+				new Tab("Accuracy", accuracyPane)
 		);
 		jsonDisplay.itemProperty().bind(currentClassifier);
 		morePane.getTabs().add(
@@ -785,6 +789,7 @@ public class PixelClassifierPane {
 
 
 			// TODO: Train models using cross validation in a background thread
+			List<ConfusionMatrix<Integer>> matrices = new ArrayList<>();
 			if (allTrainingData.size() > 1) {
 				try (var scope = new PointerScope()) {
 					var modelTest = duplicateStatModel(model);
@@ -806,11 +811,13 @@ public class PixelClassifierPane {
 										modelTest,
 										null,
 										labels.size());
+								matrices.add(confusion);
 								logger.info("Fold {}: Accuracy = {}, F1 = {}", i + 1, confusion.getAccuracy(), confusion.getF1());
 							}
 						}
 					}
 				}
+				accuracyPane.getConfusionMatrices().setAll(matrices);
 			}
 		}
 	}
