@@ -14,7 +14,21 @@ class ConfusionMatrix<T> {
     private int count;
 
     ConfusionMatrix() {
+        this(List.of());
+    }
+
+    /**
+     * Create a confusion matrix with the specified labels.
+     * Using this constructor makes it easy to define the order of the labels.
+     * @param labels the labels for target and predicted values
+     */
+    ConfusionMatrix(List<T> labels) {
         this.matrix = new LinkedHashMap<>();
+        for (var row : labels) {
+            for (var col : labels) {
+                int _ = getCount(row, col);
+            }
+        }
     }
 
     public static <T> ConfusionMatrix<T> sum(Collection<? extends ConfusionMatrix<T>> matrices) {

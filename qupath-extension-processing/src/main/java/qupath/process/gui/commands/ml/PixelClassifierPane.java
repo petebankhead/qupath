@@ -34,6 +34,7 @@ import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -125,7 +126,10 @@ public class PixelClassifierPane {
 	private final TrainingDetailsPane trainingDetailsPane = new TrainingDetailsPane();
 	private final FeatureDetailsPane featureDetailsPane = new FeatureDetailsPane();
 	private final JsonDisplay<PixelClassifier> jsonDisplay = new JsonDisplay<>();
-	private final AccuracyPane<Integer> accuracyPane = new AccuracyPane<>();
+	private final AccuracyPane<PathClass> accuracyPane = new AccuracyPane<>();
+
+	private final BorderPane paneMain = new BorderPane();
+	private Pane paneDetails;
 
 	private final BooleanProperty showMore = new SimpleBooleanProperty(false);
 
@@ -194,7 +198,8 @@ public class PixelClassifierPane {
 					updateClassifier();
 					overlayManager.ensureOverlaySet();
 				}),
-				opBuilder.subscribe(this::updateFeatureCalculator)
+				opBuilder.subscribe(this::updateFeatureCalculator),
+				showMore.subscribe(this::handleShowDetails)
 		);
 	}
 
@@ -248,14 +253,9 @@ public class PixelClassifierPane {
 		
 		addStandardPixelClassifierButtons(pane);
 
-		var splitPane = new BorderPane();
-		splitPane.setLeft(pane);
-		splitPane.centerProperty().bind(Bindings.when(showMore)
-				.then(createMorePane())
-				.otherwise((TabPane) null));
-		splitPane.centerProperty().subscribe(() -> splitPane.getScene().getWindow().sizeToScene());
+		paneMain.setLeft(pane);
 
-		var stage = createStage(new BorderPane(splitPane));
+		var stage = createStage(new BorderPane(paneMain));
 		stage.show();
 
 		ensureResolutionSelected(imageData);
@@ -266,28 +266,47 @@ public class PixelClassifierPane {
 			qupath.getImageData().getHierarchy().addListener(hierarchyListener);
 	}
 
-	private TabPane createMorePane() {
-		var morePane = new TabPane();
-		morePane.getTabs().add(
+	private void handleShowDetails(boolean doShow) {
+		boolean createPane = paneDetails == null && doShow;
+		if (createPane) {
+			paneDetails = createDetailsPane();
+			paneMain.setCenter(paneDetails);
+			paneMain.getScene().getWindow().sizeToScene();
+		} else if (doShow) {
+			paneMain.setCenter(paneDetails);
+			var window = paneMain.getScene().getWindow();
+			window.setWidth(window.getWidth() + Math.max(100, paneDetails.getWidth()));
+		} else if (paneDetails != null) {
+			paneMain.setCenter(null);
+			var window = paneMain.getScene().getWindow();
+			window.setWidth(window.getWidth() - paneDetails.getWidth());
+		}
+	}
+
+	private Pane createDetailsPane() {
+		var tabPane = new TabPane();
+		tabPane.getTabs().add(
 				new Tab("Viewer", trainingViewerPane)
 		);
-		morePane.getTabs().add(
+		tabPane.getTabs().add(
 				new Tab("Classifier", trainingDetailsPane)
 		);
-		morePane.getTabs().add(
+		tabPane.getTabs().add(
 				new Tab("Features", featureDetailsPane)
 		);
-		morePane.getTabs().add(
+		tabPane.getTabs().add(
 				new Tab("Accuracy", accuracyPane)
 		);
 		jsonDisplay.itemProperty().bind(currentClassifier);
-		morePane.getTabs().add(
+		tabPane.getTabs().add(
 				new Tab("JSON", jsonDisplay)
 		);
-		for (var tab : morePane.getTabs()) {
+		for (var tab : tabPane.getTabs()) {
 			tab.setClosable(false);
 		}
-		return morePane;
+		var pane = new BorderPane(tabPane);
+		pane.setLeft(new Separator(Orientation.VERTICAL));
+		return pane;
 	}
 
 	private void ensureResolutionSelected(ImageData<?> imageData) {
@@ -323,11 +342,11 @@ public class PixelClassifierPane {
 		var stage = new Stage();
 		stage.setScene(new Scene(content));
 
-		stage.setMinHeight(400);
+		stage.setMinHeight(450);
 		stage.setMinWidth(400);
 		stage.sizeToScene();
 
-		stage.initOwner(QuPathGUI.getInstance().getStage());
+		stage.initOwner(qupath.getStage());
 		stage.setTitle("Train pixel classifier");
 
 		stage.setOnCloseRequest(this::handleStageCloseRequest);
@@ -789,7 +808,7 @@ public class PixelClassifierPane {
 
 
 			// TODO: Train models using cross validation in a background thread
-			List<ConfusionMatrix<Integer>> matrices = new ArrayList<>();
+			List<ConfusionMatrix<PathClass>> matrices = new ArrayList<>();
 			if (allTrainingData.size() > 1) {
 				try (var scope = new PointerScope()) {
 					var modelTest = duplicateStatModel(model);
@@ -810,7 +829,7 @@ public class PixelClassifierPane {
 										holdOutTest.getTrainNormCatResponses(),
 										modelTest,
 										null,
-										labels.size());
+										labels);
 								matrices.add(confusion);
 								logger.info("Fold {}: Accuracy = {}, F1 = {}", i + 1, confusion.getAccuracy(), confusion.getF1());
 							}
@@ -830,21 +849,32 @@ public class PixelClassifierPane {
 	}
 
 
-	private static ConfusionMatrix<Integer> evaluate(Mat samples, Mat normCatTargets, OpenCVStatModel model,
-											FeaturePreprocessor preprocessor, int nLabels) {
+	private static ConfusionMatrix<PathClass> evaluate(Mat samples, Mat normCatTargets, OpenCVStatModel model,
+											FeaturePreprocessor preprocessor, Map<PathClass, Integer> labels) {
 		if (preprocessor != null) {
 			samples = samples.clone();
 			preprocessor.apply(samples, false);
 		}
-		var confusion = new ConfusionMatrix<Integer>();
+		var confusion = new ConfusionMatrix<>(List.copyOf(labels.keySet()));
 		IntBuffer bufferGroundTruth = normCatTargets.createBuffer();
+
+		// This assumes that our labels are dense and start with 0... rather than being
+		// all other the place, and potentially negative
+		int n = labels.values().stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+		PathClass[] pathClasses = new PathClass[n];
+		for (var entry : labels.entrySet()) {
+			pathClasses[entry.getValue()] = entry.getKey();
+		}
 
 		var testResults = new Mat();
 		model.predict(samples, testResults, new Mat());
 		IntBuffer bufferPrediction = testResults.createBuffer();
 		int nTest = testResults.rows();
 		for (int i = 0; i < nTest; i++) {
-			confusion.accumulate(bufferGroundTruth.get(i), bufferPrediction.get(i));
+			confusion.accumulate(
+					pathClasses[bufferGroundTruth.get(i)],
+					pathClasses[bufferPrediction.get(i)]
+			);
 		}
 		return confusion;
 	}

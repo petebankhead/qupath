@@ -18,6 +18,7 @@ import javafx.geometry.VPos;
 import javafx.scene.Node;
 import javafx.scene.control.Control;
 import javafx.scene.control.Label;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.Skin;
 import javafx.scene.control.Skinnable;
 import javafx.scene.layout.Background;
@@ -25,6 +26,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.paint.Color;
 import javafx.util.Subscription;
+import qupath.fx.utils.GridPaneUtils;
 import qupath.lib.color.ColorMaps;
 import qupath.lib.gui.tools.ColorToolsFX;
 
@@ -151,8 +153,9 @@ class ConfusionMatrixPane<T> extends Control implements Skinnable {
             var matrix = skinnable.confusionMatrix.get();
             if (matrix == null) {
                 var labelPlaceholder = new Label("Nothing to show");
-                labelPlaceholder.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
                 labelPlaceholder.setAlignment(Pos.CENTER);
+                GridPaneUtils.setToExpandGridPaneWidth(labelPlaceholder);
+                GridPaneUtils.setToExpandGridPaneHeight(labelPlaceholder);
                 pane.add(labelPlaceholder, 0, 0);
                 return;
             }
@@ -175,10 +178,12 @@ class ConfusionMatrixPane<T> extends Control implements Skinnable {
                 var binding = createLabelStringBinding(labels.get(i));
 
                 var gridRowLabel = createHorizontalLabel(padding);
+                gridRowLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
                 gridRowLabel.textProperty().bind(binding);
                 pane.add(gridRowLabel, 2+i, 1, 1, 1);
 
                 var gridColLabel = createVerticalLabel(padding);
+                gridColLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
                 gridColLabel.textProperty().bind(binding);
                 pane.add(gridColLabel, 1, 2+i, 1, 1);
             }

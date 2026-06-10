@@ -6,12 +6,16 @@ import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.scene.Node;
 import javafx.scene.control.Control;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Skin;
 import javafx.scene.control.Skinnable;
+import javafx.scene.control.SplitPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
+import javafx.scene.control.TitledPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 
@@ -48,8 +52,25 @@ class AccuracyPane<T> extends Control implements Skinnable {
 
         private void initialize() {
             confusionMatrixPane.setPadding(new Insets(10));
-            borderPane.setCenter(confusionMatrixPane);
-            borderPane.setBottom(tableMetrics);
+            confusionMatrixPane.setMinHeight(Control.USE_COMPUTED_SIZE);
+            confusionMatrixPane.setMaxHeight(Double.MAX_VALUE);
+
+            var scrollConfusion = new ScrollPane(confusionMatrixPane);
+            scrollConfusion.setFitToWidth(true);
+            scrollConfusion.setFitToHeight(true);
+            scrollConfusion.setMaxHeight(Double.MAX_VALUE);
+//            var titledConfusion = new TitledPane("Confusion matrix", scrollConfusion);
+//            titledConfusion.setMaxHeight(Double.MAX_VALUE);
+//            titledConfusion.setMinHeight(TitledPane.USE_COMPUTED_SIZE);
+
+            var splitPane = new SplitPane(
+                    tableMetrics,
+                    scrollConfusion
+            );
+            splitPane.setOrientation(Orientation.VERTICAL);
+
+            borderPane.setCenter(splitPane);
+//            borderPane.setBottom(tableMetrics);
 //            pane.add(confusionMatrixPane, 0, 0, GridPane.REMAINING, 1);
 //            pane.add(tableMetrics, 0, 1,  GridPane.REMAINING, 1);
         }
