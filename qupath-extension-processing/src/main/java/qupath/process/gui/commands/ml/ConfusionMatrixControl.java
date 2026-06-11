@@ -10,7 +10,6 @@ import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
-import javafx.beans.value.ObservableValue;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -31,7 +30,7 @@ import qupath.lib.color.ColorMaps;
 import qupath.lib.gui.tools.ColorToolsFX;
 
 
-class ConfusionMatrixPane<T> extends Control implements Skinnable {
+class ConfusionMatrixControl<T> extends Control implements Skinnable {
 
     public final Function<T, String> DEFAULT_STRING_EXTRACTOR = Objects::toString;
     public final DoubleFunction<Color> DEFAULT_COLOR_EXTRACTOR = this::extractColor;
@@ -43,9 +42,9 @@ class ConfusionMatrixPane<T> extends Control implements Skinnable {
     private final ObjectProperty<Function<T, String>> stringExtractor = new SimpleObjectProperty<>(DEFAULT_STRING_EXTRACTOR);
     private final ObjectProperty<DoubleFunction<Color>> colorExtractor = new SimpleObjectProperty<>(DEFAULT_COLOR_EXTRACTOR);
 
-    private final ColorMaps.ColorMap DEFAULT_COLORMAP = createColorMap(
+    private final ColorMaps.ColorMap DEFAULT_COLORMAP = ColorToolsFX.createColorMap(
             "Confusion colors",
-             Color.WHITE, Color.ROYALBLUE
+            Color.WHITE, Color.ROYALBLUE
     );
 
     private Color extractColor(double value) {
@@ -54,20 +53,6 @@ class ConfusionMatrixPane<T> extends Control implements Skinnable {
         return ColorToolsFX.getCachedColor(
                 DEFAULT_COLORMAP.getColor(value, 0.0, 1.0)
         );
-    }
-
-    private static ColorMaps.ColorMap createColorMap(String name, Color... colors) {
-        int n = colors.length;
-        double[] r = new double[n];
-        double[] g = new double[n];
-        double[] b = new double[n];
-        for (int i = 0; i < n; i++) {
-            var c = colors[i];
-            r[i] = c.getRed();
-            g[i] = c.getGreen();
-            b[i] = c.getBlue();
-        }
-        return ColorMaps.createColorMap(name, r, g, b);
     }
 
     public ObjectProperty<ConfusionMatrix<T>> confusionMatrixProperty() {
@@ -135,14 +120,14 @@ class ConfusionMatrixPane<T> extends Control implements Skinnable {
         return new ConfusionMatrixSkin<>(this);
     }
 
-    private static class ConfusionMatrixSkin<T> implements Skin<ConfusionMatrixPane<T>> {
+    private static class ConfusionMatrixSkin<T> implements Skin<ConfusionMatrixControl<T>> {
 
-        private final ConfusionMatrixPane<T> skinnable;
+        private final ConfusionMatrixControl<T> skinnable;
 
         private final GridPane pane = new GridPane();
         private Subscription subscription;
 
-        private ConfusionMatrixSkin(ConfusionMatrixPane<T> skinnable) {
+        private ConfusionMatrixSkin(ConfusionMatrixControl<T> skinnable) {
             this.skinnable = skinnable;
             initialize();
         }
@@ -275,7 +260,7 @@ class ConfusionMatrixPane<T> extends Control implements Skinnable {
         }
 
         @Override
-        public ConfusionMatrixPane<T> getSkinnable() {
+        public ConfusionMatrixControl<T> getSkinnable() {
             return skinnable;
         }
 
@@ -287,6 +272,10 @@ class ConfusionMatrixPane<T> extends Control implements Skinnable {
         @Override
         public void install() {
             Skin.super.install();
+            // This seems quite inelegant, extending SkinBase may be the 'right' way...
+            // but this is at least something
+            pane.paddingProperty().bind(skinnable.paddingProperty());
+            pane.effectProperty().bind(skinnable.effectProperty());
             subscribe();
             initialize();
         }
@@ -295,6 +284,8 @@ class ConfusionMatrixPane<T> extends Control implements Skinnable {
         public void dispose() {
             pane.getChildren().clear();
             unsubscribe();
+            pane.paddingProperty().unbind();
+            pane.effectProperty().unbind();
         }
 
     }

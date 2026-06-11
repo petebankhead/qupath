@@ -92,8 +92,8 @@ class TrainingDetailsPane extends Control implements Skinnable {
 
         private final TreeTableView<TableItem.StringItem> treeTable = new TreeTableView<>();
 
-        private final TreeItem<TableItem.StringItem> tiClassifier = new TreeItem<>(TableItem.StringItem.create("Classifier"));
-        private final TreeItem<TableItem.StringItem> tiParameters = new TreeItem<>(TableItem.StringItem.create("Parameters"));
+        private final TreeItem<TableItem.StringItem> tiClassifier = new TreeItem<>(TableItem.StringItem.createEmpty("Classifier"));
+        private final TreeItem<TableItem.StringItem> tiParameters = new TreeItem<>(TableItem.StringItem.createEmpty("Parameters"));
 
         private Subscription subscription;
 
@@ -103,7 +103,7 @@ class TrainingDetailsPane extends Control implements Skinnable {
         }
 
         private void initializeTable() {
-            var root = new TreeItem<>(TableItem.StringItem.create("ROOT"));
+            var root = new TreeItem<>(TableItem.StringItem.createEmpty("ROOT"));
             root.getChildren().add(tiClassifier);
             root.getChildren().add(tiParameters);
 
