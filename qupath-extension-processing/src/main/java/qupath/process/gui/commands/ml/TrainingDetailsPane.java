@@ -9,9 +9,6 @@ import java.util.Map;
 import java.util.Objects;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
-import javafx.beans.property.SimpleStringProperty;
-import javafx.beans.property.StringProperty;
-import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableMap;
 import javafx.scene.Node;
@@ -34,7 +31,6 @@ class TrainingDetailsPane extends Control implements Skinnable {
 
     private final ObservableMap<String, String> classifierDetails = FXCollections.observableMap(new LinkedHashMap<>());
 
-//    private final StringProperty classifierType = new SimpleStringProperty();
     private final ObjectProperty<Duration> trainingTime = new SimpleObjectProperty<>();
     private final ObjectProperty<ParameterList> parameters = new SimpleObjectProperty<>();
 
@@ -94,10 +90,10 @@ class TrainingDetailsPane extends Control implements Skinnable {
 
         private final TrainingDetailsPane skinnable;
 
-        private final TreeTableView<Item> treeTable = new TreeTableView<>();
+        private final TreeTableView<TableItem.StringItem> treeTable = new TreeTableView<>();
 
-        private final TreeItem<Item> tiClassifier = new TreeItem<>(new Item("Classifier"));
-        private final TreeItem<Item> tiParameters = new TreeItem<>(new Item("Parameters"));
+        private final TreeItem<TableItem.StringItem> tiClassifier = new TreeItem<>(TableItem.StringItem.create("Classifier"));
+        private final TreeItem<TableItem.StringItem> tiParameters = new TreeItem<>(TableItem.StringItem.create("Parameters"));
 
         private Subscription subscription;
 
@@ -107,7 +103,7 @@ class TrainingDetailsPane extends Control implements Skinnable {
         }
 
         private void initializeTable() {
-            var root = new TreeItem<Item>(new Item("ROOT"));
+            var root = new TreeItem<>(TableItem.StringItem.create("ROOT"));
             root.getChildren().add(tiClassifier);
             root.getChildren().add(tiParameters);
 
@@ -115,12 +111,12 @@ class TrainingDetailsPane extends Control implements Skinnable {
             tiClassifier.setExpanded(true);
             tiParameters.setExpanded(true);
 
-            var colNames = new TreeTableColumn<Item, String>("Key");
+            var colNames = new TreeTableColumn<TableItem.StringItem, String>("Key");
             colNames.setCellValueFactory(i -> i.getValue().getValue().nameProperty());
             colNames.setSortable(false);
 
 
-            var colValues = new TreeTableColumn<Item, String>("Value");
+            var colValues = new TreeTableColumn<TableItem.StringItem, String>("Value");
             colValues.setCellValueFactory(i -> i.getValue().getValue().valueProperty());
             colValues.setSortable(false);
 
@@ -138,7 +134,7 @@ class TrainingDetailsPane extends Control implements Skinnable {
             if (classifierDetails.isEmpty()) {
                 tiClassifier.getChildren().clear();
             } else {
-                var newItems = new ArrayList<TreeItem<Item>>();
+                var newItems = new ArrayList<TreeItem<TableItem.StringItem>>();
                 for (var entry : classifierDetails.entrySet()) {
                     newItems.add(
                             createTreeItem(entry.getKey(), entry.getValue())
@@ -162,7 +158,7 @@ class TrainingDetailsPane extends Control implements Skinnable {
         private void updateParameters() {
             var params = skinnable.parameters.get();
             Map<String, Parameter<?>> map = params == null ? Map.of() : params.getParameters();
-            List<TreeItem<Item>> newItems = new ArrayList<>();
+            List<TreeItem<TableItem.StringItem>> newItems = new ArrayList<>();
             for (var param : map.values()) {
                 var val = param.getValueOrDefault();
                 var stringVal = val == null ? null : Objects.toString(val);
@@ -177,8 +173,8 @@ class TrainingDetailsPane extends Control implements Skinnable {
             tiParameters.getChildren().setAll(newItems);
         }
 
-        private static TreeItem<Item> createTreeItem(String name, String value) {
-            return new TreeItem<>(new Item(name, value));
+        private static TreeItem<TableItem.StringItem> createTreeItem(String name, String value) {
+            return new TreeItem<>(TableItem.StringItem.create(name, value));
         }
 
         @Override
@@ -210,34 +206,10 @@ class TrainingDetailsPane extends Control implements Skinnable {
         }
     }
 
-    private static class Item {
-
-        private final StringProperty name;
-        private final StringProperty value;
-
-        Item(String name) {
-            this(name, null);
-        }
-
-        Item(String name, String value) {
-            this.name = new SimpleStringProperty(name);
-            this.value = new SimpleStringProperty(value);
-        }
-
-        ObservableValue<String> nameProperty() {
-            return name;
-        }
-
-        ObservableValue<String> valueProperty() {
-            return value;
-        }
-
-    }
-
-    private static class Row extends TreeTableRow<Item> {
+    private static class Row extends TreeTableRow<TableItem.StringItem> {
 
         @Override
-        protected void updateItem(Item value, boolean empty) {
+        protected void updateItem(TableItem.StringItem value, boolean empty) {
             super.updateItem(value, empty);
             String style = null;
             if (value != null) {
@@ -255,6 +227,5 @@ class TrainingDetailsPane extends Control implements Skinnable {
         }
 
     }
-
 
 }

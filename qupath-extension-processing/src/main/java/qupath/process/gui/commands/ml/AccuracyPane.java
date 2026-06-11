@@ -1,7 +1,8 @@
 package qupath.process.gui.commands.ml;
 
-import javafx.beans.property.SimpleDoubleProperty;
-import javafx.beans.property.SimpleStringProperty;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
@@ -15,7 +16,9 @@ import javafx.scene.control.Skinnable;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TitledPane;
+import javafx.scene.control.TreeItem;
+import javafx.scene.control.TreeTableColumn;
+import javafx.scene.control.TreeTableView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 
@@ -40,7 +43,8 @@ class AccuracyPane<T> extends Control implements Skinnable {
         private final GridPane pane = new GridPane();
         private final BorderPane borderPane = new BorderPane(pane);
         private final ConfusionMatrixPane<T> confusionMatrixPane = new ConfusionMatrixPane<>();
-        private final TableView<Metric> tableMetrics = new TableView<>();
+        private final TreeTableView<TableItem.NumberItem> tableMetrics = new TreeTableView<>();
+        private final TreeItem<TableItem.NumberItem> root = new TreeItem<>(TableItem.NumberItem.createEmpty("ROOT"));
 
         private final ListChangeListener<ConfusionMatrix<T>> listChangeListener = this::handleMatricesChange;
 
@@ -76,16 +80,19 @@ class AccuracyPane<T> extends Control implements Skinnable {
         }
 
         private void initializeTable() {
-            var colName = new TableColumn<Metric, String>("Metric");
-            colName.setCellValueFactory(v -> new SimpleStringProperty(v.getValue().name()));
+            var colName = new TreeTableColumn<TableItem.NumberItem, String>("Metric");
+            colName.setCellValueFactory(v -> v.getValue().getValue().nameProperty());
 
-            var colValue = new TableColumn<Metric, Number>("Value");
-            colValue.setCellValueFactory(v -> new SimpleDoubleProperty(v.getValue().value()));
+            var colValue = new TreeTableColumn<TableItem.NumberItem, Number>("Value");
+            colValue.setCellValueFactory(v -> v.getValue().getValue().valueProperty());
 
             tableMetrics.getColumns().add(colName);
             tableMetrics.getColumns().add(colValue);
 
-            tableMetrics.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_LAST_COLUMN);
+            tableMetrics.setColumnResizePolicy(TreeTableView.CONSTRAINED_RESIZE_POLICY_LAST_COLUMN);
+
+            tableMetrics.setRoot(root);
+            tableMetrics.setShowRoot(false);
         }
 
         @Override
@@ -118,23 +125,43 @@ class AccuracyPane<T> extends Control implements Skinnable {
             var list = skinnable.getConfusionMatrices();
             if (list.isEmpty()) {
                 confusionMatrixPane.setConfusionMatrix(null);
-                tableMetrics.getItems().clear();
+                root.getChildren().clear();
                 return;
             }
+
             // TODO: Combine confusion matrices!
-            var confusion = ConfusionMatrix.sum(list);
-            confusionMatrixPane.setConfusionMatrix(confusion);
-            tableMetrics.getItems().setAll(
-                    new Metric("Accuracy", confusion.getAccuracy()),
-                    new Metric("F1", confusion.getF1()),
-                    new Metric("Precision", confusion.getPrecision()),
-                    new Metric("Recall", confusion.getRecall())
+            var confusionMaxtrixSum = ConfusionMatrix.sum(list);
+            confusionMatrixPane.setConfusionMatrix(confusionMaxtrixSum);
+            List<TreeItem<TableItem.NumberItem>> newItems = new ArrayList<>();
+
+            var averaged = new TreeItem<>(TableItem.NumberItem.createEmpty("Average"));
+            averaged.getChildren().addAll(
+                    createItem("Accuracy", confusionMaxtrixSum.getAccuracy()),
+                    createItem("F1", confusionMaxtrixSum.getF1()),
+                    createItem("Precision", confusionMaxtrixSum.getPrecision()),
+                    createItem("Recall", confusionMaxtrixSum.getRecall())
             );
+            averaged.setExpanded(true);
+            newItems.add(averaged);
+
+            for (var label : confusionMaxtrixSum.getLabels()) {
+                var item = new TreeItem<>(TableItem.NumberItem.createEmpty(Objects.toString(label)));
+                item.getChildren().addAll(
+                        createItem("F1", confusionMaxtrixSum.getF1(label)),
+                        createItem("Precision", confusionMaxtrixSum.getPrecision(label)),
+                        createItem("Recall", confusionMaxtrixSum.getRecall(label))
+                );
+                item.setExpanded(true);
+                newItems.add(item);
+            }
+            root.getChildren().setAll(newItems);
         }
 
+        private static TreeItem<TableItem.NumberItem> createItem(String name, double value) {
+            return new TreeItem<>(TableItem.NumberItem.create(name, value));
+        }
+
+
     }
-
-
-    record Metric(String name, double value) {}
 
 }
