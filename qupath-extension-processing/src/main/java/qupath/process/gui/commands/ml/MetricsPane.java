@@ -1,7 +1,6 @@
 package qupath.process.gui.commands.ml;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import javafx.beans.binding.Bindings;
@@ -16,6 +15,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Control;
+import javafx.scene.control.Pagination;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Skin;
 import javafx.scene.control.Skinnable;
@@ -28,7 +28,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 
 
-class AccuracyPane<T> extends Control implements Skinnable {
+class MetricsPane<T> extends Control implements Skinnable {
 
     /**
      * Observable list of all confusion matrices to display.
@@ -63,9 +63,9 @@ class AccuracyPane<T> extends Control implements Skinnable {
         return new ConfusionMatrixSkin<>(this);
     }
 
-    private static class ConfusionMatrixSkin<T> implements Skin<AccuracyPane<T>> {
+    private static class ConfusionMatrixSkin<T> implements Skin<MetricsPane<T>> {
 
-        private final AccuracyPane<T> skinnable;
+        private final MetricsPane<T> skinnable;
 
         private final GridPane pane = new GridPane();
         private final BorderPane borderPane = new BorderPane(pane);
@@ -73,12 +73,14 @@ class AccuracyPane<T> extends Control implements Skinnable {
         private final TreeTableView<TableItem.NumberItem> tableMetrics = new TreeTableView<>();
         private final CheckBox cbMerged = new CheckBox();
 
+        private final Pagination pagination = new Pagination();
+
         private final TreeItem<TableItem.NumberItem> rootMerged = new TreeItem<>(TableItem.NumberItem.createEmpty("ROOT"));
         private final TreeItem<TableItem.NumberItem> rootAll = new TreeItem<>(TableItem.NumberItem.createEmpty("ROOT"));
 
         private final ListChangeListener<ConfusionMatrix<T>> listChangeListener = this::handleMatricesChange;
 
-        private ConfusionMatrixSkin(AccuracyPane<T> skinnable) {
+        private ConfusionMatrixSkin(MetricsPane<T> skinnable) {
             this.skinnable = skinnable;
             initializeTable();
             initialize();
@@ -130,7 +132,7 @@ class AccuracyPane<T> extends Control implements Skinnable {
         }
 
         @Override
-        public AccuracyPane<T> getSkinnable() {
+        public MetricsPane<T> getSkinnable() {
             return skinnable;
         }
 

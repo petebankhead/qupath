@@ -22,6 +22,7 @@
 package qupath.process.gui.commands.ml;
 
 import java.time.Duration;
+import java.util.Random;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
@@ -126,7 +127,7 @@ public class PixelClassifierPane {
 	private final TrainingDetailsPane trainingDetailsPane = new TrainingDetailsPane();
 	private final FeatureDetailsPane featureDetailsPane = new FeatureDetailsPane();
 	private final JsonDisplay<PixelClassifier> jsonDisplay = new JsonDisplay<>();
-	private final AccuracyPane<PathClass> accuracyPane = new AccuracyPane<>();
+	private final MetricsPane<PathClass> metricsPane = new MetricsPane<>();
 
 	private final BorderPane paneMain = new BorderPane();
 	private Pane paneDetails;
@@ -295,7 +296,7 @@ public class PixelClassifierPane {
 				new Tab("Features", featureDetailsPane)
 		);
 		tabPane.getTabs().add(
-				new Tab("Accuracy", accuracyPane)
+				new Tab("Metrics", metricsPane)
 		);
 		jsonDisplay.itemProperty().bind(currentClassifier);
 		tabPane.getTabs().add(
@@ -702,16 +703,7 @@ public class PixelClassifierPane {
 
 		this.helper.setBoundaryStrategy(advancedOptions.getBoundaryStrategy());
 
-		List<ClassifierTrainingData> allTrainingData;
-		try {
-			var trainingImages = trainingImageManager.getTrainingImageData();
-			if (trainingImages.size() > 1)
-				logger.info("Creating training data from {} images", trainingImages.size());
-			allTrainingData = helper.createTrainingData(trainingImages);
-		} catch (Exception e) {
-			logger.error("Error when updating training data", e);
-			return;
-		}
+		List<ClassifierTrainingData> allTrainingData = getAllTrainingData();
 		if (allTrainingData.isEmpty()) {
 			pieChart.reset();
 			return;
@@ -805,40 +797,8 @@ public class PixelClassifierPane {
 
 				currentClassifier.set(PixelClassifiers.createClassifier(model, featureCalculator, metadata, true));
 			}
-
-
-			// TODO: Train models using cross validation in a background thread
-			List<ConfusionMatrix<PathClass>> matrices = new ArrayList<>();
-			if (allTrainingData.size() > 1) {
-				try (var scope = new PointerScope()) {
-					var modelTest = duplicateStatModel(model);
-					// TODO: Incorporate pre-processing, reweighting
-					for (int i = 0; i < allTrainingData.size(); i++) {
-						var holdOutData = allTrainingData.get(i);
-						try (ClassifierTrainingData otherImages = ClassifierTrainingData.merge(
-								allTrainingData.stream().filter(d -> d != holdOutData).toList()
-						)) {
-							try (var tempTrain = otherImages.getTrainData()) {
-								Mat weights = null;
-								try (var tempTrainUpdated = model.createTrainData(tempTrain.getTrainSamples(), tempTrain.getTrainResponses(), weights, false)) {
-									modelTest.train(tempTrainUpdated);
-								}
-							}
-							try (var holdOutTest = holdOutData.getTrainData()) {
-								var confusion = evaluate(holdOutTest.getTrainSamples(),
-										holdOutTest.getTrainNormCatResponses(),
-										modelTest,
-										null,
-										labels);
-								matrices.add(confusion);
-								logger.info("Fold {}: Accuracy = {}, F1 = {}", i + 1, confusion.getAccuracy(), confusion.getF1());
-							}
-						}
-					}
-				}
-				accuracyPane.getConfusionMatrices().setAll(matrices);
-			}
 		}
+		computeCrossValidation();
 	}
 
 	private static OpenCVStatModel duplicateStatModel(OpenCVStatModel model) {
@@ -848,6 +808,17 @@ public class PixelClassifierPane {
 		);
 	}
 
+	private List<ClassifierTrainingData> getAllTrainingData() {
+		try {
+			var trainingImages = trainingImageManager.getTrainingImageData();
+			if (trainingImages.size() > 1)
+				logger.info("Creating training data from {} images", trainingImages.size());
+			return helper.createTrainingData(trainingImages);
+		} catch (Exception e) {
+			logger.error("Error when updating training data", e);
+			return List.of();
+		}
+	}
 
 	private static ConfusionMatrix<PathClass> evaluate(Mat samples, Mat normCatTargets, OpenCVStatModel model,
 											FeaturePreprocessor preprocessor, Map<PathClass, Integer> labels) {
@@ -989,6 +960,61 @@ public class PixelClassifierPane {
 		helper.setResolution(resolution.cal);
 	}
 
+
+	private void computeCrossValidation() {
+		// TODO: Train models using cross validation in a background thread
+		var model = statModel.get();
+		if (model == null) {
+			logger.warn("Can't compute cross validation, no model available");
+			return;
+		}
+		var modelCV = duplicateStatModel(model);
+		List<ConfusionMatrix<PathClass>> matrices = new ArrayList<>();
+		List<ClassifierTrainingData> allTrainingData = getAllTrainingData();
+		if (allTrainingData.isEmpty()) {
+			logger.warn("Can't compute cross validation, no training data available");
+			return;
+		}
+		var firstData = allTrainingData.getFirst();
+		var labels = firstData.getLabelMap(); // Labels should be identical, via PixelClassifierTraining
+		if (allTrainingData.size() == 1) {
+			logger.warn("Splitting the training data");
+			int nSplits = Math.min(5, firstData.size() / 10);
+			if (nSplits <= 1) {
+				logger.error("No enough data to compute cross validation (size={})", firstData.size());
+				return;
+			}
+			allTrainingData = firstData.split(nSplits, new Random(128));
+		}
+
+		try (var scope = new PointerScope()) {
+			// TODO: Incorporate pre-processing, reweighting
+			for (int i = 0; i < allTrainingData.size(); i++) {
+				var holdOutData = allTrainingData.get(i);
+				try (ClassifierTrainingData otherImages = ClassifierTrainingData.merge(
+						allTrainingData.stream().filter(d -> d != holdOutData).toList()
+				)) {
+					try (var tempTrain = otherImages.getTrainData()) {
+						Mat weights = null;
+						try (var tempTrainUpdated = model.createTrainData(tempTrain.getTrainSamples(), tempTrain.getTrainResponses(), weights, false)) {
+							modelCV.train(tempTrainUpdated);
+						}
+					}
+					try (var holdOutTest = holdOutData.getTrainData()) {
+						var confusion = evaluate(
+								holdOutTest.getTrainSamples(),
+								holdOutTest.getTrainNormCatResponses(),
+								modelCV,
+								null,
+								labels);
+						matrices.add(confusion);
+						logger.info("Fold {}: Accuracy = {}, F1 = {}", i + 1, confusion.getAccuracy(), confusion.getF1());
+					}
+				}
+			}
+			metricsPane.getConfusionMatrices().setAll(matrices);
+		}
+	}
 	
 
 	private void handleHierarchyChange(PathObjectHierarchyEvent event) {
