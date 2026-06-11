@@ -1008,7 +1008,7 @@ public class PixelClassifierPane {
 								null,
 								labels);
 						matrices.add(confusion);
-						logger.info("Fold {}: Accuracy = {}, F1 = {}", i + 1, confusion.getAccuracy(), confusion.getF1());
+						logger.debug("Fold {}: Accuracy = {}, F1 = {}", i + 1, confusion.getAccuracy(), confusion.getF1());
 					}
 				}
 			}
