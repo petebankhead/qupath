@@ -93,6 +93,7 @@ import qupath.opencv.ml.FeaturePreprocessor;
 import qupath.opencv.ml.OpenCVClassifiers;
 import qupath.opencv.ml.OpenCVClassifiers.OpenCVStatModel;
 import qupath.opencv.ml.pixel.PixelClassifiers;
+import qupath.opencv.ops.ImageDataOp;
 import qupath.opencv.ops.ImageOps;
 import qupath.process.gui.commands.ml.op.MultiscaleImageDataOpBuilder;
 import qupath.process.gui.commands.ml.op.ImageDataOpBuilder;
@@ -709,94 +710,22 @@ public class PixelClassifierPane {
 			return;
 		}
 
-		// TODO: Optionally limit the number of training samples we use
-		//	     		var trainData = classifier.createTrainData(matFeatures, matTargets);
-
-		// Ensure we seed the RNG for reproducibility
-		opencv_core.setRNGSeed(advancedOptions.getRngSeed());
-
-
-		// TODO: Prevent training K nearest neighbor with a huge number of samples (very slow!)
-		var actualMaxSamples = advancedOptions.getMaxSamples();
-
-		Map<PathClass, Integer> labels;
+		var trainer = new ModelTrainer(helper, advancedOptions);
 
 		try (var trainingData = ClassifierTrainingData.merge(allTrainingData)) {
-			labels = trainingData.getLabelMap();
+			var trainedModel = trainer.train(model, trainingData);
 
-			try (var trainData = trainingData.getTrainData()) {
-				if (actualMaxSamples > 0 && trainData.getNTrainSamples() > actualMaxSamples)
-					trainData.setTrainTestSplit(actualMaxSamples, true);
-				else
-					trainData.shuffleTrainTest();
+			currentClassifier.set(trainedModel.createPixelClassifier(
+					model.supportsProbabilities() ? outputType.get() : ImageServerMetadata.ChannelType.CLASSIFICATION));
 
-				// Get the feature calculation, including any preprocessing
-				var featureCalculator = helper.getFeatureOp();
-				// Apply normalization, if we need to
-				FeaturePreprocessor preprocessor = advancedOptions.getNormalization().build(trainData.getTrainSamples(), false);
-				if (preprocessor.doesSomething()) {
-					var preprocessingOp = ImageOps.ML.preprocessor(preprocessor);
-					featureCalculator = featureCalculator.appendOps(preprocessingOp);
-				}
-				// Extract feature names
-				List<String> featureNames = featureCalculator.getChannels(imageData).stream().map(ImageChannel::getName).toList();
-
-				// Using getTrainNormCatResponses() causes confusion if classes are not represented
-				var targets = trainData.getTrainResponses();
-				var countsIndexedByLabels = createCountsIndexedByLabels(targets, labels);
-				updatePieChartCounts(labels, countsIndexedByLabels);
-				Mat weights = advancedOptions.getReweightSamples() ? createWeights(targets, countsIndexedByLabels) : null;
-
-				// Create TrainData in an appropriate format (e.g. labels or one-hot encoding)
-				var trainSamples = trainData.getTrainSamples();
-				preprocessor.apply(trainSamples, false);
-
-				Duration trainingTime;
-				try (var modelTrainData = model.createTrainData(trainSamples, targets, weights, false)) {
-					//		 logger.info("Training data: {} x {}, Target data: {} x {}", trainSamples.rows(), trainSamples.cols(), trainResponses.rows(), trainResponses.cols());
-					long startTime = System.nanoTime();
-					model.train(modelTrainData);
-					long endTime = System.nanoTime();
-					trainingTime = Duration.ofNanos(endTime - startTime);
-				}
-
-				trainingDetailsPane.update(
-						model,
-						labels,
-						trainingTime);
-				featureDetailsPane.update(
-						model,
-						featureNames);
-
-				// TODO: CHECK IF INPUT SIZE SHOULD BE DEFINED
-				int inputWidth = 512;
-				int inputHeight = 512;
-				//		 int inputWidth = featureCalculator.getInputSize().getWidth();
-				//		 int inputHeight = featureCalculator.getInputSize().getHeight();
-				var cal = helper.getResolution();
-				var channelType = ImageServerMetadata.ChannelType.CLASSIFICATION;
-				if (model.supportsProbabilities()) {
-					channelType = outputType.get();
-				}
-
-				// Channels are needed for probability output (and work for classification as well)
-				var labels2 = new TreeMap<Integer, PathClass>();
-				for (var entry : labels.entrySet()) {
-					var previous = labels2.put(entry.getValue(), entry.getKey());
-					if (previous != null)
-						logger.warn("Duplicate label found! {} matches with {} and {}, only the latter be used", entry.getValue(), previous, entry.getKey());
-				}
-				var channels = ServerTools.classificationLabelsToChannels(labels2, true);
-
-				PixelClassifierMetadata metadata = new PixelClassifierMetadata.Builder()
-						.inputResolution(cal)
-						.inputShape(inputWidth, inputHeight)
-						.setChannelType(channelType)
-						.outputChannels(channels)
-						.build();
-
-				currentClassifier.set(PixelClassifiers.createClassifier(model, featureCalculator, metadata, true));
-			}
+			updatePieChartCounts(trainedModel.labels(), trainedModel.countsIndexedByLabels());
+			trainingDetailsPane.update(
+					trainedModel.model(),
+					trainedModel.labels(),
+					trainedModel.trainingTime());
+			featureDetailsPane.update(
+					trainedModel.model(),
+					trainedModel.getFeatureNames(imageData));
 		}
 		computeCrossValidation();
 	}
@@ -984,8 +913,9 @@ public class PixelClassifierPane {
 				logger.error("No enough data to compute cross validation (size={})", firstData.size());
 				return;
 			}
-			allTrainingData = firstData.split(nSplits, new Random(128));
+			allTrainingData = firstData.split(nSplits, new Random(advancedOptions.getRngSeed()+1));
 		}
+		var trainer = new ModelTrainer(helper, advancedOptions);
 
 		try (var scope = new PointerScope()) {
 			// TODO: Incorporate pre-processing, reweighting
@@ -994,18 +924,13 @@ public class PixelClassifierPane {
 				try (ClassifierTrainingData otherImages = ClassifierTrainingData.merge(
 						allTrainingData.stream().filter(d -> d != holdOutData).toList()
 				)) {
-					try (var tempTrain = otherImages.getTrainData()) {
-						Mat weights = null;
-						try (var tempTrainUpdated = model.createTrainData(tempTrain.getTrainSamples(), tempTrain.getTrainResponses(), weights, false)) {
-							modelCV.train(tempTrainUpdated);
-						}
-					}
+					var trainedModel = trainer.train(modelCV, otherImages);
 					try (var holdOutTest = holdOutData.getTrainData()) {
 						var confusion = evaluate(
 								holdOutTest.getTrainSamples(),
 								holdOutTest.getTrainNormCatResponses(),
-								modelCV,
-								null,
+								trainedModel.model(),
+								trainedModel.featurePreprocessor(),
 								labels);
 						matrices.add(confusion);
 						logger.debug("Fold {}: Accuracy = {}, F1 = {}", i + 1, confusion.getAccuracy(), confusion.getF1());
@@ -1030,5 +955,130 @@ public class PixelClassifierPane {
 			}
 		}
 	}
+
+
+	/**
+	 * Trainer for an {@link OpenCVStatModel} to use with a {@link PixelClassifier}.
+	 * <p>
+	 * This effectively snapshots the required settings in its constructor, so that the trainer could be reused
+	 * for multiple models.
+	 * <p>
+	 * Its purpose is to simplify the process of training multiple models using identical settings but different
+	 * data, for example for cross-validation.
+	 */
+	private static class ModelTrainer {
+
+		private final PixelCalibration resolution;
+		private final int actualMaxSamples;
+		private final FeatureNormalization featureNormalization;
+		private final ImageDataOp baseFeatureCalculator;
+		private final boolean reweightSamples;
+		private final int rngSeed;
+
+		ModelTrainer(PixelClassifierTraining helper, PixelClassifierAdvancedOptions advancedOptions) {
+			this.resolution = helper.getResolution();
+			this.baseFeatureCalculator = helper.getFeatureOp();;
+			this.actualMaxSamples = advancedOptions.getMaxSamples();
+			this.reweightSamples = advancedOptions.getReweightSamples();
+			this.featureNormalization = advancedOptions.getNormalization();
+			this.rngSeed = advancedOptions.getRngSeed();
+		}
+
+		public TrainedModel train(OpenCVStatModel model, ClassifierTrainingData trainingData) {
+
+			opencv_core.setRNGSeed(rngSeed);
+
+			var labels = trainingData.getLabelMap();
+
+			try (var trainData = trainingData.getTrainData()) {
+				if (actualMaxSamples > 0 && trainData.getNTrainSamples() > actualMaxSamples)
+					trainData.setTrainTestSplit(actualMaxSamples, true);
+				else
+					trainData.shuffleTrainTest();
+
+				// Apply feature preprocessing, if we need to
+				var preprocessor = featureNormalization.build(trainData.getTrainSamples(), false);
+				ImageDataOp featureCalculator;
+				if (preprocessor.doesSomething()) {
+					var preprocessingOp = ImageOps.ML.preprocessor(preprocessor);
+					featureCalculator = baseFeatureCalculator.appendOps(preprocessingOp);
+				} else {
+					featureCalculator = baseFeatureCalculator;
+				}
+
+				// Using getTrainNormCatResponses() causes confusion if classes are not represented
+				var targets = trainData.getTrainResponses();
+				var countsIndexedByLabels = createCountsIndexedByLabels(targets, labels);
+				Mat weights = reweightSamples ? createWeights(targets, countsIndexedByLabels) : null;
+
+				// Create TrainData in an appropriate format (e.g. labels or one-hot encoding)
+				var trainSamples = trainData.getTrainSamples();
+				preprocessor.apply(trainSamples, false);
+
+				Duration trainingTime;
+				try (var modelTrainData = model.createTrainData(trainSamples, targets, weights, false)) {
+					//		 logger.info("Training data: {} x {}, Target data: {} x {}", trainSamples.rows(), trainSamples.cols(), trainResponses.rows(), trainResponses.cols());
+					long startTime = System.nanoTime();
+					model.train(modelTrainData);
+					long endTime = System.nanoTime();
+					trainingTime = Duration.ofNanos(endTime - startTime);
+
+					return new TrainedModel(
+							model,
+							featureCalculator,
+							preprocessor,
+							labels,
+							countsIndexedByLabels,
+							resolution,
+							trainingTime
+							);
+				}
+			}
+		}
+
+	}
+
+	record TrainedModel(OpenCVStatModel model,
+							 ImageDataOp featureCalculator,
+							 FeaturePreprocessor featurePreprocessor,
+							 Map<PathClass, Integer> labels,
+							 int[] countsIndexedByLabels,
+							 PixelCalibration resolution,
+							 Duration trainingTime) {
+
+		PixelClassifier createPixelClassifier(ImageServerMetadata.ChannelType outputType) {
+			return createPixelClassifier(512, 512, outputType);
+		}
+
+		PixelClassifier createPixelClassifier(int inputWidth, int inputHeight, ImageServerMetadata.ChannelType outputType) {
+			if (!model.supportsProbabilities() && !model.supportsProbabilities()) {
+				logger.warn("Output type {} not supported, will use {}", outputType, ImageServerMetadata.ChannelType.CLASSIFICATION);
+			}
+
+			// Channels are needed for probability output (and work for classification as well)
+			var labels2 = new TreeMap<Integer, PathClass>();
+			for (var entry : labels.entrySet()) {
+				var previous = labels2.put(entry.getValue(), entry.getKey());
+				if (previous != null)
+					logger.warn("Duplicate label found! {} matches with {} and {}, only the latter be used", entry.getValue(), previous, entry.getKey());
+			}
+			var channels = ServerTools.classificationLabelsToChannels(labels2, true);
+
+			PixelClassifierMetadata metadata = new PixelClassifierMetadata.Builder()
+					.inputResolution(resolution)
+					.inputShape(inputWidth, inputHeight)
+					.setChannelType(outputType)
+					.outputChannels(channels)
+					.build();
+
+			return PixelClassifiers.createClassifier(model, featureCalculator, metadata, true);
+		}
+
+		List<String> getFeatureNames(ImageData<BufferedImage> imageData) {
+			return featureCalculator.getChannels(imageData).stream().map(ImageChannel::getName).toList();
+		}
+
+	}
+
 
 }
