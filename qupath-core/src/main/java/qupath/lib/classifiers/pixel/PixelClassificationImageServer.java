@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -56,21 +56,21 @@ import java.util.stream.Collectors;
  */
 public class PixelClassificationImageServer extends AbstractTileableImageServer {
 	
-	private static Logger logger = LoggerFactory.getLogger(PixelClassificationImageServer.class);
+	private static final Logger logger = LoggerFactory.getLogger(PixelClassificationImageServer.class);
 	
-	private static int DEFAULT_TILE_SIZE = 512;
+	private static final int DEFAULT_TILE_SIZE = 512;
 	
-	private ImageData<BufferedImage> imageData;
-	private ImageServer<BufferedImage> server;
+	private final ImageData<BufferedImage> imageData;
+	private final ImageServer<BufferedImage> server;
 	
-	private String customID;
+	private final String customID;
 	
-	private PixelClassifier classifier;
-	private ColorModel colorModel;
+	private final PixelClassifier classifier;
+	private final ColorModel colorModel;
 	
-	private ImageServerMetadata originalMetadata;
+	private final ImageServerMetadata originalMetadata;
 	
-	private static Map<String, String> idCache = new HashMap<>();
+	private static final Map<String, String> idCache = new HashMap<>();
 	
 	/**
 	 *  Some classifiers cache all their tiles.

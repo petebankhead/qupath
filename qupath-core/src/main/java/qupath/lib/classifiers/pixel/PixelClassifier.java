@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -66,12 +66,12 @@ public interface PixelClassifier {
      * Practically, this means that there may be fewer pixels in the output because the classification 
      * inherently involves downsampling.
      *
-     * @param server
-     * @param request
+     * @param imageData the image to which the classifier should be applied
+     * @param request the region to which the classifier should be applied
      * @return a {@code BufferedImage} representing the pixel classifications as separate bands.
      * @throws IOException if unable to read pixels from {@code server}
      */
-    public BufferedImage applyClassification(ImageData<BufferedImage> server, RegionRequest request) throws IOException;
+    public BufferedImage applyClassification(ImageData<BufferedImage> imageData, RegionRequest request) throws IOException;
 
     /**
      * Get metadata that describes how the classifier should be called, and the kind of output it provides.
