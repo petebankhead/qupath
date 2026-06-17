@@ -28,6 +28,7 @@ import javafx.util.Subscription;
 import qupath.fx.utils.GridPaneUtils;
 import qupath.lib.color.ColorMaps;
 import qupath.lib.gui.tools.ColorToolsFX;
+import qupath.opencv.ml.ConfusionMatrix;
 
 
 class ConfusionMatrixControl<T> extends Control implements Skinnable {

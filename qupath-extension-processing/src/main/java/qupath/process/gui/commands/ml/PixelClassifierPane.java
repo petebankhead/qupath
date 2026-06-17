@@ -89,6 +89,7 @@ import qupath.lib.objects.PathObject;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyListener;
+import qupath.opencv.ml.ConfusionMatrix;
 import qupath.opencv.ml.FeaturePreprocessor;
 import qupath.opencv.ml.OpenCVClassifiers;
 import qupath.opencv.ml.OpenCVClassifiers.OpenCVStatModel;
@@ -750,7 +751,7 @@ public class PixelClassifierPane {
 	}
 
 	private static ConfusionMatrix<PathClass> evaluate(Mat samples, Mat normCatTargets, OpenCVStatModel model,
-											FeaturePreprocessor preprocessor, Map<PathClass, Integer> labels) {
+                                                                        FeaturePreprocessor preprocessor, Map<PathClass, Integer> labels) {
 		if (preprocessor != null) {
 			samples = samples.clone();
 			preprocessor.apply(samples, false);

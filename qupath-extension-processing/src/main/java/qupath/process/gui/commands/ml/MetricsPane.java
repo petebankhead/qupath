@@ -26,6 +26,7 @@ import javafx.scene.control.TreeTableRow;
 import javafx.scene.control.TreeTableView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
+import qupath.opencv.ml.ConfusionMatrix;
 
 
 class MetricsPane<T> extends Control implements Skinnable {
