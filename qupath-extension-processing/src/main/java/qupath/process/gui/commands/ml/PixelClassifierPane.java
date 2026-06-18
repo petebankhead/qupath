@@ -750,13 +750,13 @@ public class PixelClassifierPane {
 		}
 	}
 
-	private static ConfusionMatrix<PathClass> evaluate(Mat samples, Mat normCatTargets, OpenCVStatModel model,
-                                                                        FeaturePreprocessor preprocessor, Map<PathClass, Integer> labels) {
+	private static ConfusionMatrix<PathClass> evaluate(String name, Mat samples, Mat normCatTargets, OpenCVStatModel model,
+													   FeaturePreprocessor preprocessor, Map<PathClass, Integer> labels) {
 		if (preprocessor != null) {
 			samples = samples.clone();
 			preprocessor.apply(samples, false);
 		}
-		var confusion = new ConfusionMatrix<>(List.copyOf(labels.keySet()));
+		var confusion = new ConfusionMatrix<>(name, List.copyOf(labels.keySet()));
 		IntBuffer bufferGroundTruth = normCatTargets.createBuffer();
 
 		// This assumes that our labels are dense and start with 0... rather than being
@@ -928,6 +928,7 @@ public class PixelClassifierPane {
 					var trainedModel = trainer.train(modelCV, otherImages);
 					try (var holdOutTest = holdOutData.getTrainData()) {
 						var confusion = evaluate(
+								"Fold " + (i+1),
 								holdOutTest.getTrainSamples(),
 								holdOutTest.getTrainNormCatResponses(),
 								trainedModel.model(),

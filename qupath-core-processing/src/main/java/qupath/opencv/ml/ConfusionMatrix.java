@@ -16,21 +16,27 @@ public class ConfusionMatrix<T> {
 
     private final Map<T, Map<T, AtomicInteger>> matrix;
     private final Set<T> labels = new LinkedHashSet<>();
+    private final String name;
     private int count;
 
     /**
      * Create a confusion matrix without specifying labels.
+     * @param name a name to identify this confusion matrix (must not be null)
      */
-    public ConfusionMatrix() {
-        this(List.of());
+    public ConfusionMatrix(String name) {
+        this(name, List.of());
     }
 
     /**
      * Create a confusion matrix with the specified labels.
      * Using this constructor makes it easy to define the order of the labels.
-     * @param labels the labels for target and predicted values
+     * @param name a name to identify the confusion matrix (must not be null)
+     * @param labels the labels for target and predicted values (must not be null)
      */
-    public ConfusionMatrix(List<T> labels) {
+    public ConfusionMatrix(String name, List<T> labels) {
+        Objects.requireNonNull(name, "Name must not be null");
+        Objects.requireNonNull(labels, "Labels must not be null");
+        this.name = name;
         this.matrix = new LinkedHashMap<>();
         this.labels.addAll(labels);
         for (var row : labels) {
@@ -41,13 +47,22 @@ public class ConfusionMatrix<T> {
     }
 
     /**
+     * Get the name property of this confusion matrix.
+     * @return the name, if available
+     */
+    public String getName() {
+        return name;
+    }
+
+    /**
      * Add the contents of multiple confusion matrices.
+     * @param name name to identify the new confusion matrix (must not be null)
      * @param matrices the matrices to add
      * @return a new confusion matrix, where each element is the sum of elements from the input
      * @param <T> the generic parameter for labels; this should match for all confusion matrices
      */
-    public static <T> ConfusionMatrix<T> sum(Collection<? extends ConfusionMatrix<T>> matrices) {
-        var sum = new ConfusionMatrix<T>();
+    public static <T> ConfusionMatrix<T> sum(String name, Collection<? extends ConfusionMatrix<T>> matrices) {
+        var sum = new ConfusionMatrix<T>(name);
         for (var mat : matrices) {
             var labels = mat.getLabels();
             for (var row : labels) {

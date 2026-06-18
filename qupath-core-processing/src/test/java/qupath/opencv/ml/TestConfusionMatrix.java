@@ -37,7 +37,7 @@ public class TestConfusionMatrix {
     """;
 
     private ConfusionMatrix<String> createConfusionMatrix3x3() {
-        var matrix = new ConfusionMatrix<String>();
+        var matrix = new ConfusionMatrix<String>("Test Matrix");
         matrix.accumulate("Cat", "Cat", 19);
         matrix.accumulate("Cat", "Dog", 21);
         matrix.accumulate("Cat", "Elephant", 16);

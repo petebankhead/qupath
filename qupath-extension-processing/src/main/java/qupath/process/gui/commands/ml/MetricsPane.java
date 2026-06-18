@@ -168,14 +168,16 @@ class MetricsPane<T> extends Control implements Skinnable {
             }
 
             // TODO: Combine confusion matrices!
-            var confusionMaxtrixSum = ConfusionMatrix.sum(list);
+            var confusionMaxtrixSum = ConfusionMatrix.sum("Merged", list);
             confusionMatrixControl.setConfusionMatrix(confusionMaxtrixSum);
             List<TreeItem<TableItem.NumberItem>> newItems = new ArrayList<>();
 
             var labels = confusionMaxtrixSum.getLabels();
 
             List<TreeItem<TableItem.NumberItem>> mergedItems = new ArrayList<>();
-            mergedItems.add(createItem("Average", metricsForMatrix(confusionMaxtrixSum)));
+            if (labels.size() > 2) {
+                mergedItems.add(createItem("Average", metricsForMatrix(confusionMaxtrixSum)));
+            }
             for (var label : labels) {
                 mergedItems.add(
                         createItem(Objects.toString(label), metricsForLabel(confusionMaxtrixSum, label)));
@@ -183,17 +185,17 @@ class MetricsPane<T> extends Control implements Skinnable {
             rootMerged.getChildren().setAll(mergedItems);
 
             List<TreeItem<TableItem.NumberItem>> allItems = new ArrayList<>();
-            int i = 0;
             for (var matrix: list) {
-                i++;
                 List<TreeItem<TableItem.NumberItem>> byLabel = new ArrayList<>();
-                byLabel.add(createItem("Average", metricsForMatrix(matrix)));
+                String name = matrix.getName();
+                if (labels.size() > 2) {
+                    byLabel.add(createItem("Average", metricsForMatrix(matrix)));
+                }
                 for (var label : labels) {
                     byLabel.add(
                             createItem(Objects.toString(label), metricsForLabel(matrix, label)));
                 }
-                allItems.add(createItem("Fold " + i, byLabel));
-                i++;
+                allItems.add(createItem(name, byLabel));
             }
             rootAll.getChildren().setAll(allItems);
         }
