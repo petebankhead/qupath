@@ -179,7 +179,7 @@ class ConfusionMatrixControl<T> extends Control implements Skinnable {
                 int c = 2;
                 for (var col : labels) {
                     var label = createGridLabel(matrix, row, col);
-                    pane.add(label, r, c);
+                    pane.add(label, c, r);
                     c++;
                 }
                 r++;

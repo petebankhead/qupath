@@ -60,12 +60,14 @@ import javafx.stage.WindowEvent;
 import javafx.util.Subscription;
 import org.bytedeco.javacpp.PointerScope;
 import org.bytedeco.javacpp.indexer.FloatIndexer;
+import org.bytedeco.javacpp.indexer.IntIndexer;
 import org.bytedeco.opencv.global.opencv_core;
 import org.bytedeco.opencv.opencv_core.Mat;
 import org.bytedeco.opencv.opencv_ml.ANN_MLP;
 import org.bytedeco.opencv.opencv_ml.KNearest;
 import org.bytedeco.opencv.opencv_ml.LogisticRegression;
 import org.bytedeco.opencv.opencv_ml.RTrees;
+import org.bytedeco.opencv.opencv_ml.TrainData;
 import org.controlsfx.glyphfont.FontAwesome;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -742,7 +744,7 @@ public class PixelClassifierPane {
 		try {
 			var trainingImages = trainingImageManager.getTrainingImageData();
 			if (trainingImages.size() > 1)
-				logger.info("Creating training data from {} images", trainingImages.size());
+				logger.debug("Creating training data from {} images", trainingImages.size());
 			return helper.createTrainingData(trainingImages);
 		} catch (Exception e) {
 			logger.error("Error when updating training data", e);
@@ -750,7 +752,18 @@ public class PixelClassifierPane {
 		}
 	}
 
-	private static ConfusionMatrix<PathClass> evaluate(String name, Mat samples, Mat normCatTargets, OpenCVStatModel model,
+	/**
+	 * Evaluate the predictions of a classifier.
+	 * @param name name for confusion matrix
+	 * @param samples the samples to use as input to the model
+	 * @param normCatTargets the normalized categorical targets
+	 * @param classLabels the class labels associated with the targets; see {@link TrainData#getTrainNormCatResponses()}
+	 * @param model the model to use for prediction
+	 * @param preprocessor the preprocessor to apply to the samples
+	 * @param labels the QuPath-friendly mapping of classes to integer labels
+	 * @return
+	 */
+	private static ConfusionMatrix<PathClass> evaluate(String name, Mat samples, Mat normCatTargets, Mat classLabels, OpenCVStatModel model,
 													   FeaturePreprocessor preprocessor, Map<PathClass, Integer> labels) {
 		if (preprocessor != null) {
 			samples = samples.clone();
@@ -758,6 +771,7 @@ public class PixelClassifierPane {
 		}
 		var confusion = new ConfusionMatrix<>(name, List.copyOf(labels.keySet()));
 		IntBuffer bufferGroundTruth = normCatTargets.createBuffer();
+		IntBuffer bufferClassList = classLabels.createBuffer();
 
 		// This assumes that our labels are dense and start with 0... rather than being
 		// all other the place, and potentially negative
@@ -772,8 +786,9 @@ public class PixelClassifierPane {
 		IntBuffer bufferPrediction = testResults.createBuffer();
 		int nTest = testResults.rows();
 		for (int i = 0; i < nTest; i++) {
+			int targetClassInd = bufferClassList.get(bufferGroundTruth.get(i));
 			confusion.accumulate(
-					pathClasses[bufferGroundTruth.get(i)],
+					pathClasses[targetClassInd],
 					pathClasses[bufferPrediction.get(i)]
 			);
 		}
@@ -931,6 +946,7 @@ public class PixelClassifierPane {
 								"Fold " + (i+1),
 								holdOutTest.getTrainSamples(),
 								holdOutTest.getTrainNormCatResponses(),
+								holdOutTest.getClassLabels(),
 								trainedModel.model(),
 								trainedModel.featurePreprocessor(),
 								labels);
@@ -1020,7 +1036,8 @@ public class PixelClassifierPane {
 				preprocessor.apply(trainSamples, false);
 
 				Duration trainingTime;
-				try (var modelTrainData = model.createTrainData(trainSamples, targets, weights, false)) {
+				int nLabels = labels.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+				try (var modelTrainData = model.createTrainData(trainSamples, targets, nLabels, weights, false)) {
 					//		 logger.info("Training data: {} x {}, Target data: {} x {}", trainSamples.rows(), trainSamples.cols(), trainResponses.rows(), trainResponses.cols());
 					long startTime = System.nanoTime();
 					model.train(modelTrainData);

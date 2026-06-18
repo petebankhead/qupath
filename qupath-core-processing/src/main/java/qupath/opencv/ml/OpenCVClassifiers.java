@@ -230,17 +230,18 @@ public class OpenCVClassifiers {
 		 * Create training data in the format required by this classifier.
 		 * @param samples
 		 * @param targets
+		 * @param nLabels total number of labels, which are 0-nLabels-1
 		 * @param weights optional weights
 		 * @param doMulticlass 
 		 * @return
 		 * @see #train(TrainData)
 		 */
-		public abstract TrainData createTrainData(Mat samples, Mat targets, Mat weights, boolean doMulticlass);
+		public abstract TrainData createTrainData(Mat samples, Mat targets, int nLabels, Mat weights, boolean doMulticlass);
 		
 		/**
 		 * Train the classifier using data in an appropriate format.
 		 * @param trainData
-		 * @see #createTrainData(Mat, Mat, Mat, boolean)
+		 * @see #createTrainData(Mat, Mat, int, Mat, boolean)
 		 */
 		public abstract void train(TrainData trainData);
 
@@ -361,7 +362,7 @@ public class OpenCVClassifiers {
 		}
 		
 		@Override
-		public TrainData createTrainData(Mat samples, Mat targets, Mat weights, boolean doMulticlass) {
+		public TrainData createTrainData(Mat samples, Mat targets, int nLabels, Mat weights, boolean doMulticlass) {
 			if (doMulticlass && !supportsMulticlass())
 				logger.warn("Multiclass classification requested, but not supported");
 			if (useUMat()) {
@@ -372,6 +373,7 @@ public class OpenCVClassifiers {
 				UMat uWeights = weights.getUMat(opencv_core.ACCESS_READ);
 				return TrainData.create(uSamples, opencv_ml.ROW_SAMPLE, uTargets, null, null, uWeights, null);				
 			}
+
 			if (weights == null || weights.empty())
 				return TrainData.create(samples, opencv_ml.ROW_SAMPLE, targets);
 			else
@@ -404,7 +406,6 @@ public class OpenCVClassifiers {
 			var statModel = getStatModel();
 			opencv_core.setRNGSeed(1012);
 			updateModel(statModel, getParameterList(), trainData);
-//			statModel.train(trainData);
 			statModel.train(trainData, getTrainFlags());
 		}
 		
@@ -818,27 +819,30 @@ public class OpenCVClassifiers {
 			// If we want probabilities, we can try our best using the votes
 			var votes = new Mat();
 			model.getVotes(samples, votes, RTrees.PREDICT_AUTO);
-			
-			int nClasses = votes.cols();
+
+			int nVoteColumns = votes.cols();
 			int nSamples = samples.rows();
 			IntIndexer indexer = votes.createIndexer();
-			
+
+			int[] orderedClasses = new int[nVoteColumns];
+			for (int c = 0; c < nVoteColumns; c++) {
+				orderedClasses[c] = indexer.get(0, c);
+			}
+
 			// Preallocate output
-			probabilities.create(nSamples, nClasses, opencv_core.CV_32FC1);
+			int maxClassInd = Arrays.stream(orderedClasses).max().orElse(nVoteColumns-1) + 1;
+			probabilities.create(nSamples, maxClassInd, opencv_core.CV_32FC1);
+			probabilities.put(Scalar.ZERO);
 			FloatIndexer idxProbabilities = probabilities.createIndexer();
 			results.create(nSamples, 1, opencv_core.CV_32SC1);
 			IntIndexer idxResults = results.createIndexer();
-			
-			int[] orderedClasses = new int[nClasses];
-			for (int c = 0; c < nClasses; c++) {
-				orderedClasses[c] = indexer.get(0, c);
-			}
+
 			long row = 1;
 			for (var i = 0; i < nSamples; i++) {
 				double sum = 0;
 				int maxCount = -1;
 				int maxInd = -1;
-				for (long c = 0; c < nClasses; c++) {
+				for (long c = 0; c < nVoteColumns; c++) {
 					int count = indexer.get(row, c);
 					if (count > maxCount) {
 						maxCount = count;
@@ -847,7 +851,7 @@ public class OpenCVClassifiers {
 					sum += count;
 				}
 				// Update probability estimates
-				for (int c = 0; c < nClasses; c++) {
+				for (int c = 0; c < nVoteColumns; c++) {
 					int count = indexer.get(row, c);
 					idxProbabilities.put(i, orderedClasses[c], (float)(count / sum));
 				}
@@ -1058,9 +1062,9 @@ public class OpenCVClassifiers {
 		}
 		
 		@Override
-		public TrainData createTrainData(Mat samples, Mat targets, Mat weights, boolean doMulticlass) {
+		public TrainData createTrainData(Mat samples, Mat targets, int nLabels, Mat weights, boolean doMulticlass) {
 			targets.convertTo(targets, opencv_core.CV_32F);
-			return super.createTrainData(samples, targets, weights, doMulticlass);
+			return super.createTrainData(samples, targets, nLabels, weights, doMulticlass);
 		}
 
 		@Override
@@ -1416,7 +1420,7 @@ public class OpenCVClassifiers {
 		}
 		
 		@Override
-		public TrainData createTrainData(Mat samples, Mat targets, Mat weights, boolean doMulticlass) {
+		public TrainData createTrainData(Mat samples, Mat targets, int nLabels, Mat weights, boolean doMulticlass) {
 			if (doMulticlass) {
 				var indexer = targets.createIndexer();
 				var targets2 = new Mat(targets.rows(), targets.cols(), opencv_core.CV_32FC1, Scalar.all(-1.0));
@@ -1439,8 +1443,7 @@ public class OpenCVClassifiers {
 				IntBuffer buffer = OpenCVTools.ensureContinuous(targets, false).createBuffer();
 				int[] vals = new int[targets.rows()];
 				buffer.get(vals);
-				int max = Arrays.stream(vals).max().orElse(0) + 1;
-				var targets2 = new Mat(targets.rows(), max, opencv_core.CV_32FC1, Scalar.all(-1.0));
+				var targets2 = new Mat(targets.rows(), nLabels + 1, opencv_core.CV_32FC1, Scalar.all(-1.0));
 				FloatIndexer idxTargets = targets2.createIndexer();
 				int row = 0;
 				for (var v : vals) {
@@ -1451,7 +1454,7 @@ public class OpenCVClassifiers {
 				targets2.close();
 			}
 			
-			return super.createTrainData(samples, targets, weights, doMulticlass);
+			return super.createTrainData(samples, targets, nLabels, weights, doMulticlass);
 		}
 		
 		

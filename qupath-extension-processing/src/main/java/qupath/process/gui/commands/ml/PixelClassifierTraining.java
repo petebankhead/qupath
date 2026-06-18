@@ -142,7 +142,7 @@ public class PixelClassifierTraining {
         if (imageDataCollection.isEmpty()) {
             return List.of();
         }
-        
+
         Map<PathClass, Integer> labels = new LinkedHashMap<>();
         
         boolean hasLockedAnnotations = false;
