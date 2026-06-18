@@ -129,7 +129,7 @@ public class PixelClassifierPane {
 	private final TrainingDetailsPane trainingDetailsPane = new TrainingDetailsPane();
 	private final FeatureDetailsPane featureDetailsPane = new FeatureDetailsPane();
 	private final JsonDisplay<PixelClassifier> jsonDisplay = new JsonDisplay<>();
-	private final MetricsPane<PathClass> metricsPane = new MetricsPane<>();
+	private final MetricsBrowser<PathClass> metricsBrowser = new MetricsBrowser<>();
 
 	private final BorderPane paneMain = new BorderPane();
 	private Pane paneDetails;
@@ -298,7 +298,7 @@ public class PixelClassifierPane {
 				new Tab("Features", featureDetailsPane)
 		);
 		tabPane.getTabs().add(
-				new Tab("Metrics", metricsPane)
+				new Tab("Metrics", metricsBrowser)
 		);
 		jsonDisplay.itemProperty().bind(currentClassifier);
 		tabPane.getTabs().add(
@@ -939,7 +939,9 @@ public class PixelClassifierPane {
 					}
 				}
 			}
-			metricsPane.getConfusionMatrices().setAll(matrices);
+			if (matrices.size() > 1)
+				matrices.addFirst(ConfusionMatrix.sum("Merged", matrices));
+			metricsBrowser.getConfusionMatrices().setAll(matrices);
 		}
 	}
 	

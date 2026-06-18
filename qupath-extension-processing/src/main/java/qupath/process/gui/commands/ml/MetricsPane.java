@@ -3,19 +3,12 @@ package qupath.process.gui.commands.ml;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import javafx.beans.binding.Bindings;
-import javafx.beans.property.BooleanProperty;
-import javafx.beans.property.SimpleBooleanProperty;
-import javafx.collections.FXCollections;
-import javafx.collections.ListChangeListener;
-import javafx.collections.ObservableList;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.Control;
-import javafx.scene.control.Pagination;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Skin;
 import javafx.scene.control.Skinnable;
@@ -26,37 +19,27 @@ import javafx.scene.control.TreeTableRow;
 import javafx.scene.control.TreeTableView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
+import javafx.util.Subscription;
 import qupath.opencv.ml.ConfusionMatrix;
 
 
 class MetricsPane<T> extends Control implements Skinnable {
 
     /**
-     * Observable list of all confusion matrices to display.
-     * These are typically from different cross-validation folds.
+     * Confusion matrix to display.
      */
-    private final ObservableList<ConfusionMatrix<T>> confusionMatrices = FXCollections.observableArrayList();
+    private final ObjectProperty<ConfusionMatrix<T>> confusionMatrix = new SimpleObjectProperty<>();
 
-    /**
-     * Boolean property to show merged results by summing the confusion matrices only.
-     * If false, the table shows results for each individual confusion matrix.
-     */
-    private final BooleanProperty showMergedOnly = new SimpleBooleanProperty(true);
-
-    public ObservableList<ConfusionMatrix<T>> getConfusionMatrices() {
-        return confusionMatrices;
+    public ObjectProperty<ConfusionMatrix<T>> confusionMatrixProperty() {
+        return confusionMatrix;
     }
 
-    public BooleanProperty showMergedOnlyProperty() {
-        return showMergedOnly;
+    public ConfusionMatrix<T> getConfusionMatrix() {
+        return confusionMatrixProperty().get();
     }
 
-    public boolean getShowMergedOnly() {
-        return showMergedOnlyProperty().get();
-    }
-
-    public void setShowMergedOnly(boolean showOnly) {
-        showMergedOnlyProperty().set(showOnly);
+    public void setConfusionMatrix(ConfusionMatrix<T> matrix) {
+        confusionMatrixProperty().set(matrix);
     }
 
     @Override
@@ -72,14 +55,10 @@ class MetricsPane<T> extends Control implements Skinnable {
         private final BorderPane borderPane = new BorderPane(pane);
         private final ConfusionMatrixControl<T> confusionMatrixControl = new ConfusionMatrixControl<>();
         private final TreeTableView<TableItem.NumberItem> tableMetrics = new TreeTableView<>();
-        private final CheckBox cbMerged = new CheckBox();
 
-        private final Pagination pagination = new Pagination();
+        private final TreeItem<TableItem.NumberItem> root = new TreeItem<>(TableItem.NumberItem.createEmpty("ROOT"));
 
-        private final TreeItem<TableItem.NumberItem> rootMerged = new TreeItem<>(TableItem.NumberItem.createEmpty("ROOT"));
-        private final TreeItem<TableItem.NumberItem> rootAll = new TreeItem<>(TableItem.NumberItem.createEmpty("ROOT"));
-
-        private final ListChangeListener<ConfusionMatrix<T>> listChangeListener = this::handleMatricesChange;
+        private Subscription subscription;
 
         private ConfusionMatrixSkin(MetricsPane<T> skinnable) {
             this.skinnable = skinnable;
@@ -92,20 +71,13 @@ class MetricsPane<T> extends Control implements Skinnable {
             confusionMatrixControl.setMinHeight(Control.USE_COMPUTED_SIZE);
             confusionMatrixControl.setMaxHeight(Double.MAX_VALUE);
 
-            var paneTable = new BorderPane(tableMetrics);
-            cbMerged.setText("Show merged results");
-            cbMerged.setMaxWidth(Double.MAX_VALUE);
-            cbMerged.setAlignment(Pos.CENTER);
-            cbMerged.selectedProperty().bindBidirectional(skinnable.showMergedOnlyProperty());
-            paneTable.setBottom(cbMerged);
-
             var scrollConfusion = new ScrollPane(confusionMatrixControl);
             scrollConfusion.setFitToWidth(true);
             scrollConfusion.setFitToHeight(true);
             scrollConfusion.setMaxHeight(Double.MAX_VALUE);
 
             var splitPane = new SplitPane(
-                    paneTable,
+                    tableMetrics,
                     scrollConfusion
             );
             splitPane.setOrientation(Orientation.VERTICAL);
@@ -126,9 +98,7 @@ class MetricsPane<T> extends Control implements Skinnable {
             tableMetrics.setColumnResizePolicy(TreeTableView.CONSTRAINED_RESIZE_POLICY_LAST_COLUMN);
             tableMetrics.setRowFactory(t -> new Row());
 
-            tableMetrics.rootProperty().bind(Bindings.when(skinnable.showMergedOnly)
-                    .then(rootMerged)
-                    .otherwise(rootAll));
+            tableMetrics.setRoot(root);
             tableMetrics.setShowRoot(false);
         }
 
@@ -145,59 +115,38 @@ class MetricsPane<T> extends Control implements Skinnable {
         @Override
         public void install() {
             Skin.super.install();
-            skinnable.getConfusionMatrices().addListener(listChangeListener);
-            updateList();
+            subscription = skinnable.confusionMatrixProperty().subscribe(this::updateMatrix);
+            updateMatrix();
         }
 
         @Override
         public void dispose() {
-            skinnable.getConfusionMatrices().removeListener(listChangeListener);
+            if (subscription != null)
+                subscription.unsubscribe();
         }
 
-        private void handleMatricesChange(ListChangeListener.Change<? extends ConfusionMatrix<T>> change) {
-            updateList();
-        }
-
-        private void updateList() {
-            var list = skinnable.getConfusionMatrices();
-            if (list.isEmpty()) {
+        private void updateMatrix() {
+            var matrix = skinnable.getConfusionMatrix();
+            if (matrix == null) {
                 confusionMatrixControl.setConfusionMatrix(null);
-                rootAll.getChildren().clear();
-                rootMerged.getChildren().clear();
+                root.getChildren().clear();
                 return;
             }
 
-            // TODO: Combine confusion matrices!
-            var confusionMaxtrixSum = ConfusionMatrix.sum("Merged", list);
-            confusionMatrixControl.setConfusionMatrix(confusionMaxtrixSum);
+            confusionMatrixControl.setConfusionMatrix(matrix);
             List<TreeItem<TableItem.NumberItem>> newItems = new ArrayList<>();
 
-            var labels = confusionMaxtrixSum.getLabels();
+            var labels = matrix.getLabels();
 
-            List<TreeItem<TableItem.NumberItem>> mergedItems = new ArrayList<>();
+            List<TreeItem<TableItem.NumberItem>> items = new ArrayList<>();
             if (labels.size() > 2) {
-                mergedItems.add(createItem("Average", metricsForMatrix(confusionMaxtrixSum)));
+                items.add(createItem("Average", metricsForMatrix(matrix)));
             }
             for (var label : labels) {
-                mergedItems.add(
-                        createItem(Objects.toString(label), metricsForLabel(confusionMaxtrixSum, label)));
+                items.add(
+                        createItem(Objects.toString(label), metricsForLabel(matrix, label)));
             }
-            rootMerged.getChildren().setAll(mergedItems);
-
-            List<TreeItem<TableItem.NumberItem>> allItems = new ArrayList<>();
-            for (var matrix: list) {
-                List<TreeItem<TableItem.NumberItem>> byLabel = new ArrayList<>();
-                String name = matrix.getName();
-                if (labels.size() > 2) {
-                    byLabel.add(createItem("Average", metricsForMatrix(matrix)));
-                }
-                for (var label : labels) {
-                    byLabel.add(
-                            createItem(Objects.toString(label), metricsForLabel(matrix, label)));
-                }
-                allItems.add(createItem(name, byLabel));
-            }
-            rootAll.getChildren().setAll(allItems);
+            root.getChildren().setAll(items);
         }
 
         private static TreeItem<TableItem.NumberItem> createItem(String title, List<TreeItem<TableItem.NumberItem>> children) {
