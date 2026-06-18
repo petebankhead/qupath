@@ -940,7 +940,7 @@ public class PixelClassifierPane {
 				}
 			}
 			if (matrices.size() > 1)
-				matrices.addFirst(ConfusionMatrix.sum("Merged", matrices));
+				matrices.addFirst(ConfusionMatrix.sum("All (" + matrices.size() + " merged)", matrices));
 			metricsBrowser.getConfusionMatrices().setAll(matrices);
 		}
 	}

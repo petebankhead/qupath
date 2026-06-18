@@ -5,6 +5,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.scene.control.Button;
+import javafx.scene.control.SelectionModel;
 import javafx.scene.control.SingleSelectionModel;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.Tooltip;
@@ -49,15 +50,19 @@ public class MetricsBrowser<T> extends BorderPane {
         titled.textProperty().bind(selectionModel.selectedItemProperty().map(ConfusionMatrix::getName).orElse(""));
         setCenter(titled);
         addEventHandler(KeyEvent.KEY_RELEASED, this::handleKeyEvent);
+        titled.addEventFilter(KeyEvent.KEY_RELEASED, this::handleKeyEvent);
     }
 
     private void handleKeyEvent(KeyEvent event) {
         if (event.isConsumed())
             return;
-        if (event.getCode() == KeyCode.RIGHT)
+        if (event.getCode() == KeyCode.RIGHT) {
             increment();
-        else if (event.getCode() == KeyCode.LEFT)
+            event.consume();
+        } else if (event.getCode() == KeyCode.LEFT) {
             decrement();
+            event.consume();
+        }
     }
 
     private void initButtons() {
@@ -77,10 +82,13 @@ public class MetricsBrowser<T> extends BorderPane {
     }
 
     private void handleListChange(ListChangeListener.Change<? extends ConfusionMatrix<T>> change) {
+        int currentSelection = selectionModel.getSelectedIndex();
         if (confusionMatrices.isEmpty())
             selectionModel.clearSelection();
-        else
+        else if (currentSelection < 0 || currentSelection >= confusionMatrices.size())
             selectionModel.clearAndSelect(0);
+        else
+            selectionModel.clearAndSelect(currentSelection);
     }
 
     private void increment() {
