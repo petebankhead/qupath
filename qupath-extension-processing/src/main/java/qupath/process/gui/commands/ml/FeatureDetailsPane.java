@@ -3,7 +3,9 @@ package qupath.process.gui.commands.ml;
 import java.util.List;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.DoubleProperty;
+import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleDoubleProperty;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
@@ -20,12 +22,9 @@ import javafx.scene.control.Skinnable;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
-import javafx.scene.layout.Background;
-import javafx.scene.layout.BackgroundFill;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.CornerRadii;
 import javafx.scene.paint.Color;
-import qupath.lib.common.GeneralTools;
 import qupath.lib.gui.tools.ColorToolsFX;
 import qupath.opencv.ml.OpenCVClassifiers;
 import qupath.opencv.ml.OpenCVClassifiers.RTreesClassifier.VariableImportance;
@@ -63,6 +62,8 @@ class FeatureDetailsPane extends Control implements Skinnable {
 
         private final FeatureDetailsPane skinnable;
 
+        private final ObjectProperty<Color> fill = new SimpleObjectProperty<>(ColorToolsFX.getColorWithOpacity(Color.LIGHTGREEN, 0.5));
+
         private final ObservableList<VariableImportance> baseList = FXCollections.observableArrayList();
         private final SortedList<VariableImportance> sortedList = new SortedList<>(baseList);
         private final TableView<VariableImportance> table = new TableView<>(sortedList);
@@ -82,7 +83,7 @@ class FeatureDetailsPane extends Control implements Skinnable {
 
             columnImportance.setMinWidth(100);
             columnImportance.setMaxWidth(100);
-            columnImportance.setCellFactory(v -> new ImportanceCell());
+            columnImportance.setCellFactory(this::createCell);
 
             sortedList.comparatorProperty().bind(table.comparatorProperty());
 
@@ -95,6 +96,12 @@ class FeatureDetailsPane extends Control implements Skinnable {
             label.setMaxWidth(Double.MAX_VALUE);
             label.setAlignment(Pos.CENTER);
             label.setPadding(new Insets(5));
+        }
+
+        private TableCell<VariableImportance, Number> createCell(TableColumn<VariableImportance, Number> column) {
+            var cell = new PixelClassifierUI.NumberTableCell<VariableImportance>(5);
+            PixelClassifierUI.bindCellFillBackground(cell, maxImportance, fill);
+            return cell;
         }
 
         private ObservableValue<String> extractName(TableColumn.CellDataFeatures<VariableImportance, String> features) {
@@ -144,53 +151,6 @@ class FeatureDetailsPane extends Control implements Skinnable {
                 pane.setBottom(label);
             }
             this.maxImportance.set(maxImportance);
-        }
-
-        /**
-         * Cell to show importance with a colored bar in the background as a visual cue.
-         */
-        private class ImportanceCell extends TableCell<VariableImportance, Number> {
-
-            private static final Color fill = ColorToolsFX.getColorWithOpacity(Color.LIGHTGREEN, 0.5);
-            private static final CornerRadii cornerRadii = new CornerRadii(0, 2, 2, 0, false);
-
-            ImportanceCell() {
-                super();
-                backgroundProperty().bind(
-                        Bindings.createObjectBinding(this::computeBackground,
-                            maxImportance, itemProperty(), widthProperty()));
-            }
-
-            private Background computeBackground() {
-                var val = getItem();
-                if (val == null)
-                    return null;
-                double importance = val.doubleValue();
-                if (!Double.isFinite(val.doubleValue()) || importance <= 0)
-                    return null;
-                double pad = 4.0;
-                double width = getWidth() - pad * 2;
-                double length = val.doubleValue() / maxImportance.get() * width;
-                return new Background(
-                        new BackgroundFill(
-                                fill,
-                                cornerRadii,
-                                new Insets(pad, width - length, pad, pad))
-                );
-            }
-
-            @Override
-            protected void updateItem(Number item, boolean empty) {
-                super.updateItem(item, empty);
-                if (item == null || empty || !Double.isFinite(item.doubleValue())) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-                double val = item.doubleValue();
-                setText(GeneralTools.formatNumber(val, 5));
-            }
-
         }
 
     }

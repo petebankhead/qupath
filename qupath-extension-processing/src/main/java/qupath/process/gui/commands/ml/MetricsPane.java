@@ -14,12 +14,15 @@ import javafx.scene.control.Skin;
 import javafx.scene.control.Skinnable;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TreeItem;
+import javafx.scene.control.TreeTableCell;
 import javafx.scene.control.TreeTableColumn;
 import javafx.scene.control.TreeTableRow;
 import javafx.scene.control.TreeTableView;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
+import javafx.scene.paint.Color;
 import javafx.util.Subscription;
+import qupath.lib.gui.tools.ColorToolsFX;
 import qupath.opencv.ml.ConfusionMatrix;
 
 
@@ -91,6 +94,7 @@ class MetricsPane<T> extends Control implements Skinnable {
 
             var colValue = new TreeTableColumn<TableItem.NumberItem, Number>("Value");
             colValue.setCellValueFactory(v -> v.getValue().getValue().valueProperty());
+            colValue.setCellFactory(this::createCell);
 
             tableMetrics.getColumns().add(colName);
             tableMetrics.getColumns().add(colValue);
@@ -100,6 +104,15 @@ class MetricsPane<T> extends Control implements Skinnable {
 
             tableMetrics.setRoot(root);
             tableMetrics.setShowRoot(false);
+        }
+
+
+        private TreeTableCell<TableItem.NumberItem, Number> createCell(TreeTableColumn<TableItem.NumberItem, Number> column) {
+            var cell = new PixelClassifierUI.NumberTreeTableCell<TableItem.NumberItem>(4);
+            PixelClassifierUI.bindCellFillBackground(cell,
+                    1.0,
+                   ColorToolsFX.getColorWithOpacity(Color.ROYALBLUE, 0.1));
+            return cell;
         }
 
         @Override

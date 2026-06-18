@@ -231,7 +231,7 @@ class ConfusionMatrixControl<T> extends Control implements Skinnable {
             var label = new Label(Integer.toString(count));
             label.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
             label.setAlignment(Pos.CENTER);
-            var bgColorBinding = createBackgroundColorBinding(matrix.getNormalizedCount(row, col));
+            var bgColorBinding = createBackgroundColorBinding((double)matrix.getCount(row, col) / matrix.getMax());
             label.backgroundProperty().bind(bgColorBinding.map(ConfusionMatrixSkin::colorToBackground));
             label.textFillProperty().bind(bgColorBinding.map(ConfusionMatrixSkin::backgroundColorToTextFill));
             GridPane.setFillWidth(label, Boolean.TRUE);

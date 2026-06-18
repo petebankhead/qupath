@@ -115,15 +115,32 @@ public class ConfusionMatrix<T> {
     }
 
     /**
-     * Get the normalized count for a specified row and column.
-     * The normalization is calculated by division by the row sum.
-     * @param row the row label (true)
-     * @param col the column label (target)
+     * Get the maximum entry within the matrix.
      * @return
      */
-    public synchronized double getNormalizedCount(T row, T col) {
-        return (double)getCount(row, col) / getRowSum(row);
+    public synchronized int getMax() {
+         int max = 0;
+         for (var row : getLabels()) {
+             for (var col : getLabels()) {
+                 var val = getCount(row, col);
+                 if (val > max)
+                     max = val;
+             }
+         }
+         return max;
     }
+
+
+//    /**
+//     * Get the normalized count for a specified row and column.
+//     * The normalization is calculated by division by the row sum.
+//     * @param row the row label (true)
+//     * @param col the column label (target)
+//     * @return
+//     */
+//    public synchronized double getNormalizedCount(T row, T col) {
+//        return (double)getCount(row, col) / getRowSum(row);
+//    }
 
     /**
      * Get the sum of confusion matrix entries for a full row.
