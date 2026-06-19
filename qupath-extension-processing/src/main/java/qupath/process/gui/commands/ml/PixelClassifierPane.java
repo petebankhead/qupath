@@ -63,6 +63,7 @@ import org.bytedeco.javacpp.indexer.FloatIndexer;
 import org.bytedeco.javacpp.indexer.IntIndexer;
 import org.bytedeco.opencv.global.opencv_core;
 import org.bytedeco.opencv.opencv_core.Mat;
+import org.bytedeco.opencv.opencv_core.TermCriteria;
 import org.bytedeco.opencv.opencv_ml.ANN_MLP;
 import org.bytedeco.opencv.opencv_ml.KNearest;
 import org.bytedeco.opencv.opencv_ml.LogisticRegression;
@@ -296,8 +297,20 @@ public class PixelClassifierPane {
 		tabPane.getTabs().add(
 				new Tab("Classifier", trainingDetailsPane)
 		);
+		var paneImportance = new BorderPane(featureDetailsPane);
+		var btnImportance = new Button();
+		btnImportance.textProperty().bind(Bindings.createStringBinding(() -> {
+			if (featureDetailsPane.hasImportanceProperty().get())
+				return "Update feature importance";
+			else
+				return "Calculate feature importance";
+		}, featureDetailsPane.hasImportanceProperty()));
+		btnImportance.setMaxWidth(Double.MAX_VALUE);
+		btnImportance.disableProperty().bind(qupath.imageDataProperty().isNull());
+		btnImportance.setOnAction(e -> calculateVariableImportance());
+		paneImportance.setBottom(btnImportance);
 		tabPane.getTabs().add(
-				new Tab("Features", featureDetailsPane)
+				new Tab("Features", paneImportance)
 		);
 		tabPane.getTabs().add(
 				new Tab("Metrics", metricsBrowser)
@@ -731,6 +744,36 @@ public class PixelClassifierPane {
 					trainedModel.getFeatureNames(imageData));
 		}
 		computeCrossValidation();
+	}
+
+	private void calculateVariableImportance() {
+		var trainingImages = trainingImageManager.getTrainingImageData();
+		if (trainingImages.isEmpty()) {
+			logger.warn("Can't compute variable importance without an image open");
+			return;
+		}
+		try (var rtrees = RTrees.create()) {
+			rtrees.setMaxDepth(0);
+			rtrees.setTermCriteria(
+					new TermCriteria(TermCriteria.COUNT, 100, 0));
+			rtrees.setCalculateVarImportance(true);
+
+			var model = OpenCVClassifiers.wrapStatModel(rtrees);
+			List<ClassifierTrainingData> allTrainingData = helper.createTrainingData(trainingImages);
+			if (allTrainingData.isEmpty()) {
+				logger.warn("Can't compute variable importance without training data!");
+				return;
+			}
+			var trainer = new ModelTrainer(helper, advancedOptions);
+			try (var scope = new PointerScope()) {
+				try (ClassifierTrainingData otherImages = ClassifierTrainingData.merge(allTrainingData)) {
+					var trainedModel = trainer.train(model, otherImages);
+					featureDetailsPane.update(model, trainedModel.getFeatureNames(trainingImages.iterator().next()));
+					}
+				}
+		} catch (Exception e) {
+			logger.error("Error calculating variable importance: {}", e.getMessage(), e);
+		}
 	}
 
 	private static OpenCVStatModel duplicateStatModel(OpenCVStatModel model) {

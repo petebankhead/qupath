@@ -179,7 +179,7 @@ public class OpenCVClassifiers {
 	 * parameters can be set.
 	 */
 	@JsonAdapter(OpenCVClassifierTypeAdapter.class)
-	public abstract static class OpenCVStatModel {
+	public abstract static class OpenCVStatModel implements AutoCloseable {
 		
 		/**
 		 * Classifier can handle missing (NaN) values
@@ -265,7 +265,7 @@ public class OpenCVClassifiers {
 		public abstract void predict(Mat samples, Mat results, Mat probabilities);
 		
 		abstract StatModel getStatModel();
-		
+
 		@Override
 		public String toString() {
 			return "OpenCV " + getStatModel().getClass().getSimpleName();
@@ -523,8 +523,14 @@ public class OpenCVClassifiers {
 		public boolean supportsMissingValues() {
 			return getStatModel() instanceof DTrees;
 		}
-		
-		
+
+		@Override
+		public void close() {
+			var model = getStatModel();
+			if (model != null)
+				model.close();
+		}
+
 	}
 	
 	

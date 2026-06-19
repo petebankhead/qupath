@@ -1,9 +1,13 @@
 package qupath.process.gui.commands.ml;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.ReadOnlyBooleanProperty;
+import javafx.beans.property.ReadOnlyBooleanWrapper;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -12,8 +16,6 @@ import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.SortedList;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Control;
 import javafx.scene.control.Label;
@@ -23,19 +25,24 @@ import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.CornerRadii;
 import javafx.scene.paint.Color;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import qupath.lib.gui.tools.ColorToolsFX;
 import qupath.opencv.ml.OpenCVClassifiers;
 import qupath.opencv.ml.OpenCVClassifiers.RTreesClassifier.VariableImportance;
 
 class FeatureDetailsPane extends Control implements Skinnable {
 
+    private static final Logger logger = LoggerFactory.getLogger(FeatureDetailsPane.class);
+
     private final ObservableList<VariableImportance> importance =
             FXCollections.observableArrayList();
 
     private final ObservableList<VariableImportance> unmodifiableImportance =
             FXCollections.unmodifiableObservableList(importance);
+
+    private final ReadOnlyBooleanWrapper hasImportance = new ReadOnlyBooleanWrapper(false);
 
     FeatureDetailsPane() {
         super();
@@ -44,14 +51,35 @@ class FeatureDetailsPane extends Control implements Skinnable {
     void update(OpenCVClassifiers.OpenCVStatModel model,
                 List<String> featureNames) {
 
-        if (model instanceof OpenCVClassifiers.RTreesClassifier rtrees) {
+        if (model instanceof OpenCVClassifiers.RTreesClassifier rtrees && rtrees.hasFeatureImportance() && !featureNames.isEmpty()) {
+            // Always use feature importance for RTrees when available
             importance.setAll(rtrees.getVariableImportance(featureNames));
-        } else {
+            hasImportance.set(true);
+        } else if (!sameContents(importance.stream().map(VariableImportance::name).toList(), featureNames)) {
+            // If we have feature importance values for the same features, don't overwrite them.
             importance.setAll(featureNames.stream()
                     .map(n -> new OpenCVClassifiers.RTreesClassifier.VariableImportance(n, Double.NaN))
                     .toList());
+            hasImportance.set(false);
         }
+    }
 
+    /**
+     * Read-only property to query if importance values are available.
+     * @return
+     */
+    public ReadOnlyBooleanProperty hasImportanceProperty() {
+        return hasImportance.getReadOnlyProperty();
+    }
+
+    private static <T> boolean sameContents(Collection<T> c1, Collection<T> c2) {
+        return c1.size() == c2.size() && ensureSet(c1).equals(ensureSet(c2));
+    }
+
+    private static <T> Set<T> ensureSet(Collection<T> c) {
+        if (c instanceof Set<T> set)
+            return set;
+        return Set.copyOf(c);
     }
 
     protected Skin<?> createDefaultSkin() {
@@ -71,7 +99,6 @@ class FeatureDetailsPane extends Control implements Skinnable {
         private final TableColumn<VariableImportance, Number> columnImportance = new TableColumn<>("Importance");
 
         private final BorderPane pane = new BorderPane(table);
-        private final Label label = new Label("Feature importance is only calculated for RTrees classifiers");
 
         private final DoubleProperty maxImportance = new SimpleDoubleProperty(1.0);
 
@@ -92,10 +119,6 @@ class FeatureDetailsPane extends Control implements Skinnable {
             table.getItems().addListener(this::handleListChange);
             table.setPlaceholder(new Label("No classifier trained"));
             table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_LAST_COLUMN);
-
-            label.setMaxWidth(Double.MAX_VALUE);
-            label.setAlignment(Pos.CENTER);
-            label.setPadding(new Insets(5));
         }
 
         private TableCell<VariableImportance, Number> createCell(TableColumn<VariableImportance, Number> column) {
@@ -145,11 +168,6 @@ class FeatureDetailsPane extends Control implements Skinnable {
             boolean hasImportance = maxImportance > 0;
             columnImportance.setVisible(hasImportance);
             columnName.setSortable(hasImportance);
-            if (hasImportance || event.getList().isEmpty()) {
-                pane.setBottom(null);
-            } else {
-                pane.setBottom(label);
-            }
             this.maxImportance.set(maxImportance);
         }
 
