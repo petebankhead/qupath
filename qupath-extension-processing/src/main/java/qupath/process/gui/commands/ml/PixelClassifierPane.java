@@ -1015,7 +1015,7 @@ public class PixelClassifierPane {
 				}
 			}
 			if (matrices.size() > 1)
-				matrices.addFirst(ConfusionMatrix.sum("All (" + splitType + ")", matrices));
+				matrices.addFirst(ConfusionMatrix.sum("All splits (" + splitType + ")", matrices));
 			metricsBrowser.getConfusionMatrices().setAll(matrices);
 		}
 	}

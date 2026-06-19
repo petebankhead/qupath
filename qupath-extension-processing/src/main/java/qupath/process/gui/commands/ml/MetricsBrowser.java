@@ -5,7 +5,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.scene.control.Button;
-import javafx.scene.control.SelectionModel;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.SingleSelectionModel;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.Tooltip;
@@ -46,6 +46,8 @@ public class MetricsBrowser<T> extends BorderPane {
         initButtons();
         confusionMatrices.addListener(this::handleListChange);
         titled.setContent(metricsPane);
+        titled.setTextOverrun(OverrunStyle.ELLIPSIS);
+        titled.setMinWidth(100);
         metricsPane.confusionMatrixProperty().bind(selectionModel.selectedItemProperty());
         titled.textProperty().bind(selectionModel.selectedItemProperty().map(ConfusionMatrix::getName).orElse(""));
         setCenter(titled);
