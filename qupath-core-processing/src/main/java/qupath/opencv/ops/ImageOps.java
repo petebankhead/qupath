@@ -152,6 +152,7 @@ public class ImageOps {
 		GsonTools.getDefaultBuilder().registerTypeAdapterFactory(factoryDataOps);
 		registerTypes(factoryDataOps, ImageDataOp.class, ImageOps.class, "data.op");
 		registerDataOp(Multiscale3DOp.class, "data.op.multiscale");
+		registerDataOp(CachingDataOp.class, "data.op.caching");
 	}
 	
 	/**
