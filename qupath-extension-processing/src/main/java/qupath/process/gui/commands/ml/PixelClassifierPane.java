@@ -312,8 +312,22 @@ public class PixelClassifierPane {
 		tabPane.getTabs().add(
 				new Tab("Features", paneImportance)
 		);
+
+		var paneMetrics = new BorderPane(metricsBrowser);
+		var btnCrossValidation = new Button();
+		btnCrossValidation.setMaxWidth(Double.MAX_VALUE);
+		var hasMetrics = Bindings.isNotEmpty(metricsBrowser.getConfusionMatrices());
+		btnCrossValidation.textProperty().bind(Bindings.createStringBinding(() -> {
+			if (hasMetrics.get())
+				return "Update cross validation";
+			else
+				return "Compute cross validation";
+		}, hasMetrics));
+		btnCrossValidation.disableProperty().bind(qupath.imageDataProperty().isNull());
+		btnCrossValidation.setOnAction(e -> computeCrossValidation());
+		paneMetrics.setBottom(btnCrossValidation);
 		tabPane.getTabs().add(
-				new Tab("Metrics", metricsBrowser)
+				new Tab("Metrics", paneMetrics)
 		);
 		jsonDisplay.itemProperty().bind(currentClassifier);
 		tabPane.getTabs().add(
@@ -326,6 +340,7 @@ public class PixelClassifierPane {
 		pane.setLeft(new Separator(Orientation.VERTICAL));
 		return pane;
 	}
+
 
 	private void ensureResolutionSelected(ImageData<?> imageData) {
 		if (comboResolutions.getItems().isEmpty()) {
@@ -743,7 +758,6 @@ public class PixelClassifierPane {
 					trainedModel.model(),
 					trainedModel.getFeatureNames(imageData));
 		}
-		computeCrossValidation();
 	}
 
 	private void calculateVariableImportance() {
@@ -965,6 +979,7 @@ public class PixelClassifierPane {
 		}
 		var firstData = allTrainingData.getFirst();
 		var labels = firstData.getLabelMap(); // Labels should be identical, via PixelClassifierTraining
+		String splitType = allTrainingData.size() + " images";
 		if (allTrainingData.size() == 1) {
 			logger.warn("Splitting the training data");
 			int nSplits = Math.min(5, firstData.size() / 10);
@@ -972,7 +987,8 @@ public class PixelClassifierPane {
 				logger.error("No enough data to compute cross validation (size={})", firstData.size());
 				return;
 			}
-			allTrainingData = firstData.split(nSplits, new Random(advancedOptions.getRngSeed()+1));
+			allTrainingData = firstData.split(nSplits, new Random(advancedOptions.getRngSeed() + 1));
+			splitType = "single image";
 		}
 		var trainer = new ModelTrainer(helper, advancedOptions);
 
@@ -986,7 +1002,7 @@ public class PixelClassifierPane {
 					var trainedModel = trainer.train(modelCV, otherImages);
 					try (var holdOutTest = holdOutData.getTrainData()) {
 						var confusion = evaluate(
-								"Fold " + (i+1),
+								holdOutData.getName(),
 								holdOutTest.getTrainSamples(),
 								holdOutTest.getTrainNormCatResponses(),
 								holdOutTest.getClassLabels(),
@@ -999,7 +1015,7 @@ public class PixelClassifierPane {
 				}
 			}
 			if (matrices.size() > 1)
-				matrices.addFirst(ConfusionMatrix.sum("All (" + matrices.size() + " merged)", matrices));
+				matrices.addFirst(ConfusionMatrix.sum("All (" + splitType + ")", matrices));
 			metricsBrowser.getConfusionMatrices().setAll(matrices);
 		}
 	}
