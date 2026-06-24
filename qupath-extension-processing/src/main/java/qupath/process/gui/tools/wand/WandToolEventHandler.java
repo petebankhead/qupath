@@ -21,15 +21,13 @@
  * #L%
  */
 
-package qupath.process.gui;
+package qupath.process.gui.tools.wand;
 
-import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.scene.input.MouseEvent;
 import org.bytedeco.javacpp.indexer.FloatIndexer;
-import org.bytedeco.javacpp.indexer.UByteIndexer;
 import org.bytedeco.opencv.global.opencv_core;
 import org.bytedeco.opencv.global.opencv_imgproc;
 import org.bytedeco.opencv.opencv_core.Mat;
@@ -45,15 +43,8 @@ import org.locationtech.jts.geom.Location;
 import org.locationtech.jts.geom.util.AffineTransformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import qupath.fx.prefs.annotations.BooleanPref;
-import qupath.fx.prefs.annotations.DoublePref;
-import qupath.fx.prefs.annotations.Pref;
-import qupath.fx.prefs.annotations.PrefCategory;
-import qupath.fx.prefs.controlsfx.PropertySheetUtils;
 import qupath.lib.analysis.images.ContourTracing;
-import qupath.lib.analysis.images.SimpleImage;
 import qupath.lib.gui.QuPathGUI;
-import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.gui.viewer.overlays.HierarchyOverlay;
@@ -116,7 +107,7 @@ public class WandToolEventHandler extends BrushToolEventHandler {
 	private Mat mat = null; //new Mat(w, w, CV_8U);
 	// Mask needs 1 pixel padding for use with floodFill
 	private final Mat matMask = new Mat(w+2, w+2, CV_8UC1);
-	private final TraceableMask mask = new TraceableMask(matMask);
+	private final TraceableMask mask = new TraceableMask(matMask, 1);
 	
 	private final Mat matFloat = new Mat(w, w, CV_32FC3);
 	
@@ -133,103 +124,68 @@ public class WandToolEventHandler extends BrushToolEventHandler {
 	private final Rectangle2D bounds = new Rectangle2D.Double();
 	
 	private final Size blurSize = new Size(31, 31);
-	
-	
+
+
+	/**
+	 * Property specifying how image colors are preprocessed before being passed to the wand.
+	 */
 	private static final ObjectProperty<WandType> wandType = PathPrefs.createPersistentPreference("wandType", WandType.RGB, WandType.class);
 	
-	/**
-	 * Property specifying whether the wand tool should be influenced by pixel values painted on image overlays.
-	 * @return
-	 */
 	public static ObjectProperty<WandType> wandTypeProperty() {
 		return wandType;
 	}
 
-	
-	private static final BooleanProperty wandUseOverlays = PathPrefs.createPersistentPreference("wandUseOverlays", true);
 
 	/**
 	 * Property specifying whether the wand tool should be influenced by pixel values painted on image overlays.
-	 * @return
+	 * If this is false, then the RGB representation of the underlying image will be used only.
 	 */
+	private static final BooleanProperty wandUseOverlays = PathPrefs.createPersistentPreference("wandUseOverlays", true);
+
 	public static BooleanProperty wandUseOverlaysProperty() {
 		return wandUseOverlays;
 	}
 	
-	/**
-	 * Query whether the wand tool should be influenced by pixel values painted on image overlays.
-	 * <p>
-	 * If false, only RGB values of the underlying image will be used.
-	 * @return
-	 */
 	public static boolean getWandUseOverlays() {
 		return wandUseOverlays.get();
 	}
 	
-	/**
-	 * Set whether the wand tool should be influenced by pixel values painted on image overlays.
-	 * If false, only RGB values of the underlying image will be used.
-	 * @param useOverlays 
-	 */
 	public static void setWandUseOverlays(final boolean useOverlays) {
 		wandUseOverlays.set(useOverlays);
 	}
-		
-		
-	
-	private static final DoubleProperty wandSigmaPixels = PathPrefs.createPersistentPreference("wandSigmaPixels", 4.0);
+
 
 	/**
 	 * Property representing the Gaussian sigma value used to smooth the image when applying the wand.
-	 * @return
 	 */
+	private static final DoubleProperty wandSigmaPixels = PathPrefs.createPersistentPreference("wandSigmaPixels", 4.0);
+
 	public static DoubleProperty wandSigmaPixelsProperty() {
 		return wandSigmaPixels;
 	}
 	
-	/**
-	 * Query the Gaussian sigma value used to smooth the image when applying the wand.
-	 * @return
-	 */
 	public static double getWandSigmaPixels() {
 		return wandSigmaPixels.get();
 	}
 	
-	/**
-	 * Set the Gaussian sigma value used to smooth the image when applying the wand.
-	 * @param sigma
-	 */
 	public static void setWandSigmaPixels(final double sigma) {
 		wandSigmaPixels.set(sigma);
 	}
 	
 	
 	/**
-	 * Sensitivity value associated with the wand tool
+	 * Property representing the wand sensitivity value, which influences how similar local intensity values must be for the wand region growing.
 	 */
 	private static final DoubleProperty wandSensitivityProperty = PathPrefs.createPersistentPreference("wandSensitivityPixels", 2.0);
 
-	
-	/**
-	 * Property representing the wand sensitivity value, which influences how similar local intensity values must be for the wand region growing.
-	 * @return
-	 */
 	public static DoubleProperty wandSensitivityProperty() {
 		return wandSensitivityProperty;
 	}
 	
-	/**
-	 * Query the wand sensitivity value, which influences how similar local intensity values must be for the wand region growing.
-	 * @return
-	 */
 	public static double getWandSensitivity() {
 		return wandSensitivityProperty.get();
 	}
 	
-	/**
-	 * Set the wand sensitivity value, which influences how similar local intensity values must be for the wand region growing.
-	 * @param sensitivity 
-	 */
 	public static void setWandSensitivity(final double sensitivity) {
 		wandSensitivityProperty.set(sensitivity);
 	}
@@ -239,42 +195,11 @@ public class WandToolEventHandler extends BrushToolEventHandler {
 	 * @param qupath
 	 */
 	public WandToolEventHandler(QuPathGUI qupath) {
-		installPreferences(qupath);
+		WandPreferences.installPreferences(qupath);
 		getBrushLimits().getStyleClass().add("wand");
 	}
-	
-	
-	static void installPreferences(QuPathGUI qupath) {
-		if (!Platform.isFxApplicationThread()) {
-			Platform.runLater(() -> installPreferences(qupath));
-			return;
-		}
-		// Add preference to adjust Wand tool behavior
-		qupath.getPreferencePane()
-				.getPropertySheet()
-				.getItems()
-				.addAll(PropertySheetUtils.parseAnnotatedItemsWithResources(QuPathResources.getLocalizedResourceManager(), new WandPreferences()));
-	}
-	
-	
-	@PrefCategory("Prefs.Drawing")
-	public static class WandPreferences {
-		
-		@Pref(value = "Prefs.Drawing.wandType", type = WandType.class)
-		public final ObjectProperty<WandType> wandType = wandTypeProperty();
 
-		@DoublePref("Prefs.Drawing.wandSigma")
-		public final DoubleProperty wandSigma = wandSigmaPixelsProperty();
-		
-		@DoublePref("Prefs.Drawing.wandSensivity")
-		public final DoubleProperty wandSensitivity = wandSensitivityProperty();
 
-		@BooleanPref("Prefs.Drawing.wandUseOverlays")
-		public final BooleanProperty useOverlays = wandUseOverlaysProperty();
-
-	}
-	
-	
 	@Override
 	protected Geometry createShape(MouseEvent e, double x, double y, boolean useTiles, Geometry addToShape) {
 		
@@ -417,7 +342,6 @@ public class WandToolEventHandler extends BrushToolEventHandler {
 			opencv_imgproc.morphologyEx(matMask, matMask, opencv_imgproc.MORPH_CLOSE, strel);
 	    }
 
-		var mask = new TraceableMask(matMask);
 		var geometry = ContourTracing.createTracedGeometry(
 				mask,
 				0.5,
@@ -482,38 +406,6 @@ public class WandToolEventHandler extends BrushToolEventHandler {
 			return w;
 		else
 			return w * getViewer().getDownsampleFactor();
-	}
-
-	/**
-	 * Wrap a mask so it can be reused as a SimpleImage for contour tracing.
-	 */
-	private static class TraceableMask implements SimpleImage {
-
-		private final int width, height;
-		private final UByteIndexer indexer;
-
-		private TraceableMask(Mat mat) {
-			// The mask is padded by 1 pixel on all sides (for floodFill),
-			// so for tracing we remove this padding
-			width = mat.cols() - 2;
-			height = mat.rows() - 2;
-			indexer = mat.createIndexer();
-		}
-
-		@Override
-		public float getValue(int x, int y) {
-			return indexer.get(y+1, x+1);
-		}
-
-		@Override
-		public int getWidth() {
-			return width;
-		}
-
-		@Override
-		public int getHeight() {
-			return height;
-		}
 	}
 
 

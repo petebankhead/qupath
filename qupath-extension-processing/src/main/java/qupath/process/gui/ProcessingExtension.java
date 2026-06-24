@@ -63,6 +63,7 @@ import qupath.process.gui.commands.SimpleThresholdCommand;
 import qupath.process.gui.commands.SingleMeasurementClassificationCommand;
 import qupath.process.gui.commands.SplitProjectTrainingCommand;
 import qupath.process.gui.commands.ui.LoadResourceCommand;
+import qupath.process.gui.tools.wand.WandToolEventHandler;
 
 /**
  * General-purpose processing and machine learning commands.
