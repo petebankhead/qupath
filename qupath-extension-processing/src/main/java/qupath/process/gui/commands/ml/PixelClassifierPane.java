@@ -98,6 +98,7 @@ import qupath.opencv.ml.OpenCVClassifiers.OpenCVStatModel;
 import qupath.opencv.ml.pixel.PixelClassifiers;
 import qupath.opencv.ops.ImageDataOp;
 import qupath.opencv.ops.ImageOps;
+import qupath.process.gui.commands.ml.op.DetectionFeaturesDataOpBuilder;
 import qupath.process.gui.commands.ml.op.MultiscaleImageDataOpBuilder;
 import qupath.process.gui.commands.ml.op.ImageDataOpBuilder;
 import qupath.process.gui.commands.ml.PixelClassifierTraining.ClassifierTrainingData;
@@ -701,6 +702,7 @@ public class PixelClassifierPane {
 	private void updateAvailableFeatureOpBuilders(ImageData<BufferedImage> imageData) {
 		featureOpBuilders.add(MultiscaleImageDataOpBuilder.create2D(imageData));
 		featureOpBuilders.add(MultiscaleImageDataOpBuilder.create3D(imageData));
+		featureOpBuilders.add(new DetectionFeaturesDataOpBuilder());
 		featureOpBuilders.addAll(defaultFeatureCalculatorBuilders);
 	}
 	
