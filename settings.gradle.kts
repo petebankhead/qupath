@@ -1,12 +1,13 @@
 import org.apache.tools.ant.taskdefs.condition.Os
+import java.nio.file.Paths
 
 pluginManagement {
     plugins {
-        kotlin("jvm") version "2.0.21"
+        kotlin("jvm") version "2.4.10"
     }
 }
 plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0" // to download JDK if needed
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0" // to download JDK if needed
 }
 
 // Define project name
@@ -30,14 +31,19 @@ gradle.extra["qupath.jvm.args"] = listOf(
 // By default, create an image with jpackage (not an installer, which is slower)
 gradle.extra["qupath.package"] = providers.gradleProperty("package").getOrElse("image")
 
+// By default, don't bind services; this can only be used if jmods is available in the JDK (it isn't or Temurin)
+// Activate this with -Pbind-services or -Pbind-services=true
+gradle.extra["qupath.bind-services"] = !"false".equals(providers.gradleProperty("bind-services").getOrElse("false"), true)
+
 // By default, create a per-user installer on Windows
-gradle.extra["qupath.package.per-user"] = providers.gradleProperty("per-user-install").getOrElse("true")
+gradle.extra["qupath.package.per-user"] = "true".equals(providers.gradleProperty("per-user-install").getOrElse("true"), true)
+
+// Optionally include extra libraries/extensions
+// Use -Pinclude-extras=true
+val includeExtras = "true".equals(providers.gradleProperty("include-extras").getOrElse("false"), true)
 
 // Optionally request that the git commit ID be included in the build
 gradle.extra["qupath.package.git-commit"] = providers.gradleProperty("git-commit").getOrElse("false")
-
-// Optionally include extra libraries/extensions
-val includeExtras = "true".equals(providers.gradleProperty("include-extras").getOrElse("false"), true)
 
 // Main application
 include("qupath-app")
@@ -86,27 +92,27 @@ dependencyResolutionManagement {
 
         // Extra version catalog for bundled extensions
         // This can be useful to make custom QuPath builds with specific versions of extensions
+        // (It was used for v0.6.0 release candidates to bundle some extensions, but is no longer needed)
         create("extraLibs") {
-            library("djl", qupathGroup, "qupath-extension-djl").version("0.4.0-20240911.172830-2")
-            library("instanseg", qupathGroup, "qupath-extension-instanseg").version("0.0.1-20241020.174720-4")
-            library("training", qupathGroup, "qupath-extension-training").version("0.0.1-20241022.065038-2")
-            library("py4j", qupathGroup, "qupath-extension-py4j").version("0.1.0-20241021.201937-1")
+            // Define the libraries needed here
+//            library("djl", qupathGroup, "qupath-extension-djl").version("0.4.0-20240911.172830-2")
             // Include or exclude bundled extensions
-            if (includeExtras)
-                bundle("extensions", listOf("djl", "instanseg", "training", "py4j"))
-            else
+            if (includeExtras) {
+                println("Extra libs requested, but none have been defined")
+//                bundle("extensions", listOf("djl", "instanseg", "training", "py4j"))
+            } else {
                 bundle("extensions", listOf())
+            }
         }
 
         create("sciJava") {
-            from("org.scijava:pom-scijava:40.0.0")
-            // Override scripting-groovy version for compatibility with Groovy 4 (and anything after 3.0.4)
-            version("scijava.scriptingGroovy", "1.0.0")
+            from("org.scijava:pom-scijava:44.0.0")
         }
 
     }
 
     repositories {
+        mavenCentral()
         maven("https://maven.scijava.org/content/groups/public/")
     }
 
@@ -198,7 +204,19 @@ fun handleExtensionConfig(file: File) {
             "[includeFlat]" -> search = searchIncludeFlat
             "[dependencies]" -> search = searchDependencies
             else -> {
-                when (search) {
+                var localSearch = search
+                // If what we're searching for isn't specified, figure it out
+                // This can simplify the include-extras file layout
+                if (localSearch == searchNothing) {
+                    if (File(line).exists()) {
+                        localSearch = searchIncludeBuild
+                    } else if (File(rootDir, "../" + line).exists()) {
+                        localSearch = searchIncludeFlat
+                    } else if (line.contains(":", ignoreCase = false)) {
+                        localSearch = searchDependencies
+                    }
+                }
+                when (localSearch) {
                     searchIncludeBuild -> includeBuild(line)
                     searchIncludeFlat -> includeFlat(line)
                     searchDependencies -> dependenciesToAdd.add(line)

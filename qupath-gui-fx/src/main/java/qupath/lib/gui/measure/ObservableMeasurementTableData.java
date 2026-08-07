@@ -23,31 +23,32 @@
 
 package qupath.lib.gui.measure;
 
+import javafx.application.Platform;
+import javafx.beans.property.ReadOnlyListWrapper;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import qupath.lib.common.GeneralTools;
+import qupath.lib.gui.localization.QuPathResources;
+import qupath.lib.gui.prefs.PathPrefs;
+import qupath.lib.images.ImageData;
+import qupath.lib.images.servers.ImageServer;
+import qupath.lib.lazy.interfaces.LazyValue;
+import qupath.lib.lazy.objects.MeasurementListValue;
+import qupath.lib.lazy.objects.PathObjectLazyValues;
+import qupath.lib.objects.PathObject;
+import qupath.lib.objects.TMACoreObject;
+
 import java.awt.image.BufferedImage;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javafx.application.Platform;
-import javafx.beans.property.ReadOnlyListWrapper;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
-import javafx.collections.transformation.FilteredList;
-import qupath.lib.common.GeneralTools;
-import qupath.lib.lazy.objects.MeasurementListValue;
-import qupath.lib.lazy.objects.PathObjectLazyValues;
-import qupath.lib.lazy.interfaces.LazyValue;
-import qupath.lib.gui.prefs.PathPrefs;
-import qupath.lib.images.ImageData;
-import qupath.lib.images.servers.ImageServer;
-import qupath.lib.objects.PathObject;
-import qupath.lib.objects.TMACoreObject;
 
 /**
  * A table data model to supply observable measurements of PathObjects.
@@ -331,7 +332,10 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 		if (builder != null)
 			return builder.getHelpText();
 		else
-			return "The measurement '" + column + "' from the object's measurement list, or NaN if the measurement is not found";
+			return MessageFormat.format(
+					QuPathResources.getString("Measure.MeasurementTable.measurementFromObjectMeasurementList"),
+					column
+			);
 	}
 
 	@Override
@@ -348,6 +352,10 @@ public class ObservableMeasurementTableData implements PathTableData<PathObject>
 			logger.warn("Requested measurement {} for null object! Returned empty String.", column);
 			return "";
 		}
+		// Measurement is missing
+		if (!pathObject.getMeasurementList().containsKey(column))
+			return null;
+		// Measurement is present (but could be NaN!)
 		double val = pathObject.getMeasurementList().get(column);
 		if (Double.isNaN(val))
 			return "NaN";

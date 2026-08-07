@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2025 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -22,43 +22,6 @@
  */
 
 package qupath.process.gui.commands;
-
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
-import java.util.WeakHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.FutureTask;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
-import org.bytedeco.javacpp.PointerScope;
-import org.bytedeco.javacpp.indexer.UByteIndexer;
-import org.bytedeco.opencv.global.opencv_core;
-import org.bytedeco.opencv.opencv_core.Mat;
-import org.bytedeco.opencv.opencv_core.Scalar;
-import org.bytedeco.opencv.opencv_ml.ANN_MLP;
-import org.bytedeco.opencv.opencv_ml.KNearest;
-import org.bytedeco.opencv.opencv_ml.RTrees;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
@@ -101,9 +64,20 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.stage.Stage;
+import org.bytedeco.javacpp.PointerScope;
+import org.bytedeco.javacpp.indexer.UByteIndexer;
+import org.bytedeco.opencv.global.opencv_core;
+import org.bytedeco.opencv.opencv_core.Mat;
+import org.bytedeco.opencv.opencv_core.Scalar;
+import org.bytedeco.opencv.opencv_ml.ANN_MLP;
+import org.bytedeco.opencv.opencv_ml.KNearest;
+import org.bytedeco.opencv.opencv_ml.RTrees;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import qupath.fx.controls.PredicateTextField;
+import qupath.fx.dialogs.Dialogs;
 import qupath.fx.dialogs.FileChoosers;
-import qupath.fx.utils.FXUtils;
+import qupath.fx.utils.GridPaneUtils;
 import qupath.lib.classifiers.Normalization;
 import qupath.lib.classifiers.object.ObjectClassifier;
 import qupath.lib.classifiers.object.ObjectClassifiers;
@@ -112,13 +86,10 @@ import qupath.lib.common.ThreadTools;
 import qupath.lib.geom.Point2;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.charts.ChartTools;
-import qupath.fx.dialogs.Dialogs;
 import qupath.lib.gui.dialogs.ProjectDialogs;
 import qupath.lib.gui.tools.ColorToolsFX;
-import qupath.fx.utils.GridPaneUtils;
 import qupath.lib.gui.tools.GuiTools;
 import qupath.lib.images.ImageData;
-import qupath.lib.objects.PathDetectionObject;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjectFilter;
 import qupath.lib.objects.PathObjectTools;
@@ -136,6 +107,32 @@ import qupath.opencv.ml.objects.features.FeatureExtractors;
 import qupath.opencv.ml.objects.features.Preprocessing;
 import qupath.opencv.tools.OpenCVTools;
 import qupath.process.gui.commands.ml.ProjectClassifierBindings;
+
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.WeakHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 
 /**
@@ -182,6 +179,8 @@ public class ObjectClassifierCommand implements Runnable {
 			scrollPane.setFitToHeight(true);
 			dialog.setScene(new Scene(scrollPane));
 
+			dialog.setMinWidth(320);
+			dialog.setMinHeight(320);
 			panel.registerListeners(qupath);
 			dialog.setOnCloseRequest(e -> {
 				dialog = null; // Reset the dialog so a new one will be created next time
@@ -441,7 +440,7 @@ public class ObjectClassifierCommand implements Runnable {
 							logger.debug("Will not load data for {} - will use the training annotations from the open viewer", entry);
 							var tempData = trainingMap.remove(entry);
 							if (tempData != null)
-								tempData.getServer().close();
+								tempData.close();
 						} else {
 							var tempData = trainingMap.get(entry);
 							if (tempData == null) {
@@ -866,6 +865,7 @@ public class ObjectClassifierCommand implements Runnable {
 				boolean doMulticlass) {
 
 			var pathClasses = getPathClasses(trainingCollection);
+			int nClasses = pathClasses.size();
 
 			List<Mat> matFeaturesList = new ArrayList<>();
 			List<Mat> matTargetsList = new ArrayList<>();
@@ -891,8 +891,7 @@ public class ObjectClassifierCommand implements Runnable {
 					var map = training.map;
 	
 					int nFeatures = extractor.nFeatures();
-					int nSamples = map.values().stream().mapToInt(l -> l.size()).sum();
-					int nClasses = pathClasses.size();
+					int nSamples = map.values().stream().mapToInt(Set::size).sum();
 					if (nSamples == 0)
 						continue;
 	
@@ -982,7 +981,7 @@ public class ObjectClassifierCommand implements Runnable {
 			try {
 				// Train the classifier - we don't want to enclose this in a PointerScope in case 
 				// new persistent objects are created (e.g. the StatModel)
-				trainClassifier(classifier, matAllFeatures, matAllTargets, doMulticlass);
+				trainClassifier(classifier, matAllFeatures, matAllTargets, nClasses, doMulticlass);
 	
 				if (classifier instanceof RTreesClassifier) {
 					tryLoggingVariableImportance((RTreesClassifier)classifier, extractor);
@@ -996,11 +995,11 @@ public class ObjectClassifierCommand implements Runnable {
 			return extractor;
 		}
 
-		static boolean trainClassifier(OpenCVStatModel classifier, Mat matFeatures, Mat matTargets, boolean doMulticlass) {		
+		static boolean trainClassifier(OpenCVStatModel classifier, Mat matFeatures, Mat matTargets, int nLabels, boolean doMulticlass) {
 			// Train classifier
 			// TODO: Optionally limit the number of training samples we use
 			long startTime = System.currentTimeMillis();
-			var trainData = classifier.createTrainData(matFeatures, matTargets, null, doMulticlass);
+			var trainData = classifier.createTrainData(matFeatures, matTargets, nLabels, null, doMulticlass);
 			classifier.train(trainData);
 			long endTime = System.currentTimeMillis();
 			logger.info("{} classifier trained with {} samples and {} features ({} ms)",
@@ -1009,23 +1008,8 @@ public class ObjectClassifierCommand implements Runnable {
 		}
 
 
-		static boolean tryLoggingVariableImportance(final RTreesClassifier trees, final FeatureExtractor<?> extractor) {
-			var importance = trees.getFeatureImportance();
-			if (importance == null)
-				return false;
-			var sorted = IntStream.range(0, importance.length)
-					.boxed()
-					.sorted((a, b) -> -Double.compare(importance[a], importance[b]))
-					.mapToInt(i -> i).toArray();
-
-			var names = extractor.getFeatureNames();
-			var sb = new StringBuilder("Variable importance:");
-			for (int ind : sorted) {
-				sb.append("\n");
-				sb.append(String.format("%.4f \t %s", importance[ind], names.get(ind)));
-			}
-			logger.info(sb.toString());
-			return true;
+		static void tryLoggingVariableImportance(final RTreesClassifier trees, final FeatureExtractor<?> extractor) {
+			trees.logVariableImportance(extractor.getFeatureNames());
 		}
 
 
@@ -1469,9 +1453,9 @@ public class ObjectClassifierCommand implements Runnable {
 			// Ensure we have closed any cached images
 			for (var data : trainingMap.values()) {
 				try {
-					data.getServer().close();
+					data.close();
 				} catch (Exception e) {
-					logger.warn("Error closing server: " + e.getLocalizedMessage(), e);
+                    logger.warn("Error closing server: {}", e.getMessage(), e);
 				}
 			}
 			trainingEntries.clear();

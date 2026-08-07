@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2024 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -23,17 +23,17 @@
 
 package qupath.lib.gui.scripting.richtextfx;
 
-import java.time.Duration;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
 import javafx.application.Platform;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.IntegerProperty;
+import javafx.beans.property.ReadOnlyIntegerProperty;
+import javafx.beans.property.SimpleIntegerProperty;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
+import javafx.beans.value.ObservableValue;
 import javafx.concurrent.Task;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.IndexRange;
 import javafx.scene.control.ListView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
@@ -42,16 +42,6 @@ import javafx.scene.input.KeyEvent;
 import javafx.stage.Popup;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
-
-import javafx.beans.property.BooleanProperty;
-import javafx.beans.property.IntegerProperty;
-import javafx.beans.property.ReadOnlyIntegerProperty;
-import javafx.beans.property.SimpleIntegerProperty;
-import javafx.beans.property.SimpleStringProperty;
-import javafx.beans.property.StringProperty;
-import javafx.beans.value.ObservableValue;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.IndexRange;
 import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.slf4j.Logger;
@@ -67,10 +57,17 @@ import qupath.lib.gui.scripting.syntax.ScriptSyntaxProvider;
 import qupath.lib.scripting.languages.AutoCompletions;
 import qupath.lib.scripting.languages.ScriptLanguage;
 
+import java.time.Duration;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * Code area control using RichTextFX.
- * 
- * @author Pete Bankhead
  */
 public class CodeAreaControl implements ScriptEditorControl<VirtualizedScrollPane<CodeArea>> {
 
@@ -78,14 +75,14 @@ public class CodeAreaControl implements ScriptEditorControl<VirtualizedScrollPan
 
 	private static final KeyCodeCombination completionCodeCombination = new KeyCodeCombination(KeyCode.SPACE, KeyCombination.CONTROL_DOWN);
 
-	private static ExecutorService executor = Executors.newSingleThreadExecutor(ThreadTools.createThreadFactory("rich-text-styling", true));
+	private static final ExecutorService executor = Executors.newSingleThreadExecutor(ThreadTools.createThreadFactory("rich-text-styling", true));
 
 	// Delay for async formatting, in milliseconds
 	private static int delayMillis = 20;
 
-	private VirtualizedScrollPane<CodeArea> scrollpane;
-	private CodeArea codeArea;
-	private StringProperty textProperty = new SimpleStringProperty();
+	private final VirtualizedScrollPane<CodeArea> scrollpane;
+	private final CodeArea codeArea;
+	private final StringProperty textProperty = new SimpleStringProperty();
 	
 	private ContextMenu contextMenu;
 
@@ -99,12 +96,20 @@ public class CodeAreaControl implements ScriptEditorControl<VirtualizedScrollPan
 	private CodeAreaControl(boolean isEditable) {
 		this.codeArea = createCodeArea();
 		this.codeArea.setEditable(isEditable);
-		this.codeArea.textProperty().addListener((o, v, n) -> textProperty.set(n));
+		this.codeArea.textProperty().addListener((o, v, n) -> {
+			if (!textProperty.isBound())
+				textProperty.set(n);
+		});
 		textProperty.addListener((o, v, n) -> {
 			if (n.equals(this.codeArea.getText()))
 				return;
 			this.codeArea.clear();
 			this.codeArea.insertText(0, n);
+			// This is a bit of a hack, but we assume the text changes when binding (although it isn't guaranteed)
+			if (textProperty.isBound())
+				codeArea.setEditable(false);
+			else
+				codeArea.setEditable(isEditable);
 		});
 		scrollpane = new VirtualizedScrollPane<>(this.codeArea);
 		if (isEditable) {

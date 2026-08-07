@@ -21,18 +21,18 @@
 
 package qupath.lib.gui.viewer;
 
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.Objects;
-import java.util.function.BiPredicate;
-
+import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.images.ImageData;
 import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathObject;
 import qupath.lib.regions.ImageRegion;
 import qupath.lib.regions.RegionRequest;
-import qupath.lib.roi.GeometryTools;
 import qupath.lib.roi.interfaces.ROI;
+
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Objects;
+import java.util.function.BiPredicate;
 
 /**
  * Define the area of an image to which pixel classification should be applied.
@@ -74,15 +74,14 @@ public interface RegionFilter extends BiPredicate<ImageData<?>, RegionRequest> {
 		
 		@Override
 		public String toString() {
-            return switch (this) {
-                case EVERYWHERE -> "Everywhere";
-                case IMAGE -> "Image (non-empty regions)";
-                case ANY_OBJECTS -> "Any object ROI";
-                case ANY_ANNOTATIONS -> "Any annotation ROI";
-                case ANY_OBJECTS_BOUNDS -> "Any object bounds (fast)";
-                case ANY_ANNOTATIONS_BOUNDS -> "Any annotation bounds (fast)";
-                default -> "Unknown";
-            };
+            return QuPathResources.getString(switch (this) {
+                case EVERYWHERE -> "Viewer.RegionFilter.everywhere";
+                case IMAGE -> "Viewer.RegionFilter.image";
+                case ANY_OBJECTS -> "Viewer.RegionFilter.anyObjectRoi";
+                case ANY_ANNOTATIONS -> "Viewer.RegionFilter.anyAnnotationRoi";
+                case ANY_OBJECTS_BOUNDS -> "Viewer.RegionFilter.anyObjectBounds";
+                case ANY_ANNOTATIONS_BOUNDS -> "Viewer.RegionFilter.anyAnnotationBounds";
+            });
 		}
 
 		@Override

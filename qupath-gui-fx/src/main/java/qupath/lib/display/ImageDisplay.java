@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2025 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -23,6 +23,37 @@
 
 package qupath.lib.display;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
+import javafx.beans.binding.Bindings;
+import javafx.beans.binding.ObjectBinding;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.LongProperty;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.property.SimpleLongProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.value.ObservableValue;
+import javafx.collections.FXCollections;
+import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import qupath.lib.analysis.stats.Histogram;
+import qupath.lib.common.ColorTools;
+import qupath.lib.display.ChannelDisplayInfo.ModifiableChannelDisplayInfo;
+import qupath.lib.gui.images.stores.AbstractImageRenderer;
+import qupath.lib.gui.prefs.PathPrefs;
+import qupath.lib.images.ImageData;
+import qupath.lib.images.servers.ImageServer;
+import qupath.lib.images.servers.ImageServerMetadata;
+import qupath.lib.images.servers.ImageServerProvider;
+import qupath.lib.images.servers.PixelType;
+import qupath.lib.regions.RegionRequest;
+
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -39,39 +70,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
-
-import javafx.beans.property.ObjectProperty;
-import javafx.beans.property.SimpleObjectProperty;
-import javafx.beans.value.ObservableValue;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.reflect.TypeToken;
-
-import javafx.beans.binding.Bindings;
-import javafx.beans.binding.ObjectBinding;
-import javafx.beans.property.BooleanProperty;
-import javafx.beans.property.LongProperty;
-import javafx.beans.property.SimpleBooleanProperty;
-import javafx.beans.property.SimpleLongProperty;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
-import javafx.collections.ListChangeListener;
-import qupath.lib.analysis.stats.Histogram;
-import qupath.lib.common.ColorTools;
-import qupath.lib.display.ChannelDisplayInfo.ModifiableChannelDisplayInfo;
-import qupath.lib.gui.images.stores.AbstractImageRenderer;
-import qupath.lib.gui.prefs.PathPrefs;
-import qupath.lib.images.ImageData;
-import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.servers.ImageServerMetadata;
-import qupath.lib.images.servers.ImageServerProvider;
-import qupath.lib.images.servers.PixelType;
-import qupath.lib.regions.RegionRequest;
 
 /**
  * Class used to look after the color transforms that may be applied to an image,
@@ -737,13 +735,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 	}
 
 
-	/**
-	 * Get a string representation of a transformed pixel value, using the currently-selected channels.
-	 * @param img image providing the value
-	 * @param x x-coordinate of the pixel
-	 * @param y y-coordinate of the pixels
-	 * @return a String representation of the pixel's transformed value
-	 */
+	@Override
 	public String getTransformedValueAsString(BufferedImage img, int x, int y) {
 		if (selectedChannels.isEmpty() || selectedChannels.getFirst() == null)
 			return "";
@@ -797,8 +789,8 @@ public class ImageDisplay extends AbstractImageRenderer {
 			return Collections.emptyMap();
 		// Try to get the first image 'normally', so that if there is an exception it can be handled
 		Map<RegionRequest, BufferedImage> map = new TreeMap<>(regionComparator);
-		// Request the central slice at the lowest resolution
-		double downsample = server.getDownsampleForResolution(server.nResolutions()-1);
+		// Request the central slice at the preferred resolution
+		double downsample = server.getDownsampleForResolution(getPreferredHistogramPyramidLevel(server));
 		var request = RegionRequest.createInstance(server.getPath(), downsample, 0, 0, server.getWidth(), server.getHeight(),
 				server.nZSlices()/2, server.nTimepoints()/2);
 		map.put(request, server.readRegion(request));
@@ -806,6 +798,28 @@ public class ImageDisplay extends AbstractImageRenderer {
 		// (and also require too much memory)
 		return map;
 	}
+
+    /**
+     * Get the resolution level to use by default when building histograms here.
+     * In v0.6.0 the lowest resolution was always chosen, but this could cause trouble:
+     * see https://github.com/qupath/qupath/issues/1958
+     * Therefore here we <i>usually</i> select the lowest resolution - but may be slightly higher
+     * the resulting image still has no more than 2<sup>20</sup> pixels.
+     * @param server the image
+     * @return the resolution level
+     */
+    private static int getPreferredHistogramPyramidLevel(ImageServer<?> server) {
+        int level = server.nResolutions()-1;
+        long maxPixels = 1024L * 1024L;
+        for (var i = server.nResolutions()-2; i >= 0; i--) {
+            var tempLevel = server.getMetadata().getLevel(i);
+            if ((long)tempLevel.getWidth() * tempLevel.getHeight() <= maxPixels)
+                level = i;
+        }
+        // Log using 1-based level index (for easier comparison with total number of resolutions)
+        logger.debug("Building histograms for level {} of {}", level+1, server.nResolutions());
+        return level;
+    }
 
 
 	private void autoSetDisplayRange(ChannelDisplayInfo info, Histogram histogram, double saturation, boolean fireUpdate) {
@@ -917,7 +931,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 
 		// Get all the cached tiles we can
 		Map<RegionRequest, BufferedImage> images = new TreeMap<>(regionComparator);
-		int level = server.nResolutions()-1;
+        int level = getPreferredHistogramPyramidLevel(server);
 		long nPixelsCached = 0;
 		for (var tile : server.getTileRequestManager().getTileRequestsForLevel(level)) {
 			var img = server.getCachedTile(tile);

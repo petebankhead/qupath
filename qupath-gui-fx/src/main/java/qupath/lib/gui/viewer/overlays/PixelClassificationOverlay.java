@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -21,12 +21,19 @@
 
 package qupath.lib.gui.viewer.overlays;
 
+import javafx.application.Platform;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.value.ObservableBooleanValue;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
 import qupath.lib.classifiers.pixel.PixelClassificationImageServer;
 import qupath.lib.classifiers.pixel.PixelClassifier;
 import qupath.lib.color.ColorToolsAwt;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.common.ThreadTools;
+import qupath.lib.display.ImageDisplay;
 import qupath.lib.geom.Point2;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.images.stores.ImageRenderer;
@@ -35,8 +42,8 @@ import qupath.lib.gui.viewer.OverlayOptions;
 import qupath.lib.gui.viewer.RegionFilter;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.servers.PixelCalibration;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
+import qupath.lib.images.servers.PixelCalibration;
 import qupath.lib.images.servers.ServerTools;
 import qupath.lib.images.servers.TileRequest;
 import qupath.lib.objects.PathObject;
@@ -63,18 +70,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Function;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javafx.application.Platform;
-import javafx.beans.property.ObjectProperty;
-import javafx.beans.property.SimpleObjectProperty;
-import javafx.beans.value.ObservableBooleanValue;
 
 /**
  * {@link PathOverlay} that gives the results of pixel classification.
@@ -585,7 +583,13 @@ public class PixelClassificationOverlay extends AbstractImageOverlay  {
 		                }
                     }
                 } catch (Exception e) {
-                   logger.error("Error requesting tile classification", e);
+					if (pool.isShutdown())
+						logger.debug("Pool shutdown - error requesting tile classification: {}", tile, e);
+					else
+						logger.error("Error requesting tile classification: level={}, x={}, y={}, w={}, h={}, z={}, t={}",
+								tile.getLevel(),
+								tile.getTileX(), tile.getTileX(), tile.getTileWidth(), tile.getTileHeight(),
+								tile.getZ(), tile.getT(), e);
                 } finally {
                     currentRequests.remove(tile);
                     pendingRequests.remove(tile);
@@ -615,26 +619,46 @@ public class PixelClassificationOverlay extends AbstractImageOverlay  {
 	    	var classifierServer = imageData == null ? null : getPixelClassificationServer(imageData);
 	    	if (classifierServer == null)
 	    		return null;
-	    	return getDefaultLocationString(classifierServer, x, y, z, t);
+	    	return getDefaultLocationString(classifierServer, getRenderer(), x, y, z, t);
     	} else
     		return super.getLocationString(imageData, x, y, z, t);
     }
-    	
-    
-    /**
-     * Default method for getting a location string from an {@link ImageServer} using cached tiles.
-     * If tiles are not cached, no string is returned.
-     * <p>
-     * May be used by classes implementing {@link PathOverlay#getLocationString(ImageData, double, double, int, int)}
-     * 
-     * @param server
-     * @param x
-     * @param y
-     * @param z
-     * @param t
-     * @return location String based upon pixel values and cached tiles, or null if no String is available
-     */
-    public static String getDefaultLocationString(ImageServer<BufferedImage> server, double x, double y, int z, int t) {
+
+	/**
+	 * Default method for getting a location string from an {@link ImageServer} using cached tiles.
+	 * If tiles are not cached, no string is returned.
+	 * <p>
+	 * May be used by classes implementing {@link PathOverlay#getLocationString(ImageData, double, double, int, int)}
+	 *
+	 * @param server the server (usually a pixel classifier server)
+	 * @param x x-coordinate in the full image space
+	 * @param y y-coordinate in the full image space
+	 * @param z z-slice index
+	 * @param t time-point index
+	 * @return location String based upon pixel values and cached tiles, or null if no String is available
+	 * @see #getDefaultLocationString(ImageServer, ImageRenderer, double, double, int, int)
+	 */
+	public static String getDefaultLocationString(ImageServer<BufferedImage> server, double x, double y, int z, int t) {
+		return getDefaultLocationString(server, null, x, y, z, t);
+	}
+
+	/**
+	 * Default method for getting a location string from an {@link ImageServer} using cached tiles.
+	 * If tiles are not cached, no string is returned.
+	 * <p>
+	 * May be used by classes implementing {@link PathOverlay#getLocationString(ImageData, double, double, int, int)}
+	 *
+	 * @param server the server (usually a pixel classifier server)
+	 * @param renderer optional renderer; if not null, {@link ImageRenderer#getTransformedValueAsString(BufferedImage, int, int)}
+	 *                 will be queried first to get the string.
+ 	 * @param x x-coordinate in the full image space
+	 * @param y y-coordinate in the full image space
+	 * @param z z-slice index
+	 * @param t time-point index
+	 * @return location String based upon pixel values and cached tiles, or null if no String is available
+	 * @since v0.8.0
+	 */
+    public static String getDefaultLocationString(ImageServer<BufferedImage> server, ImageRenderer renderer, double x, double y, int z, int t) {
     	
     	int level = 0;
     	var tile = server.getTileRequestManager().getTileRequest(level, (int)Math.round(x), (int)Math.round(y), z, t);
@@ -648,6 +672,14 @@ public class PixelClassificationOverlay extends AbstractImageOverlay  {
     	int yy = (int)Math.floor((y - tile.getImageY()) / tile.getDownsample());
     	if (xx < 0 || yy < 0 || xx >= img.getWidth() || yy >= img.getHeight())
     		return null;
+
+		// Try to get it from the image renderer
+		// Introduced to fix https://github.com/qupath/qupath/issues/2123
+		if (renderer != null) {
+			String fromRenderer = renderer.getTransformedValueAsString(img, xx, yy);
+			if (fromRenderer != null)
+				return fromRenderer;
+		}
     	
 //    	String coords = GeneralTools.formatNumber(x, 1) + "," + GeneralTools.formatNumber(y, 1);
     	var channelType = server.getMetadata().getChannelType();

@@ -21,11 +21,8 @@
 
 package qupath.lib.gui.actions;
 
-import static qupath.lib.gui.actions.ActionTools.createAction;
-
 import javafx.collections.ListChangeListener;
 import org.controlsfx.control.action.Action;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.gui.QuPathGUI;
@@ -40,6 +37,8 @@ import qupath.lib.gui.commands.ProjectCommands;
 import qupath.lib.gui.commands.TMACommands;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.tools.IconFactory.PathIcons;
+
+import static qupath.lib.gui.actions.ActionTools.createAction;
 
 /**
  * Default actions associated with a specific QuPath instance.
@@ -102,16 +101,16 @@ public class CommonActions {
 	
 	@ActionConfig("CommonActions.objectDescriptions")
 	public final Action SHOW_OBJECT_DESCRIPTIONS;
-	
-	@ActionConfig("CommonActions.measureTMA")
-	public final Action MEASURE_TMA;
-	
+
 	@ActionConfig("CommonActions.measureAnnotations")
 	public final Action MEASURE_ANNOTATIONS;
 	
 	@ActionConfig("CommonActions.measureDetections")
 	public final Action MEASURE_DETECTIONS;
-	
+
+	@ActionConfig("CommonActions.measureTMA")
+	public final Action MEASURE_TMA;
+
 	@ActionConfig("CommonActions.gridViewAnnotations")
 	public final Action MEASURE_GRID_ANNOTATIONS;
 
@@ -121,6 +120,9 @@ public class CommonActions {
 	@ActionIcon(PathIcons.HELP)
 	@ActionConfig("CommonActions.showHelp")
 	public final Action HELP_VIEWER;
+
+	@ActionConfig("Action.Help.license")
+	public final Action SHOW_LICENSE;
 	
 	private QuPathGUI qupath;
 	
@@ -167,6 +169,8 @@ public class CommonActions {
 
 		INPUT_DISPLAY = ActionTools.createSelectableCommandAction(qupath.showInputDisplayProperty());
 		MEMORY_MONITOR = Commands.createSingleStageAction(() -> Commands.createMemoryMonitorDialog(qupath));
+
+		SHOW_LICENSE = Commands.createSingleStageAction(() -> Commands.createLicensesWindow(qupath));
 
 		// This has the effect of applying the annotations
 		ActionTools.getAnnotatedActions(this);

@@ -33,6 +33,10 @@ val platform: PlatformPlugin.Platform = Utils.currentPlatform()
 // Requested package type (image, installer, all, pkg, dmg, msi, exe, deb, rpm...)
 val packageType = (gradle.extra["qupath.package"] as String).lowercase()
 
+// Request to bind services (only possible if jmods is available)
+val bindServices = gradle.extra["qupath.bind-services"] as Boolean
+
+
 /**
  * Create Java Runtime & call jpackage
  */
@@ -42,24 +46,19 @@ runtime {
         "--no-header-files",
         "--no-man-pages",
         "--strip-native-commands",
-        "--compress", "zip-6", // jlink option; can be zip-0 (no compression) to zip-9; default is zip-6
-        "--bind-services"
+        "--compress", "zip-6" // jlink option; can be zip-0 (no compression) to zip-9; default is zip-6
     ))
-    modules.addAll(listOf(
-        "java.desktop",
-        "java.xml",
-        "java.scripting",
-        "java.sql",
-        "java.naming",
-        "jdk.unsupported",
+    if (bindServices) {
+        options.add("--bind-services")
+    }
 
+    modules = listOf(
+        "java.se",              // Java standard edition
+
+        "jdk.unsupported",      // May be needed by some dependencies for sun.misc.Unsafe
         "jdk.zipfs",            // Needed for zip filesystem support
-
-        "java.net.http",        // Add HttpClient support (might be used by scripts)
-        "java.management",      // Useful to check memory usage
-        "jdk.management.agent", // Enables VisualVM to connect and sample CPU use
-        "jdk.jsobject",         // Needed to interact with WebView through JSObject
-    ))
+        "jdk.management.agent"  // Enables VisualVM to connect and sample CPU use
+    )
 
     val params = JPackageParams(
         getDistOutputDir(),
@@ -173,7 +172,7 @@ class JPackageParams(val outputDir: File, val resourceDir: File? = null) {
                 "--win-menu-group", "QuPath"
             )
             // Per-user install can be controlled in settings.gradle.kts
-            if (gradle.extra["qupath.package.per-user"] as String == "true")
+            if (gradle.extra["qupath.package.per-user"] as Boolean)
                 this.installerOptions += "--win-per-user-install"
         }
 
@@ -278,11 +277,16 @@ val jpackageFinalize by tasks.registering {
             // We need to make the macOS pkg here to incorporate the changes
             if (packageType in setOf("installer", "pkg")) {
                 println("Creating pkg")
-                makeMacOSPkg(appFile)
+                var tempAppVersion = "1.0.0" // Needed to overcome strict jpackage limitations prohibiting 0.x.x
+                val returnVal = makeMacOSPkg(appFile, tempAppVersion)
+                if (returnVal != 0) {
+                    println("Error attempting to create pkg: $returnVal")
+                }
                 // Ensure we haven't accidentally changed the name
-                val file = File(appFile.getParentFile(), "QuPath-${qupathVersion}.pkg")
+                val file = File(appFile.getParentFile(), "QuPath-${tempAppVersion}.pkg")
                 val correctName = getCorrectAppName(".pkg")
                 if (file.exists() && !file.name.equals(correctName)) {
+                    println("Renaming ${file.name} to ${correctName}")
                     file.renameTo(File(file.getParent(), correctName))
                 }
                 // Remove the .app as it's no longer needed (and just takes up space)
@@ -372,15 +376,15 @@ fun getCorrectAppName(ext: String): String {
  * This is a separate task because it needs to be run after the Info.plist has been updated.
  * @param appFile the .app file to package
  */
-fun makeMacOSPkg(appFile: File) {
-    ProcessBuilder()
+fun makeMacOSPkg(appFile: File, appVersion: String):Int {
+    return ProcessBuilder()
         .directory(appFile.getParentFile())
         .command(
             "jpackage",
             "-n", "QuPath",
             "--app-image", appFile.getCanonicalPath(),
             "--type", "pkg",
-            "--app-version", qupathVersion)
+            "--app-version", appVersion)
         .start()
         .waitFor()
 }

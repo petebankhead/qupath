@@ -21,12 +21,7 @@
 
 package qupath.lib.gui.tools;
 
-import java.util.ArrayList;
-import java.util.function.Function;
-
 import javafx.beans.binding.Bindings;
-import org.kordamp.ikonli.javafx.StackedFontIcon;
-
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -41,12 +36,17 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.TilePane;
+import org.kordamp.ikonli.javafx.StackedFontIcon;
 import qupath.lib.gui.QuPathGUI;
+import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.prefs.PathPrefs.DetectionTreeDisplayModes;
 import qupath.lib.objects.PathAnnotationObject;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.TMACoreObject;
+
+import java.util.ArrayList;
+import java.util.function.Function;
 
 /**
  * Create standardized {@link ListCell} and {@link TreeCell} instances for displaying a {@link PathObject}, 
@@ -224,7 +224,7 @@ public class PathObjectLabels {
 			
 			iconPane = new TilePane();
 
-			var lockedTooltip = new Tooltip("ROI locked");
+			var lockedTooltip = new Tooltip(QuPathResources.getString("Tools.PathObjectLabels.roiLocked"));
 			Tooltip.install(lockIcon, lockedTooltip);
 			
 			BorderPane.setAlignment(label, Pos.CENTER_LEFT);
@@ -287,7 +287,7 @@ public class PathObjectLabels {
 			if (hasDescription)
 				descriptionTooltip.setText(description);
 			else
-				descriptionTooltip.setText("No description");
+				descriptionTooltip.setText(QuPathResources.getString("Tools.PathObjectLabels.noDescription"));
 			boolean isLocked = value.isLocked();
 
 			var icons = new ArrayList<Node>();
@@ -340,7 +340,7 @@ public class PathObjectLabels {
 			tooltip.setText(label.getText());
 			label.setTooltip(tooltip);
 			if (description == null)
-				descriptionTooltip.setText("No description");
+				descriptionTooltip.setText(QuPathResources.getString("Tools.PathObjectLabels.noDescription"));
 			else
 				descriptionTooltip.setText(description);
 		}

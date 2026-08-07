@@ -23,6 +23,40 @@
 
 package qupath.lib.gui.viewer;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import qupath.lib.analysis.DelaunayTools;
+import qupath.lib.awt.common.AwtTools;
+import qupath.lib.color.ColorToolsAwt;
+import qupath.lib.common.LogTools;
+import qupath.lib.geom.Point2;
+import qupath.lib.gui.prefs.PathPrefs;
+import qupath.lib.gui.tools.ColorToolsFX;
+import qupath.lib.gui.tools.MeasurementMapper;
+import qupath.lib.gui.viewer.OverlayOptions.DetectionDisplayMode;
+import qupath.lib.objects.PathCellObject;
+import qupath.lib.objects.PathDetectionObject;
+import qupath.lib.objects.PathObject;
+import qupath.lib.objects.PathObjectConnectionGroup;
+import qupath.lib.objects.PathObjectConnections;
+import qupath.lib.objects.PathObjectTools;
+import qupath.lib.objects.TMACoreObject;
+import qupath.lib.objects.classes.PathClass;
+import qupath.lib.objects.classes.PathClassTools;
+import qupath.lib.objects.hierarchy.PathObjectHierarchy;
+import qupath.lib.objects.hierarchy.TMAGrid;
+import qupath.lib.objects.hierarchy.events.PathObjectSelectionModel;
+import qupath.lib.plugins.ParallelTileObject;
+import qupath.lib.regions.ImagePlane;
+import qupath.lib.regions.ImageRegion;
+import qupath.lib.roi.EllipseROI;
+import qupath.lib.roi.LineROI;
+import qupath.lib.roi.PointsROI;
+import qupath.lib.roi.RectangleROI;
+import qupath.lib.roi.RoiEditor;
+import qupath.lib.roi.RoiTools;
+import qupath.lib.roi.interfaces.ROI;
+
 import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
@@ -51,41 +85,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import qupath.lib.analysis.DelaunayTools;
-import qupath.lib.awt.common.AwtTools;
-import qupath.lib.color.ColorToolsAwt;
-import qupath.lib.common.LogTools;
-import qupath.lib.geom.Point2;
-import qupath.lib.gui.prefs.PathPrefs;
-import qupath.lib.gui.tools.ColorToolsFX;
-import qupath.lib.gui.tools.MeasurementMapper;
-import qupath.lib.gui.viewer.OverlayOptions.DetectionDisplayMode;
-import qupath.lib.objects.PathCellObject;
-import qupath.lib.objects.PathDetectionObject;
-import qupath.lib.objects.PathObject;
-import qupath.lib.objects.PathObjectConnectionGroup;
-import qupath.lib.objects.PathObjectConnections;
-import qupath.lib.objects.PathObjectTools;
-import qupath.lib.objects.TMACoreObject;
-import qupath.lib.objects.classes.PathClass;
-import qupath.lib.objects.classes.PathClassTools;
-import qupath.lib.objects.hierarchy.PathObjectHierarchy;
-import qupath.lib.objects.hierarchy.TMAGrid;
-import qupath.lib.objects.hierarchy.events.PathObjectSelectionModel;
-import qupath.lib.plugins.ParallelTileObject;
-import qupath.lib.regions.ImagePlane;
-import qupath.lib.regions.ImageRegion;
-import qupath.lib.roi.EllipseROI;
-import qupath.lib.roi.LineROI;
-import qupath.lib.roi.RoiTools;
-import qupath.lib.roi.PointsROI;
-import qupath.lib.roi.RectangleROI;
-import qupath.lib.roi.RoiEditor;
-import qupath.lib.roi.interfaces.ROI;
 
 
 /**
@@ -271,8 +270,20 @@ public class PathObjectPainter {
 			colorStroke = ColorToolsAwt.darkenColor(color);
 		Stroke stroke = colorStroke == null ? null : calculateStroke(pathObject, downsample, isSelected);
 
-		if (colorFill != null && pathObject.hasChildObjects())
-			colorFill = ColorToolsAwt.getColorWithOpacity(colorFill, 0.1);
+		// If the opacity isn't specified in the metadata, increase it if we have child objects so they are more visible
+		if (colorFill != null && pathObject.hasChildObjects() && getFillOpacityFromMetadataOrNull(pathObject) == null) {
+			// Decrease the opacity if the object only has direct children
+			double opacity = colorFill.getAlpha() / 255.0;
+			opacity *= 0.75;
+			// Decrease the opacity again if there are grandchildren
+			for (var child : pathObject.getChildObjects()) {
+				if (child.hasChildObjects()) {
+					opacity *= 0.75;
+					break;
+				}
+			}
+			colorFill = ColorToolsAwt.getColorWithOpacity(colorFill, opacity);
+		}
 
 		if (stroke != null)
 			g.setStroke(stroke);
@@ -407,10 +418,10 @@ public class PathObjectPainter {
 
 	private static Double tryToParseDouble(Object obj) {
 		try {
-			if (obj instanceof String) {
-				return Double.parseDouble((String)obj);
-			} else if (obj instanceof Number) {
-				return ((Number)obj).doubleValue();
+			if (obj instanceof String s) {
+				return Double.parseDouble(s);
+			} else if (obj instanceof Number n) {
+				return n.doubleValue();
 			}
 		} catch (Exception e) {
 			logger.warn("Unable to parse double from {}", obj);
@@ -868,25 +879,25 @@ public class PathObjectPainter {
 		RectangularShape ellipse;
 
 		//		double radius = pathPointsROI == null ? PointsROI.defaultPointRadiusProperty().get() : pathPointsROI.getPointRadius();
-		// Ensure that points are drawn with at least a radius of one, after any transforms have been applied
+		// Ensure that points are drawn with at least a radius of 1, after any transforms have been applied
 		double scale = Math.max(1, downsample);
-		radius = (Math.max(1 / scale, radius));
+		double radius2 = (Math.max(1.0 / scale, radius));
 
 		// Get clip bounds
 		Rectangle2D bounds = g2d.getClipBounds();
 		if (bounds != null) {
-			bounds.setRect(bounds.getX()-radius, bounds.getY()-radius, bounds.getWidth()+radius*2, bounds.getHeight()+radius*2);
+			bounds.setRect(bounds.getX()-radius2, bounds.getY()-radius2, bounds.getWidth()+radius2*2, bounds.getHeight()+radius2*2);
 		}
 		// Don't fill if we have a small radius, and use a rectangle instead of an ellipse (as this repaints much faster)
 		Graphics2D g = g2d;
-		if (radius / downsample < 0.5) {
+		if (radius2 / downsample < 0.5) {
 			if (colorStroke == null)
 				colorStroke = colorFill;
 			colorFill = null;
 			ellipse = new Rectangle2D.Double();
 			// Use opacity to avoid obscuring points completely
 			int rule = AlphaComposite.SRC_OVER;
-			float alpha = (float)(radius / downsample);
+			float alpha = (float)(radius2 / downsample);
 			var composite = g.getComposite();
 			if (composite instanceof AlphaComposite) {
 				var temp = (AlphaComposite)composite;
@@ -906,7 +917,7 @@ public class PathObjectPainter {
 		for (Point2 p : pathPoints.getAllPoints()) {
 			if (bounds != null && !bounds.contains(p.getX(), p.getY()))
 				continue;
-			ellipse.setFrame(p.getX()-radius, p.getY()-radius, radius*2, radius*2);
+			ellipse.setFrame(p.getX()-radius2, p.getY()-radius2, radius2*2, radius2*2);
 			if (colorFill != null) {
 				g.setColor(colorFill);
 				g.fill(ellipse);

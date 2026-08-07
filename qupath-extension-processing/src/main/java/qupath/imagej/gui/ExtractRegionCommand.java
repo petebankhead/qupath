@@ -31,31 +31,19 @@ import ij.gui.Overlay;
 import ij.gui.Roi;
 import ij.macro.Interpreter;
 import ij.process.LUT;
-
-import java.awt.Rectangle;
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import javax.swing.SwingUtilities;
-
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.StringProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
+import qupath.fx.dialogs.Dialogs;
 import qupath.imagej.tools.IJTools;
 import qupath.lib.awt.common.AwtTools;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.SingleChannelDisplayInfo;
 import qupath.lib.gui.QuPathGUI;
-import qupath.fx.dialogs.Dialogs;
 import qupath.lib.gui.images.servers.ChannelDisplayTransformServer;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.tools.GuiTools;
@@ -71,6 +59,16 @@ import qupath.lib.regions.RegionRequest;
 import qupath.lib.roi.RectangleROI;
 import qupath.lib.roi.interfaces.ROI;
 
+import javax.swing.SwingUtilities;
+import java.awt.Rectangle;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * Extract a region from QuPath, and display it within ImageJ.
  * <p>
@@ -83,7 +81,9 @@ import qupath.lib.roi.interfaces.ROI;
  */
 class ExtractRegionCommand implements Runnable {
 	
-	private static Logger logger = LoggerFactory.getLogger(ExtractRegionCommand.class);
+	private static final Logger logger = LoggerFactory.getLogger(ExtractRegionCommand.class);
+
+	private static final String title = "Send region to ImageJ";
 
 	/**
 	 * Enum to control whether ROIs are included when sending regions to ImageJ.
@@ -176,7 +176,7 @@ class ExtractRegionCommand implements Runnable {
 		params.setHiddenParameters(server.nZSlices() == 1, "doZ");
 		params.setHiddenParameters(server.nTimepoints() == 1, "doT");
 		
-		if (!GuiTools.showParameterDialog("Send region to ImageJ", params))
+		if (!GuiTools.showParameterDialog(title, params))
 			return;
 		
 		// Parse values - store as local variables now, make persistent later
@@ -200,7 +200,13 @@ class ExtractRegionCommand implements Runnable {
 		// Calculate downsample
 		double downsample = resolution;
 		if (!resolutionUnit.equals(PIXELS_UNIT))
-			downsample = resolution / (server.getPixelCalibration().getPixelHeight().doubleValue()/2.0 + server.getPixelCalibration().getPixelWidth().doubleValue()/2.0);
+			downsample = resolution / server.getPixelCalibration().getAveragedPixelSize().doubleValue();
+
+		// Check if the valid is sensible
+		if (downsample <= 0) {
+			Dialogs.showErrorMessage(title, "Invalid resolution - calculated downsample must be greater than zero");
+			return;
+		}
 		
 		// Color transforms are (currently) only applied for brightfield images - for fluorescence we always provide everything as unchanged as possible
 		var imageDisplay = viewer.getImageDisplay();
@@ -245,13 +251,6 @@ class ExtractRegionCommand implements Runnable {
 				region = RegionRequest.createInstance(server.getPath(), downsample, 0, 0, server.getWidth(), server.getHeight(), viewer.getZPosition(), viewer.getTPosition());
 			} else
 				region = RegionRequest.createInstance(server.getPath(), downsample, roi);
-			//					region = RegionRequest.createInstance(server.getPath(), downsample, pathObject.getROI(), viewer.getZPosition(), viewer.getTPosition());
-	
-			// Minimum size has been removed (v0.2.0-m4); returned regions should be at least 1x1 pixels
-//			if (region.getWidth() / downsample < 8 || region.getHeight() / downsample < 8) {
-//				DisplayHelpers.showErrorMessage("Send region to ImageJ", "The width & height of the extracted image must both be >= 8 pixels");
-//				continue;
-//			}
 
 			// Calculate required z-slices and time-points
 			int zStart = doZ ? 0 : region.getZ();
@@ -268,11 +267,11 @@ class ExtractRegionCommand implements Runnable {
 			long availableMemory = GeneralTools.estimateAvailableMemory();
 			if (memory >= availableMemory * 0.95) {
 				logger.error("Cannot extract region {} - estimated size is too large (approx. {} MB)", pathObject, GeneralTools.formatNumber(memory / (1024.0 * 1024.0), 2));
-				Dialogs.showErrorMessage("Send region to ImageJ error", "Selected region is too large to extract - please selected a smaller region or use a higher downsample factor");
+				Dialogs.showErrorMessage(title, "Selected region is too large to extract - please selected a smaller region or use a higher downsample factor");
 				continue;
 			}
 			if (memory / 1024 / 1024 > 100) {
-				if (pathObjects.size() == 1 && !Dialogs.showYesNoDialog("Send region to ImageJ", String.format("Attempting to extract this region is likely to require > %.2f MB - are you sure you want to continue?", memory/1024/1024)))
+				if (pathObjects.size() == 1 && !Dialogs.showYesNoDialog(title, String.format("Attempting to extract this region is likely to require > %.2f MB - are you sure you want to continue?", memory/1024/1024)))
 					return;
 			}
 
@@ -302,8 +301,6 @@ class ExtractRegionCommand implements Runnable {
 								RegionRequest request2 = RegionRequest.createInstance(region.getPath(), region.getDownsample(), region.getX(), region.getY(), region.getWidth(), region.getHeight(), z, t);
 								var regionPredicate = PathObjectTools.createImageRegionPredicate(request2);
 								Overlay temp = IJExtension.extractOverlay(hierarchy, request2, options, p -> p != pathObject && regionPredicate.test(p));
-								if (overlay == null)
-									overlay = temp;
 								for (int i = 0; i < temp.size(); i++) {
 									Roi roiIJ = temp.get(i);
 									roiIJ.setPosition(-1, z+1, t+1);
@@ -311,13 +308,14 @@ class ExtractRegionCommand implements Runnable {
 								}
 							}							
 						}
-						if (overlay != null && overlay.size() > 0)
+						if (overlay.size() > 0)
 							imp.setOverlay(overlay);
 					}
-				} else if (includeOverlay)
+				} else if (includeOverlay) {
 					imp = IJExtension.extractROIWithOverlay(server, pathObject, hierarchy, region, doIncludeRoi, options).getImage();
-				else
+				} else {
 					imp = IJExtension.extractROIWithOverlay(server, pathObject, null, region, doIncludeRoi, options).getImage();
+				}
 				
 				// Set display ranges and invert LUTs if we should (and can)
 				boolean invertLUTs = imageDisplay.useInvertedBackground();
@@ -369,7 +367,7 @@ class ExtractRegionCommand implements Runnable {
 				}
 				imps.add(imp);
 			} catch (IOException e) {
-				Dialogs.showErrorMessage("Send region to ImageJ", e);
+				Dialogs.showErrorMessage(title, e);
 				logger.error(e.getMessage(), e);
 				return;
 			}

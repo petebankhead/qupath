@@ -21,38 +21,25 @@
 
 package qupath.lib.gui;
 
-import java.awt.Shape;
-import java.awt.image.BufferedImage;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.WeakHashMap;
-
-import javafx.geometry.HPos;
-import javafx.geometry.VPos;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBase;
-import javafx.scene.control.Control;
-import javafx.scene.control.SeparatorMenuItem;
-import org.controlsfx.control.action.Action;
-import org.controlsfx.control.decoration.Decorator;
-import org.controlsfx.control.decoration.GraphicDecoration;
-import org.controlsfx.glyphfont.FontAwesome;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import javafx.application.Platform;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.ListChangeListener.Change;
 import javafx.collections.ObservableList;
+import javafx.geometry.HPos;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
+import javafx.geometry.VPos;
 import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBase;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Control;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.RadioMenuItem;
 import javafx.scene.control.Separator;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleButton;
@@ -64,12 +51,19 @@ import javafx.scene.shape.LineTo;
 import javafx.scene.shape.MoveTo;
 import javafx.scene.shape.Path;
 import javafx.scene.text.TextAlignment;
+import javafx.stage.Window;
+import org.controlsfx.control.action.Action;
+import org.controlsfx.control.decoration.Decorator;
+import org.controlsfx.control.decoration.GraphicDecoration;
+import org.controlsfx.glyphfont.FontAwesome;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import qupath.fx.dialogs.Dialogs;
 import qupath.lib.gui.actions.ActionTools;
 import qupath.lib.gui.actions.AutomateActions;
 import qupath.lib.gui.actions.CommonActions;
 import qupath.lib.gui.actions.OverlayActions;
 import qupath.lib.gui.actions.ViewerActions;
-import qupath.fx.dialogs.Dialogs;
 import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.tools.GuiTools;
 import qupath.lib.gui.tools.IconFactory;
@@ -80,6 +74,13 @@ import qupath.lib.gui.viewer.tools.ExtendedPathTool;
 import qupath.lib.gui.viewer.tools.PathTool;
 import qupath.lib.images.ImageData;
 import qupath.lib.objects.PathObject;
+
+import java.awt.Shape;
+import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 class ToolBarComponent {
 
@@ -138,7 +139,7 @@ class ToolBarComponent {
 		nodes.add(createSeparator());
 
 		nodes.add(magLabel);
-		nodes.add(createToggleButton(viewerManagerActions.ZOOM_TO_FIT));
+		nodes.add(createButton(viewerManagerActions.ZOOM_TO_FIT));
 
 		nodes.add(createSeparator());
 
@@ -153,6 +154,7 @@ class ToolBarComponent {
 		nodes.add(createToggleButton(overlayActions.SHOW_PIXEL_CLASSIFICATION));
 
 		final Slider sliderOpacity = new Slider(0, 1, 1);
+		sliderOpacity.setId("opacitySlider");
 		var overlayOptions = overlayActions.getOverlayOptions();
 		sliderOpacity.valueProperty().bindBidirectional(overlayOptions.opacityProperty());
 		sliderOpacity.setTooltip(new Tooltip(getDescription("overlayOpacity")));
@@ -161,6 +163,7 @@ class ToolBarComponent {
 		nodes.add(createSeparator());
 
 		var btnMeasure = new MenuButton();
+		btnMeasure.setId("measurementTablesMenuButton");
 		btnMeasure.setGraphic(IconFactory.createNode(QuPathGUI.TOOLBAR_ICON_SIZE, QuPathGUI.TOOLBAR_ICON_SIZE, PathIcons.TABLE));
 		btnMeasure.setTooltip(new Tooltip(getDescription("showMeasurementsTable")));
 		btnMeasure.getItems().addAll(
@@ -175,10 +178,11 @@ class ToolBarComponent {
 		nodes.add(createSeparator());
 
 		var btnOverlay = new MenuButton();
+		btnOverlay.setId("viewerMenuButton");
 		btnOverlay.setGraphic(IconFactory.createNode(FontAwesome.Glyph.DESKTOP));
 //		btnOverlay.setGraphic(IconFactory.createNode(FontAwesome.Glyph.TH_LARGE, QuPathGUI.TOOLBAR_ICON_SIZE));
 //		btnOverlay.setGraphic(IconFactory.createFontAwesome('\uf26c', QuPathGUI.TOOLBAR_ICON_SIZE));
-		btnMeasure.setTooltip(new Tooltip(getDescription("viewerMenu")));
+		btnOverlay.setTooltip(new Tooltip(getDescription("viewerMenu")));
 
 		btnOverlay.getItems().addAll(
 				ActionTools.createMenuItem(viewerManagerActions.SHOW_OVERVIEW),
@@ -189,8 +193,7 @@ class ToolBarComponent {
 				ActionTools.createMenuItem(overlayActions.SHOW_GRID),
 				ActionTools.createMenuItem(overlayActions.GRID_SPACING),
 				new SeparatorMenuItem(),
-				ActionTools.createMenuItem(commonActions.INPUT_DISPLAY),
-				ActionTools.createMenuItem(commonActions.MEMORY_MONITOR)
+				ActionTools.createMenuItem(commonActions.INPUT_DISPLAY)
 		);
 		nodes.add(btnOverlay);
 
@@ -199,12 +202,21 @@ class ToolBarComponent {
 		nodes.add(createButton(commonActions.SHOW_LOG));
 		nodes.add(createButton(commonActions.PREFERENCES));
 
-		toolbar.getItems().addListener(this::handleItemsChanged);
 		toolbar.getItems().setAll(nodes);
+		toolbar.getItems().addListener(this::handleItemsChanged);
+		// Ensure that buttons are sized whenever the toolbar is shown
+		toolbar.sceneProperty().flatMap(Scene::windowProperty).flatMap(Window::showingProperty).addListener((v, o, n) -> {
+			if (Boolean.TRUE.equals(n))
+				standardizeButtonHeight();
+		});
 	}
 
 	private void handleItemsChanged(Change<? extends Node> change) {
-		var buttons = change.getList().stream()
+		standardizeButtonHeight();
+	}
+
+	private void standardizeButtonHeight() {
+		var buttons = toolbar.getItems().stream()
 				.filter(p -> p instanceof ButtonBase)
 				.map(ButtonBase.class::cast)
 				.toList();

@@ -23,16 +23,8 @@
 
 package qupath.lib.plugins.objects;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.List;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import qupath.lib.common.GeneralTools;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
@@ -49,6 +41,13 @@ import qupath.lib.objects.hierarchy.PathObjectHierarchy;
 import qupath.lib.plugins.AbstractInteractivePlugin;
 import qupath.lib.plugins.parameters.ParameterList;
 import qupath.lib.roi.interfaces.ROI;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
 
 /**
  * Plugin to supplement the measurements for detection objects with the weighted sum of measurements 
@@ -319,7 +318,7 @@ public class SmoothFeaturesPlugin<T> extends AbstractInteractivePlugin<T> {
 				// Update the class weights for both objects currently being tested
 				// Compute weight based on centroid distances
 //				double weight = Math.exp(-distSq/sigma2);
-				double weight = distanceWeights[(int)(Math.sqrt(distSq) + .5)];// * pathObjects.get(j).getClassProbability();
+				float weight = (float)distanceWeights[(int)(Math.sqrt(distSq) + .5)];// * pathObjects.get(j).getClassProbability();
 				float [] temp = measurementValues[j];
 				float [] tempWeighted = measurementsWeighted[j];
 				float [] tempDenominator = measurementDenominators[j];
@@ -398,7 +397,7 @@ public class SmoothFeaturesPlugin<T> extends AbstractInteractivePlugin<T> {
 					parents.add(pathObject);
 			}			
 			if (!parents.isEmpty())
-				logger.warn("Smoothing using annotations");
+				logger.info("Smoothing using annotations");
 		}
 		return parents;
 	}

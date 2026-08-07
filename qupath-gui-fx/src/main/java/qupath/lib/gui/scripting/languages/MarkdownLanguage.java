@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2022, 2024 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2022, 2024 - 2025 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -21,15 +21,13 @@
 
 package qupath.lib.gui.scripting.languages;
 
-import java.util.Set;
-
-import javax.script.ScriptException;
-
+import com.google.common.collect.ImmutableSet;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
-
 import qupath.lib.scripting.ScriptParameters;
 import qupath.lib.scripting.languages.ScriptLanguage;
+
+import javax.script.ScriptException;
 
 /**
  * Class for the representation of JSON syntax in QuPath.
@@ -44,7 +42,7 @@ public class MarkdownLanguage extends ScriptLanguage implements qupath.lib.gui.s
 	private static final MarkdownLanguage INSTANCE = new MarkdownLanguage();
 
 	private MarkdownLanguage() {
-		super("Markdown", Set.of(".md", ".markdown"));
+		super("Markdown", ImmutableSet.of(".md", ".markdown"));
 	}
 
 	/**

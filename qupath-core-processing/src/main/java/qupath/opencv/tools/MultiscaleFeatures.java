@@ -21,6 +21,16 @@
 
 package qupath.opencv.tools;
 
+import org.bytedeco.javacpp.FloatPointer;
+import org.bytedeco.javacpp.indexer.FloatIndexer;
+import org.bytedeco.javacpp.indexer.IntIndexer;
+import org.bytedeco.opencv.global.opencv_core;
+import org.bytedeco.opencv.global.opencv_imgproc;
+import org.bytedeco.opencv.opencv_core.Mat;
+import org.bytedeco.opencv.opencv_core.MatExpr;
+import org.bytedeco.opencv.opencv_core.Rect;
+import qupath.lib.images.servers.PixelCalibration;
+
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,16 +40,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.bytedeco.javacpp.FloatPointer;
-import org.bytedeco.javacpp.indexer.FloatIndexer;
-import org.bytedeco.javacpp.indexer.IntIndexer;
-import org.bytedeco.opencv.global.opencv_core;
-import org.bytedeco.opencv.global.opencv_imgproc;
-import org.bytedeco.opencv.opencv_core.Mat;
-import org.bytedeco.opencv.opencv_core.MatExpr;
-import org.bytedeco.opencv.opencv_core.Rect;
-
-import qupath.lib.images.servers.PixelCalibration;
 
 /**
  * Calculate pixel-based features in both 2D and 3D.
@@ -490,7 +490,7 @@ public class MultiscaleFeatures {
 		/**
 		 * Set all Gaussian sigma values for the z-dimension filter.
 		 * <p>
-		 * Note that this value is in pixels by default, or may be microns is supported 
+		 * Note that this value is in pixels by default, or may be microns (if supported)
 		 * by setting the pixel calibration.
 		 * 
 		 * @param sigma
@@ -788,7 +788,7 @@ public class MultiscaleFeatures {
 		}
 		
 		private List<FeatureMap> build3D(List<Mat> mats, int ind3D) {
-			if (mats.size() == 0)
+			if (mats.isEmpty())
 				return Collections.emptyList();
 						
 			// We need to ensure images are floating point (prefer 32-bit unless all are already 64-bit)

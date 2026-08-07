@@ -47,6 +47,7 @@ import javafx.scene.shape.Circle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.common.GeneralTools;
+import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.measure.PathTableData;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.tools.ColorToolsFX;
@@ -279,6 +280,12 @@ public class PathObjectScatterChart extends ScatterChart<Number, Number> {
         var y = yFun.apply(pathObject);
         if (!Objects.equals(item.getYValue(), y))
             item.setYValue(y);
+
+        // Workaround for https://github.com/qupath/qupath/issues/1877
+        // May be preferable to exclude non-finite values earlier, so that we only subsample points that could
+        // actually be included - but that is likely to be more complex (at least to do it efficiently if measurement
+        // calculations are expensive)
+        circle.setVisible(x != null && y != null && Double.isFinite(x.doubleValue()) && Double.isFinite(y.doubleValue()));
     }
 
     /**
@@ -420,7 +427,10 @@ public class PathObjectScatterChart extends ScatterChart<Number, Number> {
             else
                 rgb = pathClass.getColor();
             circle.setFill(ColorToolsFX.getCachedColor(rgb));
-            var item = new Label(pathClass == null ? "Unclassified" : pathClass.toString(), circle);
+            var item = new Label(
+                    pathClass == null ? QuPathResources.getString("Charts.PathObjectScatterChart.unclassified") : pathClass.toString(),
+                    circle
+            );
             item.setAlignment(Pos.CENTER_LEFT);
             item.setContentDisplay(ContentDisplay.LEFT);
             legendList.add(item);

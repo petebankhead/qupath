@@ -23,6 +23,13 @@
 
 package qupath.lib.roi;
 
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.operation.predicate.RectangleIntersects;
+import qupath.lib.common.GeneralTools;
+import qupath.lib.geom.Point2;
+import qupath.lib.regions.ImagePlane;
+import qupath.lib.roi.interfaces.ROI;
+
 import java.awt.Shape;
 import java.awt.geom.Area;
 import java.awt.geom.Path2D;
@@ -33,14 +40,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-
-import org.locationtech.jts.geom.Geometry;
-
-import org.locationtech.jts.operation.predicate.RectangleIntersects;
-import qupath.lib.common.GeneralTools;
-import qupath.lib.geom.Point2;
-import qupath.lib.regions.ImagePlane;
-import qupath.lib.roi.interfaces.ROI;
 
 /**
  * Implementation of an arbitrary area ROI - which could contain disjointed or hollow regions.
@@ -378,9 +377,10 @@ public class AreaROI extends AbstractPathROI implements Serializable {
 	@Override
 	public Geometry getGeometry() {
 		if (geometry == null) {
-			synchronized(this) {
-				if (geometry == null)
+			synchronized (this) {
+				if (geometry == null) {
 					geometry = super.getGeometry();
+				}
 			}
 		}
 		return geometry;

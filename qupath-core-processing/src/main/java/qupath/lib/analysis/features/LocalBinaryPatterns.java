@@ -23,11 +23,11 @@
 
 package qupath.lib.analysis.features;
 
+import qupath.lib.analysis.images.SimpleImage;
+
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-
-import qupath.lib.analysis.images.SimpleImage;
 
 /**
  * Initial test implementation of Local Binary Patterns.
@@ -233,7 +233,7 @@ public class LocalBinaryPatterns {
         double w4 =      tx  *      ty;
         // Compute the value
         // By checking weights first, this avoids requesting out-of-image pixels (assuming x & y were ok)
-        float value = 0;
+        double value = 0;
         if (w1 > 0)
         	value += w1*img.getValue(fx, fy);
         if (w2 > 0)
@@ -242,7 +242,7 @@ public class LocalBinaryPatterns {
         	value += w3*img.getValue(fx, cy);
         if (w4 > 0)
         	value += w4*img.getValue(cx, cy);
-        return value;
+        return (float)value;
 	}
 	
 	

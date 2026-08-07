@@ -21,25 +21,6 @@
 
 package qupath.opencv.ops;
 
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
 import org.apache.commons.math3.util.FastMath;
 import org.bytedeco.javacpp.PointerScope;
 import org.bytedeco.javacpp.indexer.DoubleIndexer;
@@ -54,7 +35,6 @@ import org.bytedeco.opencv.opencv_core.Size;
 import org.bytedeco.opencv.opencv_ml.StatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import qupath.lib.color.ColorDeconvolutionStains;
 import qupath.lib.common.ColorTools;
 import qupath.lib.common.GeneralTools;
@@ -80,6 +60,25 @@ import qupath.opencv.tools.LocalNormalization;
 import qupath.opencv.tools.MultiscaleFeatures.MultiscaleFeature;
 import qupath.opencv.tools.MultiscaleFeatures.MultiscaleResultsBuilder;
 import qupath.opencv.tools.OpenCVTools;
+
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * Create and use {@link ImageOp} and {@link ImageDataOp} objects.
@@ -152,6 +151,8 @@ public class ImageOps {
 		factoryDataOps = GsonTools.createSubTypeAdapterFactory(ImageDataOp.class, "type");
 		GsonTools.getDefaultBuilder().registerTypeAdapterFactory(factoryDataOps);
 		registerTypes(factoryDataOps, ImageDataOp.class, ImageOps.class, "data.op");
+		registerDataOp(Multiscale3DOp.class, "data.op.multiscale");
+		registerDataOp(CachingDataOp.class, "data.op.caching");
 	}
 	
 	/**
@@ -254,6 +255,68 @@ public class ImageOps {
 	 */
 	public static ImageDataOp buildImageDataOp(Collection<? extends ColorTransform> inputChannels) {
 		return buildImageDataOp(inputChannels.toArray(ColorTransform[]::new));
+	}
+
+	/**
+	 * Create an {@link ImageDataOp} that can compute multiscale features using 3D filters,
+	 * giving the output as concatenated channels.
+	 * <p>
+	 * Because an {@link ImageOp} takes a single {@link Mat} as input, representing a 2D image,
+	 * it is not generally possible to use ops to compute 3D features.
+	 * This data op overcomes that by computing the features early, then permitting additional
+	 * (standard, 2D) ops to be appended for postprocessing if needed.
+	 * @param inputChannels collection of {@link ColorTransform} objects used to extract the pixels that will form the channels of the output {@link Mat}.
+	 * 						If empty, the original image channels will be used.
+	 * @param features requested features
+	 * @param scales the Gaussian sigma values corresponding to the feature scales.
+	 *               These are in pixel units at the resolution of the region request.
+	 *               For anisotropic pixels (z-spacing is different from x and y), the scale values
+	 *               are given for xy and then internally will be recalibrated so that z is similar.
+	 *               If this is undesirable, set the pixel calibration for the image server to be uncalibrated
+	 *               so that the correction cannot be applied.
+	 * @return the {@link ImageDataOp}
+	 * @see qupath.opencv.tools.MultiscaleFeatures
+	 */
+	public static ImageDataOp buildMultiscale3DOp(Collection<? extends ColorTransform> inputChannels,
+												  Collection<MultiscaleFeature> features,
+												  double[] scales) {
+		return new Multiscale3DOp(
+				inputChannels,
+				features,
+				scales);
+	}
+
+
+	/**
+	 * Wrap an existing data op to cache its results, using a default cache size.
+	 * This is useful if the op takes a long time to process, and may be reused
+	 * with different (postprocessing) ImageOps appended.
+	 * @param dataOp the op to wrap
+	 * @return the caching data op, or the original op if it is already caching
+	 * @since v0.8.0
+	 * @see #makeCachingDataOp(ImageDataOp, long)
+	 */
+	public static ImageDataOp makeCachingDataOp(ImageDataOp dataOp) {
+		if (dataOp instanceof CachingDataOp)
+			return dataOp;
+		else
+			return new CachingDataOp(dataOp);
+	}
+
+	/**
+	 * Wrap an existing data op to cache its results.
+	 * This is useful if the op takes a long time to process, and may be reused
+	 * with different (postprocessing) ImageOps appended.
+	 * @param dataOp the op to wrap
+	 * @param cacheSizeBytes maximum cache size, in bytes
+	 * @return the caching data op, or the original op if it is already caching
+	 * @since v0.8.0
+	 */
+	public static ImageDataOp makeCachingDataOp(ImageDataOp dataOp, long cacheSizeBytes) {
+		if (dataOp instanceof CachingDataOp)
+			return dataOp;
+		else
+			return new CachingDataOp(dataOp, null, cacheSizeBytes);
 	}
 	
 	
@@ -1215,7 +1278,7 @@ public class ImageOps {
 					return Collections.singletonList(input);
 				var padding = getPadding();
 				var size = new Size(padding.getX1()*2+1, padding.getY1()*2+1);
-				OpenCVTools.applyToChannels(input, mat -> opencv_imgproc.GaussianBlur(mat, mat, size, sigmaX, sigmaY, opencv_core.BORDER_REFLECT));
+				OpenCVTools.applyToChannels(input, mat -> opencv_imgproc.GaussianBlur(mat, mat, size, sigmaX, sigmaY, opencv_core.ALGO_HINT_ACCURATE, opencv_core.BORDER_REFLECT));
 				return Collections.singletonList(input);
 			}
 
@@ -3199,13 +3262,17 @@ public class ImageOps {
 		}
 		
 	}
-	
-	
-	static Mat stripPadding(Mat mat, Padding padding) {
+
+	/**
+	 * Utility function to strip the padding from a mat.
+	 * @param mat the input mat
+	 * @param padding the padding to remove
+	 * @return a copy of the central portion of the mat with padding remove,
+	 *         or the original mat if the padding was empty
+	 */
+	public static Mat stripPadding(Mat mat, Padding padding) {
 		if (padding.isEmpty())
 			return mat;
-//		return OpenCVTools.crop(mat, padding.getX1(), padding.getY1(),
-//				mat.cols()-padding.getXSum(), mat.rows()-padding.getYSum());
 		return mat.apply(new Rect(
 				padding.getX1(), padding.getY1(),
 				mat.cols()-padding.getXSum(), mat.rows()-padding.getYSum())).clone();

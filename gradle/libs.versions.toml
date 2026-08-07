@@ -1,61 +1,67 @@
 [versions]
 
-bioformats      = "8.1.1"
-bioimageIoSpec  = "0.2.0"
-omeZarrReader   = "0.5.2"
+bioformats      = "8.5.0"
+bioimageIoSpec  = "0.2.1"
+omeZarrReader   = "0.6.0"
 blosc           = "1.21.6+01"
 
-commonmark      = "0.24.0"
+caffeine        = "3.2.3"
+commonmark      = "0.29.0"
 commonsMath3    = "3.6.1"
-commonsText     = "1.10.0"
-controlsFX      = "11.2.2"
+commonsText     = "1.14.0"
+controlsFX      = "11.2.4"
 
-deepJavaLibrary = "0.32.0"
+deepJavaLibrary = "0.36.0"
 
-groovy          = "4.0.26"
-gson            = "2.12.1"
-guava           = "33.4.7-jre"
+groovy          = "5.0.8"
+gson            = "2.14.0"
+guava           = "33.6.0-jre"
 
-ikonli          = "12.3.1"
-imagej          = "1.54k"
+ikonli          = "12.4.0"
+imagej          = "1.54p"
 
 # Compatibility with Java 21 with QuPath v0.6.x
-jdk             = "21"
+jdk             = "25"
 
 # For gradle-javacpp-platform (no 1.5.11 available)
 javacpp         = "1.5.10"
 
-opencv          = "4.10.0-1.5.11"
+opencv          = "4.13.0-1.5.13"
 
 # Warning! JavaFX 20.0.1 and later seem to break search links in Javadocs
-javafx          = "23.0.2"
+javafx          = "26.0.2"
 jna             = "5.16.0"
 jfreeSvg        = "5.0.6"
 jfxtras         = "17-r1"
 jts             = "1.20.0"
-junit           = "5.11.0"
+junit           = "6.0.3"
 
-logback         = "1.5.8"
-logviewer       = "0.2.0"
+logback         = "1.6.1"
+logviewer       = "0.3.0"
 
-extensionmanager= "1.0.0-rc3"
+extensionmanager= "1.1.1"
 
-javadocviewer   = "0.1.2"
+javadocviewer   = "0.1.4"
 
-openslide       = "4.0.0.6"
+openslide       = "4.0.1.2"
 
-picocli         = "4.7.6"
-qupath-fxtras   = "0.1.7"
+picocli         = "4.7.7"
 
-richtextfx      = "0.11.5"
+qupath-fxtras   = "0.4.1"
+qupath-training = "0.1.1"
+qupath-djl      = "0.4.3"
+qupath-imglib2  = "0.1.2"
 
-slf4j           = "2.0.16"
-snakeyaml       = "2.3"
+richtextfx      = "0.11.7"
+
+slf4j           = "2.0.18"
+snakeyaml       = "2.6"
 
 
 [libraries]
 bioimageio-spec = { module = "io.github.qupath:qupath-bioimageio-spec", version.ref = "bioimageIoSpec" }
 
+caffeine      = { module = "com.github.ben-manes.caffeine:caffeine",     version.ref = "caffeine" }
 commonmark    = { module = "org.commonmark:commonmark",         version.ref = "commonmark" }
 commonmark-yaml = { module = "org.commonmark:commonmark-ext-yaml-front-matter", version.ref = "commonmark" }
 commons-math  = { module = "org.apache.commons:commons-math3",  version.ref = "commonsMath3" }
@@ -92,6 +98,10 @@ picocli       = { module = "info.picocli:picocli",              version.ref = "p
 
 qupath-fxtras = { module = "io.github.qupath:qupath-fxtras",    version.ref = "qupath-fxtras" }
 
+qupath-training = { module = "io.github.qupath:qupath-extension-training", version.ref = "qupath-training" }
+qupath-djl      = { module = "io.github.qupath:qupath-extension-djl", version.ref = "qupath-djl" }
+qupath-imglib2  = { module = "io.github.qupath:qupath-imglib2", version.ref = "qupath-imglib2" }
+
 richtextfx    = { module = "org.fxmisc.richtext:richtextfx",    version.ref = "richtextfx" }
 
 slf4j         = { module = "org.slf4j:slf4j-api",               version.ref = "slf4j" }
@@ -127,8 +137,8 @@ javacpp        = { id = "org.bytedeco.gradle-javacpp-platform",     version.ref 
 # If javafx plugin causes trouble, see https://github.com/openjfx/javafx-gradle-plugin#migrating-from-0014-to-010
 javafx         = { id = "org.openjfx.javafxplugin",                 version = "0.1.0" }
 # For jpackage
-jpackage       = { id = "org.beryx.runtime",                        version = "1.13.1" } # Non-modular
+jpackage       = { id = "org.beryx.runtime",                        version = "2.0.1" } # Non-modular
 # For license report (including 3rd party licenses)
-license-report = { id = "com.github.jk1.dependency-license-report", version = "2.9" }
+license-report = { id = "com.github.jk1.dependency-license-report", version = "3.1.4" }
 # For checksums when creating builds
 checksum       = { id = "org.gradle.crypto.checksum",               version = "1.4.0" }

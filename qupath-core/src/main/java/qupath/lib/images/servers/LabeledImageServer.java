@@ -21,6 +21,25 @@
 
 package qupath.lib.images.servers;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import qupath.lib.color.ColorMaps;
+import qupath.lib.color.ColorModelFactory;
+import qupath.lib.color.ColorToolsAwt;
+import qupath.lib.common.ColorTools;
+import qupath.lib.images.ImageData;
+import qupath.lib.images.servers.ImageServerBuilder.ServerBuilder;
+import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
+import qupath.lib.objects.PathObject;
+import qupath.lib.objects.PathObjectFilter;
+import qupath.lib.objects.PathObjectTools;
+import qupath.lib.objects.classes.PathClass;
+import qupath.lib.objects.hierarchy.PathObjectHierarchy;
+import qupath.lib.regions.ImageRegion;
+import qupath.lib.regions.RegionRequest;
+import qupath.lib.roi.RoiTools;
+import qupath.lib.roi.interfaces.ROI;
+
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -38,7 +57,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -48,26 +66,6 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import qupath.lib.color.ColorMaps;
-import qupath.lib.color.ColorModelFactory;
-import qupath.lib.color.ColorToolsAwt;
-import qupath.lib.common.ColorTools;
-import qupath.lib.images.ImageData;
-import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
-import qupath.lib.images.servers.ImageServerBuilder.ServerBuilder;
-import qupath.lib.objects.PathObject;
-import qupath.lib.objects.PathObjectFilter;
-import qupath.lib.objects.PathObjectTools;
-import qupath.lib.objects.classes.PathClass;
-import qupath.lib.objects.hierarchy.PathObjectHierarchy;
-import qupath.lib.regions.ImageRegion;
-import qupath.lib.regions.RegionRequest;
-import qupath.lib.roi.RoiTools;
-import qupath.lib.roi.interfaces.ROI;
 
 
 /**
@@ -220,7 +218,7 @@ public class LabeledImageServer extends AbstractTileableImageServer implements G
 			}
 
 			if (params.grayscaleLut) {
-				if (maxLabel < 255)
+				if (maxLabel < 256)
 					colorModel = COLOR_MODEL_GRAY_UINT8;
 				else if (maxLabel < 65536){
 					colorModel = COLOR_MODEL_GRAY_UINT16;
@@ -337,10 +335,10 @@ public class LabeledImageServer extends AbstractTileableImageServer implements G
 		 * Previously, this was achieved with a UUID - although this looks strange if exporting classes.
 		 */
 //		private PathClass unannotatedClass = PathClassFactory.getPathClass("Unannotated " + UUID.randomUUID().toString());
-		private PathClass unannotatedClass = PathClass.getInstance("*Background*");
+		private PathClass unannotatedClass = PathClass.getInstance("*Background*", ColorTools.BLACK);
 
 		private Predicate<PathObject> objectFilter = PathObjectFilter.ANNOTATIONS;
-		private Function<PathObject, ROI> roiFunction = p -> p.getROI();
+		private Function<PathObject, ROI> roiFunction = PathObject::getROI;
 
 		private boolean createInstanceLabels = false;
 		private boolean shuffleInstanceLabels = true; // Only if using instance labels

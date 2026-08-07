@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -23,17 +23,11 @@
 
 package qupath.lib.gui.viewer.tools.handlers;
 
-import java.awt.geom.Point2D;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-
+import javafx.scene.Cursor;
+import javafx.scene.input.InputEvent;
+import javafx.scene.input.MouseEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javafx.scene.Cursor;
-import javafx.scene.input.MouseEvent;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.viewer.tools.PathTools;
@@ -51,13 +45,18 @@ import qupath.lib.roi.PolylineROI;
 import qupath.lib.roi.RoiEditor;
 import qupath.lib.roi.interfaces.ROI;
 
+import java.awt.geom.Point2D;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+
 /**
  * Abstract PathTool for drawing ROIs.
  * 
  * @author Pete Bankhead
  *
  */
-abstract class AbstractPathROIToolEventHandler extends AbstractPathToolEventHandler {
+abstract class AbstractPathROIToolEventHandler<T extends InputEvent> extends AbstractPathToolEventHandler<T> {
 	
 	private static final Logger logger = LoggerFactory.getLogger(AbstractPathROIToolEventHandler.class);
 

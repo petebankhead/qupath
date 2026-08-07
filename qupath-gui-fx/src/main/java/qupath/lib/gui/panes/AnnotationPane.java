@@ -23,7 +23,58 @@
 
 package qupath.lib.gui.panes;
 
+import javafx.application.Platform;
+import javafx.beans.binding.Bindings;
+import javafx.beans.binding.BooleanBinding;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
+import javafx.collections.FXCollections;
+import javafx.collections.ListChangeListener.Change;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
+import javafx.geometry.Insets;
+import javafx.geometry.Side;
+import javafx.scene.control.Button;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.ListView;
+import javafx.scene.control.MultipleSelectionModel;
+import javafx.scene.control.SelectionMode;
+import javafx.scene.control.SplitPane;
+import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tooltip;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
+import org.controlsfx.glyphfont.FontAwesome;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import qupath.fx.controls.PredicateTextField;
+import qupath.fx.utils.GridPaneUtils;
+import qupath.lib.gui.QuPathGUI;
+import qupath.lib.gui.localization.QuPathResources;
+import qupath.lib.gui.prefs.PathPrefs;
+import qupath.lib.gui.tools.GuiTools;
+import qupath.lib.gui.tools.IconFactory;
+import qupath.lib.gui.tools.PathObjectLabels;
+import qupath.lib.images.ImageData;
+import qupath.lib.objects.DefaultPathObjectComparator;
+import qupath.lib.objects.PathAnnotationObject;
+import qupath.lib.objects.PathObject;
+import qupath.lib.objects.classes.PathClass;
+import qupath.lib.objects.hierarchy.PathObjectHierarchy;
+import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
+import qupath.lib.objects.hierarchy.events.PathObjectHierarchyListener;
+import qupath.lib.objects.hierarchy.events.PathObjectSelectionListener;
+import qupath.lib.regions.ImagePlane;
+
 import java.awt.image.BufferedImage;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -32,56 +83,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
-
-import javafx.beans.binding.Bindings;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
-import javafx.collections.transformation.FilteredList;
-import javafx.geometry.Insets;
-import javafx.scene.control.TitledPane;
-import javafx.scene.layout.VBox;
-import org.controlsfx.glyphfont.FontAwesome;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javafx.application.Platform;
-import javafx.beans.binding.BooleanBinding;
-import javafx.beans.property.BooleanProperty;
-import javafx.beans.property.SimpleBooleanProperty;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
-import javafx.collections.ListChangeListener.Change;
-import javafx.geometry.Side;
-import javafx.scene.control.Button;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.ListView;
-import javafx.scene.control.MultipleSelectionModel;
-import javafx.scene.control.SelectionMode;
-import javafx.scene.control.SplitPane;
-import javafx.scene.control.Tooltip;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.GridPane;
-import javafx.scene.layout.Pane;
-import javafx.scene.layout.Priority;
-import qupath.fx.controls.PredicateTextField;
-import qupath.lib.gui.QuPathGUI;
-import qupath.lib.gui.prefs.PathPrefs;
-import qupath.lib.gui.tools.GuiTools;
-import qupath.fx.utils.GridPaneUtils;
-import qupath.lib.gui.tools.IconFactory;
-import qupath.lib.gui.tools.PathObjectLabels;
-import qupath.lib.images.ImageData;
-import qupath.lib.objects.PathObject;
-import qupath.lib.objects.classes.PathClass;
-import qupath.lib.objects.DefaultPathObjectComparator;
-import qupath.lib.objects.PathAnnotationObject;
-import qupath.lib.objects.hierarchy.PathObjectHierarchy;
-import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
-import qupath.lib.objects.hierarchy.events.PathObjectHierarchyListener;
-import qupath.lib.objects.hierarchy.events.PathObjectSelectionListener;
-import qupath.lib.regions.ImagePlane;
 
 
 /**
@@ -192,7 +193,7 @@ public class AnnotationPane implements PathObjectSelectionListener, ChangeListen
 	}
 
 	private void initializeFilter() {
-		filter.setPromptText("Filter annotations");
+		filter.setPromptText(QuPathResources.getString("Panes.Annotation.filterAnnotations"));
 		filter.setIgnoreCase(true);
 		filteredAnnotations.predicateProperty().bind(filter.predicateProperty());
 	}
@@ -228,13 +229,13 @@ public class AnnotationPane implements PathObjectSelectionListener, ChangeListen
 		panelObjects.setCenter(listAnnotations);
 
 		// Add buttons
-		Button btnSelectAll = new Button("Select all");
+		Button btnSelectAll = new Button(QuPathResources.getString("Panes.Annotation.selectAll"));
 		btnSelectAll.setOnAction(e -> listAnnotations.getSelectionModel().selectAll());
-		btnSelectAll.setTooltip(new Tooltip("Select all annotations"));
+		btnSelectAll.setTooltip(new Tooltip(QuPathResources.getString("Panes.Annotation.selectAllDescription")));
 
-		Button btnDelete = new Button("Delete");
+		Button btnDelete = new Button(QuPathResources.getString("Panes.Annotation.delete"));
 		btnDelete.setOnAction(e -> GuiTools.promptToClearAllSelectedObjects(imageData));
-		btnDelete.setTooltip(new Tooltip("Delete all selected objects"));
+		btnDelete.setTooltip(new Tooltip(QuPathResources.getString("Panes.Annotation.deleteDescription")));
 
 		// Create a button to show context menu (makes it more obvious to the user that it exists)
 		Button btnMore = GuiTools.createMoreButton(menuAnnotations, Side.RIGHT);
@@ -266,7 +267,7 @@ public class AnnotationPane implements PathObjectSelectionListener, ChangeListen
 		panelObjects.setBottom(new VBox(filter, panelButtons));
 
 		var btnProperties = new Button(null, IconFactory.createNode(FontAwesome.Glyph.PENCIL, 12));
-		btnProperties.setTooltip(new Tooltip("Set selected annotation properties"));
+		btnProperties.setTooltip(new Tooltip(QuPathResources.getString("Panes.Annotation.setAnnotationProperties")));
 		btnProperties.disableProperty().bind(Bindings.isEmpty(listAnnotations.getSelectionModel().getSelectedItems()));
 		btnProperties.setOnAction(e -> {
 			var hierarchy = qupath.getViewer().getHierarchy();
@@ -281,16 +282,23 @@ public class AnnotationPane implements PathObjectSelectionListener, ChangeListen
 		});
 
 		
-		var titled = GuiTools.createLeftRightTitledPane("Annotation list", btnProperties);
+		var titled = GuiTools.createLeftRightTitledPane(QuPathResources.getString("Panes.Annotation.annotationList"), btnProperties);
 		titled.textProperty().bind(Bindings.createStringBinding(() -> {
 			int nAll = allAnnotations.size();
 			int nFiltered = filteredAnnotations.size();
 			if (nAll == 0)
-				return "Annotation list";
+				return QuPathResources.getString("Panes.Annotation.annotationList");
 			else if (nAll == nFiltered)
-				return "Annotation list (" + nAll + ")";
+				return MessageFormat.format(
+						QuPathResources.getString("Panes.Annotation.annotationListX"),
+						nAll
+				);
 			else
-				return "Annotation list (" + nFiltered + "/" + nAll + ")";
+				return MessageFormat.format(
+						QuPathResources.getString("Panes.Annotation.annotationListXY"),
+						nFiltered,
+						nAll
+				);
 		}, allAnnotations, filteredAnnotations));
 		// TODO: Consider additional buttons (e.g. to delete)
 

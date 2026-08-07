@@ -1,5 +1,5 @@
 /*
- * ImageJ macro to apply an automated threshold to detect multiple regions.
+ * Groovy script to apply an automated threshold to detect multiple regions.
  * This generates separate Rois for different connected components,
  * and adds them to the image overlay.
  * You will need to return the active overlay to see the results in QuPath.
@@ -14,7 +14,7 @@ import qupath.imagej.tools.IJProperties
 // Select the thresholding method
 var method = AutoThresholder.Method.Otsu
 
-// Optional Gaussan smoothing
+// Optional Gaussian smoothing
 double sigma = 1.0
 
 // Get the current image

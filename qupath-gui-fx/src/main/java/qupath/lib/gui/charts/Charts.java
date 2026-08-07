@@ -21,17 +21,20 @@
 
 package qupath.lib.gui.charts;
 
-import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
 import javafx.application.Platform;
 import javafx.beans.property.DoubleProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Side;
 import javafx.scene.Scene;
-import javafx.scene.chart.*;
+import javafx.scene.chart.Axis;
+import javafx.scene.chart.BarChart;
+import javafx.scene.chart.CategoryAxis;
+import javafx.scene.chart.Chart;
+import javafx.scene.chart.NumberAxis;
+import javafx.scene.chart.PieChart;
+import javafx.scene.chart.ScatterChart;
+import javafx.scene.chart.XYChart;
 import javafx.scene.chart.XYChart.Data;
 import javafx.scene.chart.XYChart.Series;
 import javafx.scene.input.MouseEvent;
@@ -44,6 +47,7 @@ import qupath.fx.utils.FXUtils;
 import qupath.lib.common.ColorTools;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.gui.QuPathGUI;
+import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.tools.ColorToolsFX;
 import qupath.lib.gui.viewer.QuPathViewer;
 import qupath.lib.images.ImageData;
@@ -52,6 +56,19 @@ import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjectTools;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.hierarchy.PathObjectHierarchy;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Random;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Helper class for generating interactive charts.
@@ -596,7 +613,7 @@ public class Charts {
 		
 		@Override
 		protected String getDefaultWindowTitle() {
-			return "Scatter Chart";
+			return QuPathResources.getString("Charts.scatterChart");
 		}
 
 		/**
@@ -1045,7 +1062,7 @@ public class Charts {
 
 		@Override
 		protected String getDefaultWindowTitle() {
-			return "Bar Chart";
+			return QuPathResources.getString("Charts.barChart");
 		}
 
 		/**
@@ -1196,8 +1213,8 @@ public class Charts {
 		 * @return this builder
 		 */
 		public BarChartBuilder classifications(Collection<? extends PathObject> pathObjects) {
-			xLabel("Classification");
-			yLabel("Count");
+			xLabel(QuPathResources.getString("Charts.classification"));
+			yLabel(QuPathResources.getString("Charts.count"));
 			this.pathObjects.addAll(pathObjects);
 			return series(
 					null,

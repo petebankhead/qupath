@@ -23,26 +23,35 @@
 
 package qupath.lib.gui.panes;
 
-import java.awt.image.BufferedImage;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
-
+import javafx.application.Platform;
+import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.ContentDisplay;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.SelectionMode;
 import javafx.scene.control.TableCell;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableColumn.CellDataFeatures;
+import javafx.scene.control.TableRow;
+import javafx.scene.control.TableView;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -53,25 +62,8 @@ import javafx.scene.shape.Rectangle;
 import org.controlsfx.glyphfont.FontAwesome;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javafx.application.Platform;
-import javafx.beans.binding.Bindings;
-import javafx.beans.property.SimpleStringProperty;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.SelectionMode;
-import javafx.scene.control.TableColumn;
-import javafx.scene.control.TableView;
-import javafx.scene.input.Clipboard;
-import javafx.scene.input.ClipboardContent;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
-import javafx.scene.control.TableColumn.CellDataFeatures;
-import javafx.scene.control.TableRow;
 import qupath.fx.controls.PredicateTextField;
+import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.measure.ObservableMeasurementTableData;
 import qupath.lib.gui.tools.ColorToolsFX;
 import qupath.lib.gui.tools.GuiTools;
@@ -82,6 +74,14 @@ import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyEvent;
 import qupath.lib.objects.hierarchy.events.PathObjectHierarchyListener;
 import qupath.lib.objects.hierarchy.events.PathObjectSelectionListener;
+
+import java.awt.image.BufferedImage;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Component to show measurements for a currently-selected object.
@@ -94,8 +94,8 @@ public class SelectedMeasurementTableView implements PathObjectSelectionListener
 	
 	private static final Logger logger = LoggerFactory.getLogger(SelectedMeasurementTableView.class);
 	
-	private static int nDecimalPlaces = 4;
-	
+	private static int nDecimalPlaces = -4;
+
 	/**
 	 * Retain reference to prevent garbage collection.
 	 */
@@ -168,13 +168,13 @@ public class SelectedMeasurementTableView implements PathObjectSelectionListener
 	private TableView<String> createMeasurementTable() {
 		TableView<String> tableMeasurements = new TableView<>();
 
-		tableMeasurements.setPlaceholder(GuiTools.createPlaceholderText("No image or object selected"));
+		tableMeasurements.setPlaceholder(GuiTools.createPlaceholderText(QuPathResources.getString("Panes.SelectedMeasurement.noImageOrObjectSelected")));
 		allKeys.setAll(tableModel.getAllNames());
 		tableMeasurements.setItems(filteredKeys);
 
-		TableColumn<String, String> col1 = new TableColumn<>("Key");
+		TableColumn<String, String> col1 = new TableColumn<>(QuPathResources.getString("Panes.SelectedMeasurement.key"));
 		col1.setCellValueFactory(this::tableKeyColumnValueFactory);
-		TableColumn<String, String> col2 = new TableColumn<>("Value");
+		TableColumn<String, String> col2 = new TableColumn<>(QuPathResources.getString("Panes.SelectedMeasurement.value"));
 		col2.setCellValueFactory(this::tableValueColumnValueFactory);
 		col2.setCellFactory(c -> new ValueTableCell());
 
@@ -196,7 +196,7 @@ public class SelectedMeasurementTableView implements PathObjectSelectionListener
 	private TableRow<String> createTableRow(TableView<String> table) {
 		final TableRow<String> row = new TableRow<>();
 		final ContextMenu menu = new ContextMenu();
-		final MenuItem copyItem = new MenuItem("Copy");
+		final MenuItem copyItem = new MenuItem(QuPathResources.getString("Panes.SelectedMeasurement.copy"));
 		menu.getItems().add(copyItem);
 		copyItem.setOnAction(ev -> copyMeasurementsToClipboard(tableMeasurements.getSelectionModel().getSelectedItems()));
 
@@ -263,12 +263,12 @@ public class SelectedMeasurementTableView implements PathObjectSelectionListener
 		filter.promptTextProperty().bind(
 				Bindings.createStringBinding(() -> {
 					if (useRegex.get())
-						return "Filter measurements by regular expression";
+						return QuPathResources.getString("Panes.SelectedMeasurement.filterByRegularExpression");
 					else
-						return "Filter measurements by key";
+						return QuPathResources.getString("Panes.SelectedMeasurement.filterByKey");
 				}, useRegex)
 		);
-		var tooltip = new Tooltip("Enter text to find specific measurements by key");
+		var tooltip = new Tooltip(QuPathResources.getString("Panes.SelectedMeasurement.findMeasurementsByKey"));
 		Tooltip.install(filter, tooltip);
 		return filter;
 	}
@@ -459,15 +459,14 @@ public class SelectedMeasurementTableView implements PathObjectSelectionListener
 	private static Node createMeasurementListIcon(int size) {
 		var icon = IconFactory.createNode(FontAwesome.Glyph.LIST_OL, size);
 		icon.setOpacity(0.4);
-		Tooltip.install(icon, new Tooltip("Value stored in the object's measurement list.\n" +
-				"May be used as a feature for an object classifier."));
+		Tooltip.install(icon, new Tooltip(QuPathResources.getString("Panes.SelectedMeasurement.valueStoredInObjectMeasurement")));
 		return icon;
 	}
 
 	private static Node createMetadataIcon(int size) {
 		var icon = IconFactory.createNode(FontAwesome.Glyph.LIST_UL, size);
 		icon.setOpacity(0.4);
-		Tooltip.install(icon, new Tooltip("Value is stored in the object's metadata map."));
+		Tooltip.install(icon, new Tooltip(QuPathResources.getString("Panes.SelectedMeasurement.valueStoredInObjectMetadata")));
 		return icon;
 	}
 

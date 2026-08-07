@@ -23,30 +23,39 @@
 
 package qupath.lib.gui.tools;
 
-import java.awt.geom.AffineTransform;
-import java.awt.geom.Path2D;
-import java.awt.geom.PathIterator;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.WeakHashMap;
-import java.util.function.IntFunction;
-import java.util.function.Supplier;
-import java.util.stream.Stream;
-
+import javafx.beans.binding.Bindings;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.value.ObservableIntegerValue;
+import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Group;
+import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.control.ContentDisplay;
+import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.image.WritableImage;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.paint.Color;
+import javafx.scene.paint.Paint;
+import javafx.scene.shape.Circle;
+import javafx.scene.shape.ClosePath;
 import javafx.scene.shape.CubicCurveTo;
+import javafx.scene.shape.Ellipse;
+import javafx.scene.shape.Line;
+import javafx.scene.shape.LineTo;
+import javafx.scene.shape.MoveTo;
+import javafx.scene.shape.Path;
 import javafx.scene.shape.QuadCurve;
+import javafx.scene.shape.QuadCurveTo;
+import javafx.scene.shape.Rectangle;
+import javafx.scene.shape.Shape;
+import javafx.scene.text.Text;
 import javafx.scene.text.TextAlignment;
 import javafx.scene.text.TextBoundsType;
 import javafx.scene.transform.Transform;
@@ -57,26 +66,6 @@ import org.controlsfx.glyphfont.GlyphFontRegistry;
 import org.controlsfx.tools.Duplicatable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javafx.beans.binding.Bindings;
-import javafx.beans.property.ObjectProperty;
-import javafx.beans.value.ObservableIntegerValue;
-import javafx.scene.Group;
-import javafx.scene.Node;
-import javafx.scene.control.Label;
-import javafx.scene.paint.Color;
-import javafx.scene.paint.Paint;
-import javafx.scene.shape.Circle;
-import javafx.scene.shape.ClosePath;
-import javafx.scene.shape.Ellipse;
-import javafx.scene.shape.Line;
-import javafx.scene.shape.LineTo;
-import javafx.scene.shape.MoveTo;
-import javafx.scene.shape.Path;
-import javafx.scene.shape.QuadCurveTo;
-import javafx.scene.shape.Rectangle;
-import javafx.scene.shape.Shape;
-import javafx.scene.text.Text;
 import qupath.lib.geom.Point2;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.prefs.PathPrefs;
@@ -85,9 +74,21 @@ import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjectTools;
 import qupath.lib.roi.EllipseROI;
 import qupath.lib.roi.LineROI;
-import qupath.lib.roi.RoiTools;
 import qupath.lib.roi.RectangleROI;
+import qupath.lib.roi.RoiTools;
 import qupath.lib.roi.interfaces.ROI;
+
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Path2D;
+import java.awt.geom.PathIterator;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.function.IntFunction;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 /**
  * Factory class for creating icons.
@@ -331,7 +332,8 @@ public class IconFactory {
 //									LOG_VIEWER(IconSuppliers.fontAwesome(FontAwesome.Glyph.LIST_UL)), // Alternative
 									LINE_TOOL(IconSuppliers.lineToolIcon()),
 									LOCATION(IconSuppliers.icoMoon('\ue90d')),
-									
+
+									MAP_PIN(IconSuppliers.fontAwesome(FontAwesome.Glyph.MAP_MARKER)),
 									MEASURE(IconSuppliers.icoMoon('\ue90e')),
 									MEMORY_MONITOR(IconSuppliers.fontAwesome(FontAwesome.Glyph.AREA_CHART)),
 									MINUS(IconSuppliers.fontAwesome(FontAwesome.Glyph.MINUS)),
@@ -506,34 +508,53 @@ public class IconFactory {
 	}
 
 	private static Node drawPointsIcon(int sizeOrig) {
-		return drawPointsIcon(sizeOrig, null);
+		return drawPointsIcon(sizeOrig, null, PathPrefs.multipointToolProperty().map(b -> b ? 3 : 1), -1);
 	}
 
 	private static Node drawPointsIcon(int sizeOrig, Color color) {
+		return drawPointsIcon(sizeOrig, color, null, -1);
+	}
+
+	private static Node drawPointsIcon(int sizeOrig, Color color, int nPointsFixed) {
+		return drawPointsIcon(sizeOrig, color, null, nPointsFixed);
+	}
+
+	private static Node drawPointsIcon(int sizeOrig, Color color, ObservableValue<? extends Number> nPoints, int nPointsFixed) {
 		
 		double pad = 1.0;
 		double size = sizeOrig - pad*2;
 		double radius = size/5.0;
-		
-		var c1 = new Circle(pad+size/2.0, pad+radius, radius, Color.TRANSPARENT);
 
-		var c2 = new Circle(pad+radius, pad+size-radius, radius, Color.TRANSPARENT);
+		List<Circle> circles = Arrays.asList(
+					new Circle(pad+size/2.0, pad+radius, radius, Color.TRANSPARENT),
+					new Circle(pad+radius, pad+size-radius, radius, Color.TRANSPARENT),
+					new Circle(pad+size-radius, pad+size-radius, radius, Color.TRANSPARENT)
+			);
 
-		var c3 = new Circle(pad+size-radius, pad+size-radius, radius, Color.TRANSPARENT);
+		double translucent = 0.15;
+		if (nPoints != null) {
+			circles.get(0).opacityProperty().bind(nPoints.map(n -> n.doubleValue() >= 1 ? 1.0 : translucent));
+			circles.get(1).opacityProperty().bind(nPoints.map(n -> n.doubleValue() >= 2 ? 1.0 : translucent));
+			circles.get(2).opacityProperty().bind(nPoints.map(n -> n.doubleValue() >= 3 ? 1.0 : translucent));
+		} else if (nPointsFixed >= 0 && nPointsFixed < 3) {
+			if (nPointsFixed < 1)
+				circles.get(0).setOpacity(translucent);
+			if (nPointsFixed < 2)
+				circles.get(1).setOpacity(translucent);
+			if (nPointsFixed < 3)
+				circles.get(2).setOpacity(translucent);
+		}
+
 		if (color != null) {
 			// Use fixed color
-			c1.setStroke(color);
-			c2.setStroke(color);
-			c3.setStroke(color);
+			circles.forEach(c -> c.setStroke(color));
 		} else {
 			// Use default object color
-			bindShapeColorToObjectColor(c1);
-			bindShapeColorToObjectColor(c2);
-			bindShapeColorToObjectColor(c3);
+			circles.forEach(IconFactory::bindShapeColorToObjectColor);
 		}
 
 //		return new Group(c1, c2, c3);
-		return wrapInGroup(sizeOrig, c1, c2, c3);
+		return wrapInGroup(sizeOrig, circles.toArray(Node[]::new));
 	}
 	
 	
@@ -922,7 +943,7 @@ public class IconFactory {
 			return line;
 		} else if (roi.isPoint()) {
 			// Just show generic points
-			return drawPointsIcon(Math.min(width, height), color);
+			return drawPointsIcon(Math.min(width, height), color, roi.getNumPoints());
 		} else {
 			var path = roiIconCache.computeIfAbsent(roi, r -> createPath(r, scale, color));
 			if (path != null) {

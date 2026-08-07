@@ -23,47 +23,10 @@
 
 package qupath.lib.scripting;
 
-import java.awt.geom.AffineTransform;
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Member;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.Scanner;
-import java.util.Set;
-import java.util.UUID;
-import java.util.WeakHashMap;
-import java.util.function.Predicate;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
+import com.google.common.collect.ObjectArrays;
 import org.locationtech.jts.geom.Geometry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.google.common.collect.ObjectArrays;
-
 import qupath.imagej.processing.IJFilters;
 import qupath.imagej.tools.IJProperties;
 import qupath.imagej.tools.IJTools;
@@ -81,6 +44,7 @@ import qupath.lib.classifiers.object.ObjectClassifier;
 import qupath.lib.classifiers.object.ObjectClassifiers;
 import qupath.lib.classifiers.pixel.PixelClassifier;
 import qupath.lib.color.ColorDeconvolutionStains;
+import qupath.lib.color.StainVector;
 import qupath.lib.common.ColorTools;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.common.LogTools;
@@ -106,16 +70,16 @@ import qupath.lib.io.PathIO.GeoJsonExportOptions;
 import qupath.lib.io.PointIO;
 import qupath.lib.io.UriResource;
 import qupath.lib.io.UriUpdater;
+import qupath.lib.objects.CellTools;
+import qupath.lib.objects.PathAnnotationObject;
+import qupath.lib.objects.PathCellObject;
+import qupath.lib.objects.PathDetectionObject;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjectFilter;
 import qupath.lib.objects.PathObjectPredicates;
 import qupath.lib.objects.PathObjectTools;
 import qupath.lib.objects.PathObjects;
 import qupath.lib.objects.PathTileObject;
-import qupath.lib.objects.CellTools;
-import qupath.lib.objects.PathAnnotationObject;
-import qupath.lib.objects.PathCellObject;
-import qupath.lib.objects.PathDetectionObject;
 import qupath.lib.objects.TMACoreObject;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.objects.classes.PathClassTools;
@@ -154,6 +118,41 @@ import qupath.opencv.ops.ImageOps;
 import qupath.opencv.tools.GroovyCV;
 import qupath.opencv.tools.NumpyTools;
 import qupath.opencv.tools.OpenCVTools;
+
+import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Member;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Scanner;
+import java.util.Set;
+import java.util.UUID;
+import java.util.WeakHashMap;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Collection of static methods that are useful for scripting.
@@ -262,8 +261,14 @@ public class QP {
 		var predicates = new PathObjectPredicates();
 		@SuppressWarnings("unused")
 		var colorModels = new ColorModels();
-		@SuppressWarnings("unused")
-		var dnnTools = new DnnTools();
+
+		try {
+			@SuppressWarnings("unused")
+			var dnnTools = new DnnTools();
+		} catch (LinkageError e) {
+			logger.warn("Unable to initialize DnnTools: {}", e.getMessage());
+			logger.debug(e.getMessage(), e);
+		}
 		
 	}
 
@@ -989,8 +994,8 @@ public class QP {
 	 * 
 	 * @see #getCurrentImageData()
 	 */
-	public static ImageServer<?> getCurrentServer() {
-		ImageData<?> imageData = getCurrentImageData();
+	public static ImageServer<BufferedImage> getCurrentServer() {
+		ImageData<BufferedImage> imageData = getCurrentImageData();
 		if (imageData == null)
 			return null;
 		return imageData.getServer();
@@ -1063,7 +1068,7 @@ public class QP {
 			return null;
 		var selected = hierarchy.getSelectionModel().getSelectedObject();
 		if (selected == null && !hierarchy.getSelectionModel().noSelection())
-			logger.debug("getSelectedObject() is null because there is no primary selected object, "
+			logger.warn("getSelectedObject() is null because there is no primary selected object, "
 					+ "you might want getSelectedObjects() instead");
 		return selected;
 	}
@@ -1906,7 +1911,29 @@ public class QP {
 		imageData.setColorDeconvolutionStains(stains);
 		return true;
 	}
-	
+
+	/**
+	 * Set the color deconvolution stains for the current image data.
+	 *
+	 * @param stains a map of stain name to stain values. Each stain value must be a list containing at least three elements
+	 *               (otherwise the value is skipped). A stain must be provided with the name defined by {@link ColorDeconvolutionStains#BACKGROUND_KEY}.
+	 *               A stain with the name defined by {@link ColorDeconvolutionStains#RESIDUAL_KEY} will be set as {@link StainVector#isResidual() residual},
+	 *               others won't. The order of the map matters: the first entry will be the first stain (unless it's the background), and so on.
+	 * @param name the name of the color deconvolution stains
+	 * @throws IllegalStateException if there is no current image data
+	 * @throws IllegalArgumentException if the provided stains do not contain a stain with the name defined by {@link ColorDeconvolutionStains#BACKGROUND_KEY}
+	 * and with at least three values, or if the provided stains do not contain at least two non-{@link ColorDeconvolutionStains#BACKGROUND_KEY} stains with
+	 * at least three values
+	 * @throws NullPointerException if one of the parameter is null
+	 */
+	public static void setColorDeconvolutionStains(Map<String, List<Number>> stains, String name) {
+		ImageData<?> imageData = getCurrentImageData();
+		if (imageData == null) {
+			throw new IllegalStateException("No current image data. Cannot set color deconvolution stains");
+		}
+
+		imageData.setColorDeconvolutionStains(ColorDeconvolutionStains.parseColorDeconvolutionStains(name, stains));
+	}
 	
 //	public static void classifyDetection(final Predicate<PathObject> p, final String className) {
 //		PathObjectHierarchy hierarchy = getCurrentHierarchy();
@@ -4383,58 +4410,70 @@ public class QP {
 	}
 	
 	/**
-	 * Merge the specified annotations to create a new annotation containing the union of their ROIs.
+	 * Merge the specified annotations to create a new annotation containing the union of their ROIs. The new annotation
+	 * is then added to the provided hierarchy.
 	 * <p>
 	 * Note:
 	 * <ul>
-	 * <li>The existing annotations will be removed from the hierarchy if possible, therefore should be duplicated first 
-	 * if this is not desired.</li>
-	 * <li>The new object will be set to be the selected object in the hierarchy (which can be used to retrieve it if needed).</li>
+	 *     <li>
+	 *         The provided annotations that are used during the merge will be removed from the hierarchy if possible,
+	 *         therefore should be duplicated first if this is not desired.
+ 	 *     </li>
+	 *     <li>The new object will be set to be the selected object in the hierarchy (which can be used to retrieve it if needed).</li>
+	 *     <li>The ROIs of the provided annotations must all have the same {@link ImagePlane}, otherwise the operation will fail.</li>
+	 *     <li>If the provided annotations have the same {@link PathClass}, it will be applied to the created annotation.</li>
 	 * </ul>
 	 * 
-	 * @param hierarchy
-	 * @param annotations
+	 * @param hierarchy the hierarchy in which the merged annotation should be added
+	 * @param annotations the objects to merge. Only annotations with area or point ROI are taken into account
 	 * @return true if changes are made to the hierarchy, false otherwise
 	 */
 	public static boolean mergeAnnotations(final PathObjectHierarchy hierarchy, final Collection<PathObject> annotations) {
-		if (hierarchy == null)
+		if (hierarchy == null || annotations == null) {
+			logger.warn("The provided hierarchy or collection of annotations is null");
 			return false;
-		
-		// Get all the selected annotations with area
-		ROI shapeNew = null;
-		List<PathObject> merged = new ArrayList<>();
-		Set<PathClass> pathClasses = new HashSet<>();
-		for (PathObject annotation : annotations) {
-			if (annotation.isAnnotation() && annotation.hasROI() && (annotation.getROI().isArea() || annotation.getROI().isPoint())) {
-				if (shapeNew == null)
-					shapeNew = annotation.getROI();//.duplicate();
-				else if (shapeNew.getImagePlane().equals(annotation.getROI().getImagePlane()))
-					shapeNew = RoiTools.combineROIs(shapeNew, annotation.getROI(), RoiTools.CombineOp.ADD);
-				else {
-					logger.warn("Cannot merge ROIs across different image planes!");
-					return false;
-				}
-				if (annotation.getPathClass() != null)
-					pathClasses.add(annotation.getPathClass());
-				merged.add(annotation);
-			}
 		}
-		// Check if we actually merged anything
-		if (merged.isEmpty() || merged.size() == 1)
+
+		List<PathObject> annotationsToMerge = annotations.stream()
+				.filter(PathObject::isAnnotation)
+				.filter(PathObject::hasROI)
+				.filter(annotation -> annotation.getROI().isArea() || annotation.getROI().isPoint())
+				.toList();
+		if (annotationsToMerge.isEmpty()) {
+			logger.warn("No valid (i.e. area or point) annotation to merge");
 			return false;
-	
-		// Create and add the new object, removing the old ones
-		PathObject pathObjectNew = PathObjects.createAnnotationObject(shapeNew);
-		if (pathClasses.size() == 1)
-			pathObjectNew.setPathClass(pathClasses.iterator().next());
-		else
-			logger.warn("Cannot assign class unambiguously - " + pathClasses.size() + " classes represented in selection");
-		hierarchy.removeObjects(merged, true);
-		hierarchy.addObject(pathObjectNew);
-		hierarchy.getSelectionModel().setSelectedObject(pathObjectNew);
-		//				pathObject.removePathObjects(children);
-		//				pathObject.addPathObject(pathObjectNew);
-		//				hierarchy.fireHierarchyChangedEvent(pathObject);
+		}
+
+		List<ImagePlane> imagePlanes = annotations.stream()
+				.map(annotation -> annotation.getROI().getImagePlane())
+				.distinct()
+				.toList();
+		if (imagePlanes.size() > 1) {
+			logger.warn("Cannot merge ROIs across different image planes! Got {}", imagePlanes);
+			return false;
+		}
+
+		PathObject mergedAnnotation = PathObjects.createAnnotationObject(RoiTools.union(
+				annotationsToMerge.stream().map(PathObject::getROI).toList()
+		));
+
+		List<PathClass> classifications = annotations.stream()
+				.map(PathObject::getPathClass)
+				.filter(Objects::nonNull)
+				.distinct()
+				.toList();
+		if (classifications.isEmpty()) {
+			logger.debug("No classification found in the provided annotations. The merged annotation will be unclassified");
+		} else if (classifications.size() == 1) {
+			mergedAnnotation.setPathClass(classifications.getFirst());
+		} else {
+			logger.warn("Cannot assign class unambiguously to merged annotation - {} represented in selection", classifications);
+		}
+
+		hierarchy.removeObjects(annotationsToMerge, true);
+		hierarchy.addObject(mergedAnnotation);
+		hierarchy.getSelectionModel().setSelectedObject(mergedAnnotation);
+
 		return true;
 	}
 
