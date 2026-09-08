@@ -45,7 +45,6 @@ import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener.Change;
 import javafx.collections.ObservableList;
 import javafx.embed.swing.SwingFXUtils;
-import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -54,6 +53,8 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
@@ -79,7 +80,6 @@ import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.measure.ObservableMeasurementTableData;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.tools.ColorToolsFX;
-import qupath.lib.gui.tools.GuiTools;
 import qupath.lib.gui.viewer.overlays.AbstractOverlay;
 import qupath.lib.gui.viewer.overlays.GridOverlay;
 import qupath.lib.gui.viewer.overlays.HierarchyOverlay;
@@ -142,11 +142,9 @@ import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 
@@ -272,27 +270,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 	
 	private Pane createPane(Canvas canvas) {
-		addViewerListener(new QuPathViewerListener() {
-
-			@Override
-			public void imageDataChanged(QuPathViewer viewer, ImageData<BufferedImage> imageDataOld,
-					ImageData<BufferedImage> imageDataNew) {
-				paintCanvas();
-			}
-
-			@Override
-			public void visibleRegionChanged(QuPathViewer viewer, Shape shape) {}
-
-			@Override
-			public void selectedObjectChanged(QuPathViewer viewer, PathObject pathObjectSelected) {}
-
-			@Override
-			public void viewerClosed(QuPathViewer viewer) {
-				removeViewerListener(this);
-			}
-			
-		});
-		
 		var pane = new StackPane();
 		pane.getChildren().add(canvas);
 		canvas.widthProperty().bind(pane.widthProperty());
@@ -313,8 +290,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			mouseY = e.getY();
 		});
 		
-		pane.addEventFilter(KeyEvent.ANY, new KeyEventFilter());
-		pane.addEventHandler(KeyEvent.ANY, new KeyEventHandler());
+		pane.addEventFilter(KeyEvent.ANY, this::checkForSpacebar);
+		pane.addEventHandler(KeyEvent.ANY, new QuPathViewerKeyEventHandler(this));
 		return pane;
 	}
 
@@ -420,7 +397,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			int h = (int)(canvas.getHeight() + 1);
 			imgCache = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE);
 			imgCacheFX = new WritableImage(w, h);
-//			imgCacheFX = SwingFXUtils.toFXImage(imgCache, imgCacheFX);
 		}
 		
 		// Reset repaint flag
@@ -675,11 +651,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		gammaProperty.set(PathPrefs.viewerGammaProperty().get());
 		gammaProperty.bind(PathPrefs.viewerGammaProperty());
 
-		// Can be used to debug graphics
-		//		setDoubleBuffered(false);
-		//		RepaintManager.currentManager(this).setDoubleBufferingEnabled(false);
-		//		setDebugGraphicsOptions(DebugGraphics.LOG_OPTION);
-
 		this.imageDisplay = imageDisplay;
 		if (imageDisplay != null)
 			subscription = subscription.and(imageDisplay.eventCountProperty().subscribe(this::repaintOnNextPulse));
@@ -692,10 +663,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		hierarchyOverlay = new HierarchyOverlay(this.regionStore, overlayOptions, null);
 		var tmaGridOverlay = new TMAGridOverlay(overlayOptions);
 		var gridOverlay = new GridOverlay(overlayOptions);
-//		pixelLayerOverlay = new PixelLayerOverlay(this);
 		// Set up the overlay layers
 		coreOverlayLayers.setAll(
-//				pixelLayerOverlay,
 				tmaGridOverlay,
 				hierarchyOverlay,
 				gridOverlay
@@ -995,7 +964,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	
 	protected void updateCursor() {
-//		logger.debug("Requested cursor {} for {}", requestedCursor, getMode());
 		PathTool mode = getActiveTool();
 		if (mode == PathTools.MOVE)
 			getView().setCursor(Cursor.HAND);
@@ -1076,18 +1044,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			} else
 				ObservableMeasurementTableData.setPixelLayer(imageData, null);
 		}
-				
-//		// Get existing custom overlay
-//		var previousOverlay = getCurrentPixelLayerOverlay();
-//		int ind = coreOverlayLayers.indexOf(previousOverlay);
-//		this.customPixelLayerOverlay = pathOverlay;
-//		if (ind < 0) {
-//			logger.warn("Pixel layer overlay not found! Will try to recover...");
-//			coreOverlayLayers.removeAll(pixelLayerOverlay, customPixelLayerOverlay);
-//			coreOverlayLayers.add(0, getCurrentPixelLayerOverlay());
-//		} else {
-//			coreOverlayLayers.set(ind, getCurrentPixelLayerOverlay());
-//		}
 	}
 	
 	
@@ -1425,6 +1381,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			centerImage();
 		}
 
+		paintCanvas();
 		fireImageDataChanged(imageDataOld, imageDataNew);
 
 		if (imageDataNew != null) {
@@ -1844,12 +1801,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 
-	//	private void updateBufferedImage(final VolatileImage imgBuffer, final Shape shapeRegion, final int w, final int h) {
-	//		Graphics2D gBuffered = imgBuffer.createGraphics();
-	//		updateBufferedImage(gBuffered, shapeRegion, w, h);
-	//		gBuffered.dispose();
-	//	}
-
 	private void updateBufferedImage(final BufferedImage imgBuffer, final Shape shapeRegion, final int w, final int h) {
 		Graphics2D gBuffered = imgBuffer.createGraphics();
 		updateBufferedImage(gBuffered, shapeRegion, w, h);
@@ -1859,7 +1810,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			iccTransformOp.filter(this.imgBuffer.getRaster(), this.imgBuffer.getRaster());
 		}
 		var gammaOp = getGammaOp();
-//		ensureGammaUpdated();
 		if (gammaOp != null) {
 			gammaOp.filter(this.imgBuffer.getRaster(), this.imgBuffer.getRaster());
 		}
@@ -2534,12 +2484,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			return String.format("%s%.2f, %.2f %s\n%s%s", prefix, xDisplay, yDisplay, units, s, dimensionString);
 		else
 			return String.format("%s%.2f, %.2f %s%s", prefix, xDisplay, yDisplay, units, dimensionString);
-		
-		
-//		if (s != null)
-//			return String.format("<html><center>%.2f, %.2f %s<br>%s", xDisplay, yDisplay, units, s);
-//		else
-//			return String.format("<html><center>%.2f, %.2f %s", xDisplay, yDisplay, units);
 	}
 
 	/**
@@ -2772,23 +2716,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	@Override
 	public void selectedPathObjectChanged(PathObject pathObjectSelected, PathObject previousObject, Collection<PathObject> allSelected) {
-
-//		// We only want to shift the object ROI to the center under certain conditions, otherwise the screen jerks annoyingly
-//		if (!settingSelectedObject && pathObjectSelected != previousObject && !getZoomToFit() && pathObjectSelected != null && RoiTools.isShapeROI(pathObjectSelected.getROI())) {
-//
-//			// We want to center a TMA core if more than half of it is outside the window
-//			boolean centerCore = false;
-//			Shape shapeDisplayed = getDisplayedRegionShape();
-//			ROI pathROI = pathObjectSelected.getROI();
-//			if (centerCore || !shapeDisplayed.intersects(pathROI.getBoundsX(), pathROI.getBoundsY(), pathROI.getBoundsWidth(), pathROI.getBoundsHeight())) {
-//				//			if (!getDisplayedRegionShape().intersects(pathObjectSelected.getROI().getBounds2D())) {
-//				//			(!(pathObjectSelected instanceof PathDetectionObject && getDisplayedRegionShape().intersects(pathObjectSelected.getROI().getBounds2D())))) {
-//				double cx = pathObjectSelected.getROI().getCentroidX();
-//				double cy = pathObjectSelected.getROI().getCentroidY();
-//				setCenterPixelLocation(cx, cy);
-//				//		logger.info("Centered to " + cx + ", " + cy);
-//			}
-//		}
 		updateRoiEditor();
 		for (QuPathViewerListener listener : new ArrayList<>(listeners)) {
 			listener.selectedObjectChanged(this, pathObjectSelected);
@@ -2797,7 +2724,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		logger.trace("Selected path object changed from {} to {}", previousObject, pathObjectSelected);
 
 		repaint();
-//		repaintEntireImage();
 	}
 
 	private void updateRoiEditor() {
@@ -2821,10 +2747,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	@Override
 	public synchronized boolean requiresTileRegion(final String serverPath, final ImageRegion region) {
-		//		String path = getServerPath();
-		//		return path.equals(serverPath) && (getDisplayedClipShape(null).intersects(region));
-		//		if (region instanceof RegionRequest && getDownsampleFactor() < ((RegionRequest)region).getDownsample())
-		//			return false;
 		if (serverPath.startsWith(PathHierarchyImageServer.DEFAULT_PREFIX) || serverPath.equals(getServerPath())) {
 			return Math.abs(region.getZ() - getZPosition()) <= 3 && region.getT() == getTPosition() && getDisplayedClipShape(null).intersects(AwtTools.getBounds(region));
 		}
@@ -2840,331 +2762,51 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		return getClass().getSimpleName() + " - no server";
 	}
 	
+
+
+	private final KeyCombination comboSpace = new KeyCodeCombination(KeyCode.SPACE);
 	
-	
-	
-	/**
-	 * Watch for spacebar pressing as an event filter, because we don't wanna miss a thing.
-	 */
-	class KeyEventFilter implements EventHandler<KeyEvent> {
-
-		@Override
-		public void handle(KeyEvent event) {
-			KeyCode code = event.getCode();
-
-			// Handle spacebar pressed (log state for later)
-			if (code == KeyCode.SPACE) {
-				if (event.getEventType() == KeyEvent.KEY_PRESSED)
-					setSpaceDown(true);
-				else if (event.getEventType() == KeyEvent.KEY_RELEASED)
-					setSpaceDown(false);
-				return;
-			}
-		}
-		
-	}
-	
-	
-	/**
-	 * Handle key press events that control viewer directly.
-	 */
-	class KeyEventHandler implements EventHandler<KeyEvent> {
-
-		private KeyCode lastPressed = null;
-		private final Set<KeyCode> keysPressed = new HashSet<>();
-		private long keyDownTime = Long.MIN_VALUE;
-		private double scale = 1.0;
-
-		@Override
-		public void handle(KeyEvent event) {
-			if (event.isConsumed())
-				return;
-
-			KeyCode code = event.getCode();
-						
-			// Handle backspace/delete to remove selected object
-			if (event.getEventType() == KeyEvent.KEY_PRESSED && (code == KeyCode.BACK_SPACE || code == KeyCode.DELETE)) {
-				if (getROIEditor().hasActiveHandle() || getROIEditor().isTranslating()) {
-					logger.debug("Cannot delete object - ROI being edited");
-					return;
-				}
-				var hierarchy = getHierarchy();
-				if (hierarchy != null) {
-					if (hierarchy.getSelectionModel().singleSelection()) {
-						// Handle case when there is no primary selected object
-						var selected = hierarchy.getSelectionModel().getSelectedObject();
-						if (selected == null)
-							selected = hierarchy.getSelectionModel().getSelectedObjects().stream().findFirst().orElse(null);
-						GuiTools.promptToRemoveSelectedObject(selected, hierarchy);
-					} else {
-						GuiTools.promptToClearAllSelectedObjects(getImageData());
-					}
-				}
-				event.consume();
-				return;
-			}
-
-			PathObjectHierarchy hierarchy = getHierarchy();
-			if (hierarchy == null)
-				return;
-
-			if (!(code == KeyCode.LEFT || code == KeyCode.UP || code == KeyCode.RIGHT || code == KeyCode.DOWN))
-				return;
-
-			// Use arrow keys to navigate, either or directly or using a TMA grid
-			boolean skipMissingTMACores = PathPrefs.getSkipMissingCoresProperty();
-			TMAGrid tmaGrid = hierarchy.getTMAGrid();
-			List<TMACoreObject> cores = tmaGrid == null ? Collections.emptyList() : new ArrayList<>(tmaGrid.getTMACoreList());
-			if (!event.isShiftDown() && tmaGrid != null && tmaGrid.nCores() > 0) {
-				if (event.getEventType() != KeyEvent.KEY_PRESSED)
-					return;
-				PathObject selected = hierarchy.getSelectionModel().getSelectedObject();
-				// Look up the hierarchy for a TMA core
-				while (selected != null && !selected.isTMACore()) {
-					selected = selected.getParent();
-				}
-				int ind = tmaGrid.getTMACoreList().indexOf(selected);
-				int w = tmaGrid.getGridWidth();
-				int h = tmaGrid.getGridHeight();
-				if (ind < 0) {
-					// Find the closest TMA core to the current position
-					double minDisplacementSq = Double.POSITIVE_INFINITY;
-					int i = -1;
-					for (TMACoreObject core : cores) {
-						i++;
-						if (core.isMissing() && skipMissingTMACores)
-							continue;
-						
-						ROI coreROI = core.getROI();
-						double dx = coreROI.getCentroidX() - getCenterPixelX();
-						double dy = coreROI.getCentroidY() - getCenterPixelY();
-						double displacementSq = dx*dx + dy*dy;
-						if (displacementSq < minDisplacementSq) {
-							ind = i;
-							minDisplacementSq = displacementSq;
-						}
-						
-					}
-				}
-
-				int temp;
-				switch (code) {
-				case LEFT:
-					temp = Math.max(ind - 1, 0);
-					while (skipMissingTMACores && cores.get(temp).isMissing() && temp > 0)
-						temp = Math.max(temp - 1, 0);
-					break;
-				case UP:
-					temp = ind == 0 ? ind : ind-w < 0 ? (w*h)-(w-ind+1) : ind-w;
-					while (skipMissingTMACores && cores.get(temp).isMissing() && temp != 0) 
-						temp = ind == 0 ? ind : temp-w <= 0 ? (w*h)-(w-temp+1) : temp-w;
-					break;
-				case RIGHT:
-					temp = ind+1 >= w*h ? (w*h)-1 : ind+1;
-					while (skipMissingTMACores && cores.get(temp).isMissing() && temp < (w*h)-1)
-						temp = temp+1 >= w*h ? (w*h)-1 : temp+1;
-					break;
-				case DOWN:
-					temp = ind == (w*h)-1 ? ind : ind+w >= (w*h) ? ind%w + 1 : ind+w;
-					while (skipMissingTMACores && cores.get(temp).isMissing() && temp != (w*h)-1) 
-						temp = temp+w >= (w*h) ? temp%w + 1 : temp+w;
-					break;
-				default:
-					return;
-				}
-				ind = !skipMissingTMACores ? temp : cores.get(temp).isMissing() ? ind : temp;
-				// Set the selected object & center the viewer
-				if (ind >= 0 && ind < w*h) {
-					PathObject selectedObject = cores.get(ind);
-					hierarchy.getSelectionModel().setSelectedObject(selectedObject);
-					if (selectedObject != null && selectedObject.hasROI())
-						centerROI(selectedObject.getROI());
-				}
-				
-				event.consume();
-
-				
-			} else if (event.getEventType() == KeyEvent.KEY_PRESSED) {
-				
-				if (keysPressed.isEmpty()) {
-					keysPressed.add(code);
-					lastPressed = code;
-				} else if (!keysPressed.contains(code)) {
-					keysPressed.add(code);
-					if (keysPressed.size() == 3)
-						keysPressed.remove(lastPressed);
-				}
-
-				if (event.isShiftDown()) {
-					switch (code) {
-					case UP:
-						// I'm afraid this is a hack to avoid 
-						// zooming in on the shortcut to show recent commands
-						if (!event.isShortcutDown())
-							zoomIn(10);
-						event.consume();
-						return;
-					case DOWN:
-						if (!event.isShortcutDown())
-							zoomOut(10);
-						event.consume();
-						return;
-					default:
-						break;
-					}
-				}
-
-
-				long currentTime = System.currentTimeMillis();
-				if (keyDownTime == Long.MIN_VALUE)
-					keyDownTime = currentTime;
-				// Take care of acceleration
-				//				double dt = 0.1*currentTime - 0.1*keyDownTime;
-				//				double scale = 5 * Math.pow(20 + dt, 0.5);
-
-				// Apply acceleration effects if required
-				if (PathPrefs.getNavigationAccelerationProperty())
-					scale = scale * 1.05;
-				
-				double d = getDownsampleFactor() * scale * 20 * PathPrefs.getScaledNavigationSpeed();
-				double dx = 0;
-				double dy = 0;
-				int nZSlices = hasServer() ? getServer().nZSlices() : 1;
-				int nTimepoints = hasServer() ? getServer().nTimepoints() : 1;
-				switch (code) {
-				case LEFT:
-					if (nTimepoints > 1) {
-						setTPosition(Math.max(getTPosition()-1, 0));
-						event.consume();
-						return;
-					}
-					dx = d;
-					if (lastPressed != code) {
-						if (lastPressed == KeyCode.RIGHT)
-							dx = 0;
-						else
-							dy = lastPressed == KeyCode.UP ? d : -d;
-					}
-					break;
-				case UP:
-					if (nZSlices > 1) {
-						int inc = PathPrefs.invertZSliderProperty().get() ? -1 : 1;
-						setZPosition(GeneralTools.clipValue(getZPosition() + inc, 0, nZSlices - 1));	
-						event.consume();
-						return;
-					}
-					dy = d;
-					if (lastPressed != code) {
-						if (lastPressed == KeyCode.DOWN)
-							dy = 0;
-						else
-							dx = lastPressed == KeyCode.LEFT ? d : -d;
-					}
-					break;
-				case RIGHT:
-					if (nTimepoints > 1) {
-						setTPosition(Math.min(nTimepoints-1, getTPosition() + 1));						
-						event.consume();
-						return;
-					}
-					dx = -d;
-					if (lastPressed != code) {
-						if (lastPressed == KeyCode.LEFT)
-							dx = 0;
-						else
-							dy = lastPressed == KeyCode.UP ? d : -d;							
-					}
-					break;
-				case DOWN:
-					if (nZSlices > 1) {
-						int inc = PathPrefs.invertZSliderProperty().get() ? 1 : -1;
-						setZPosition(GeneralTools.clipValue(getZPosition() + inc, 0, nZSlices - 1));	
-						event.consume();
-						return;
-					}
-					dy = -d;
-					if (lastPressed != code) {
-						if (lastPressed == KeyCode.UP)
-							dy = 0;
-						else
-							dx = lastPressed == KeyCode.LEFT ? d : -d;
-					}
-					break;
-				default:
-					return;
-				}
-
-				requestStartMoving(dx, dy);
-				event.consume();
-
-
-			} else if (event.getEventType() == KeyEvent.KEY_RELEASED) {
-				keysPressed.remove(code);
-				if (lastPressed == code) {
-					if (keysPressed.size() == 1)
-						lastPressed = keysPressed.iterator().next();
-					else
-						lastPressed = null;
-				}
-				
-				if (keysPressed.size() == 1)
-					requestCancelDirection(code == KeyCode.LEFT || code == KeyCode.RIGHT);
-				
-				switch (code) {
-				case LEFT:
-				case UP:
-				case RIGHT:
-				case DOWN:
-					if (lastPressed == null) {
-						if (!PathPrefs.getNavigationAccelerationProperty())
-							mover.stopMoving();
-						else 
-							mover.decelerate();
-						setDoFasterRepaint(false);
-						keyDownTime = Long.MIN_VALUE;
-						scale = 1;
-					}
-					event.consume();
-					break;
-				default:
-					return;
-				}	
-			}
+	private void checkForSpacebar(KeyEvent event) {
+		if (comboSpace.match(event)) {
+			if (event.getEventType() == KeyEvent.KEY_PRESSED)
+				setSpaceDown(true);
+			else if (event.getEventType() == KeyEvent.KEY_RELEASED)
+				setSpaceDown(false);
 		}
 	}
-	
-	
-	private final MoveToolEventHandler.ViewerMover mover = new MoveToolEventHandler.ViewerMover(this);
-	
-	
+
+
+    private final MoveToolEventHandler.ViewerMover mover = new MoveToolEventHandler.ViewerMover(this);
+
+
 	/**
 	 * Request that the viewer stop any panning immediately.
-	 * 
+	 *
 	 * @see #requestDecelerate
 	 * @see #requestStartMoving
 	 */
 	public void requestStopMoving() {
 		mover.stopMoving();
 	}
-	
+
 	/**
 	 * Request that a viewer decelerate any existing panning smoothly.
-	 * 
+	 *
 	 * @see #requestStartMoving
 	 * @see #requestStopMoving
 	 */
 	public void requestDecelerate() {
 		mover.decelerate();
 	}
-	
+
 	/**
 	 * Request that the viewer start panning with a velocity determined by dx and dy.
-	 * 
+	 *
 	 * <p>This can be used in combination with {@code requestDecelerate} to end a panning event more smoothly.
-	 * 
+	 *
 	 * @param dx
 	 * @param dy
-	 * 
+	 *
 	 * @see #requestDecelerate
 	 * @see #requestStopMoving
 	 */
@@ -3172,10 +2814,10 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		mover.startMoving(dx, dy, true);
 		this.setDoFasterRepaint(true);
 	}
-	
+
 	/**
 	 * Requests that the viewer cancels either the x- or y-axis direction.
-	 * @param xAxis 
+	 * @param xAxis
 	 */
 	public void requestCancelDirection(final boolean xAxis) {
 		mover.cancelDirection(xAxis);
