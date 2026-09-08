@@ -256,9 +256,17 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	private BufferedImage imgCache;
 	private WritableImage imgCacheFX;
-	
-	private final DoubleProperty borderLineWidth = new SimpleDoubleProperty(6);
-	private javafx.scene.paint.Color borderColor;
+
+	/**
+	 * Width of the border line used to indicate that a viewer is active.
+	 */
+	private final DoubleProperty borderLineWidthProperty = new SimpleDoubleProperty(6);
+
+	/**
+	 * Color of the border around the viewer.
+	 * This can be set to indicate that a viewer is active.
+	 */
+	private final ObjectProperty<javafx.scene.paint.Color> borderColorProperty = new SimpleObjectProperty<>();
 	
 	/**
 	 * Get the main JavaFX component representing this viewer.
@@ -415,10 +423,12 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 		imgCacheFX = SwingFXUtils.toFXImage(imgCache, imgCacheFX);
 		context.drawImage(imgCacheFX, 0, 0);
-		
-		if (borderColor != null) {
+
+		var borderColor = getBorderColor();
+		var borderLineWidth = borderLineWidthProperty.get();
+		if (borderColor != null && borderLineWidth > 0) {
 			context.setStroke(borderColor);
-			context.setLineWidth(borderLineWidth.get());
+			context.setLineWidth(borderLineWidth);
 			context.strokeRect(0, 0, canvas.getWidth(), canvas.getHeight());
 		}
 		
@@ -428,27 +438,17 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		
 		imageDataChanging.set(false);
 	}
-	
-	/**
-	 * Set the border color for this viewer.
-	 * This can be used to indicate (for example) that a particular viewer is active.
-	 * @param color
-	 */
-	public void setBorderColor(final javafx.scene.paint.Color color) {
-		this.borderColor = color;
-		if (Platform.isFxApplicationThread()) {
-			repaintRequested = true;
-			paintCanvas();
-		} else
-			repaint();
+
+	public ObjectProperty<javafx.scene.paint.Color> borderColorProperty() {
+		return borderColorProperty;
 	}
 
-	/**
-	 * Get the border color set for this viewer.
-	 * @return
-	 */
+	public void setBorderColor(final javafx.scene.paint.Color color) {
+		borderColorProperty().set(color);
+	}
+
 	public javafx.scene.paint.Color getBorderColor() {
-		return borderColor;
+		return borderColorProperty().get();
 	}
 	
 	private int getWidth() {
@@ -618,7 +618,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				PathPrefs.gridStartYProperty(),
 				PathPrefs.gridScaleMicronsProperty(),
 
-				borderLineWidth
+				borderLineWidthProperty,
+				borderColorProperty
 		).and(
 				subscribeObservables(
 						this::updateOverlaysAndRepaint,
