@@ -24,7 +24,6 @@
 package qupath.lib.gui.viewer;
 
 import javafx.application.Platform;
-import javafx.beans.InvalidationListener;
 import javafx.beans.Observable;
 import javafx.beans.binding.Bindings;
 import javafx.beans.binding.ObjectBinding;
@@ -42,10 +41,7 @@ import javafx.beans.property.SimpleLongProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
-import javafx.collections.ListChangeListener;
 import javafx.collections.ListChangeListener.Change;
 import javafx.collections.ObservableList;
 import javafx.embed.swing.SwingFXUtils;
@@ -63,12 +59,14 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.TextAlignment;
+import javafx.util.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
 import qupath.lib.color.ColorToolsAwt;
 import qupath.lib.common.ColorTools;
 import qupath.lib.common.GeneralTools;
+import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.DirectServerChannelInfo;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
@@ -176,10 +174,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	// An overlay used to display an ImageServer wrapping a PathObjectHierarchy, for faster painting when there are a lot of objects
 	private HierarchyOverlay hierarchyOverlay = null;
-	// An overlay to show a TMA grid
-	private final TMAGridOverlay tmaGridOverlay;
-	// An overlay to show a regular grid (e.g. for counting)
-	private final GridOverlay gridOverlay;
+
 	// A custom pixel overlay to use instead of the default
 	private PathOverlay customPixelLayerOverlay = null;
 
@@ -258,12 +253,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	
 	private double mouseX, mouseY;
 	
-	private StackPane pane;
-	private Canvas canvas;
+	private final Canvas canvas = new Canvas();
+	private final Pane pane = createPane(canvas);
+
 	private BufferedImage imgCache;
 	private WritableImage imgCacheFX;
 	
-	private double borderLineWidth = 6;
+	private final DoubleProperty borderLineWidth = new SimpleDoubleProperty(6);
 	private javafx.scene.paint.Color borderColor;
 	
 	/**
@@ -272,14 +268,10 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @return
 	 */
 	public Pane getView() {
-		if (canvas == null) {
-			setupCanvas();
-		}
 		return pane;
 	}
 	
-	private void setupCanvas() {
-		canvas = new Canvas();
+	private Pane createPane(Canvas canvas) {
 		addViewerListener(new QuPathViewerListener() {
 
 			@Override
@@ -297,21 +289,11 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			@Override
 			public void viewerClosed(QuPathViewer viewer) {
 				removeViewerListener(this);
-				canvas = null;
 			}
 			
 		});
 		
-		canvas.widthProperty().addListener((e, f, g) -> {
-			updateAffineTransform();
-			repaint();
-		});
-		canvas.heightProperty().addListener((e, f, g) -> {
-			updateAffineTransform();
-			repaint();
-		});
-		
-		pane = new StackPane();
+		var pane = new StackPane();
 		pane.getChildren().add(canvas);
 		canvas.widthProperty().bind(pane.widthProperty());
 		canvas.heightProperty().bind(pane.heightProperty());
@@ -333,7 +315,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		
 		pane.addEventFilter(KeyEvent.ANY, new KeyEventFilter());
 		pane.addEventHandler(KeyEvent.ANY, new KeyEventHandler());
-
+		return pane;
 	}
 
 
@@ -416,7 +398,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			repaintRequested = true;
 		}
 		
-		if (!repaintRequested || canvas == null || canvas.getWidth() <= 0 || canvas.getHeight() <= 0) {
+		if (!repaintRequested || canvas.getWidth() <= 0 || canvas.getHeight() <= 0) {
 			repaintRequested = false;
 			return;
 		}
@@ -460,7 +442,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		
 		if (borderColor != null) {
 			context.setStroke(borderColor);
-			context.setLineWidth(borderLineWidth);
+			context.setLineWidth(borderLineWidth.get());
 			context.strokeRect(0, 0, canvas.getWidth(), canvas.getHeight());
 		}
 		
@@ -594,144 +576,23 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 	
-	private InvalidationListener repainter = new InvalidationListener() {
-		@Override
-		public void invalidated(Observable observable) {
-			repaint();
-		}
-	};
-	
 	// We need a more extensive repaint for changes to the image pixel display
-	private InvalidationListener repainterEntire = new InvalidationListener() {
-		@Override
-		public void invalidated(Observable observable) {
-			Platform.runLater(() -> {
-				background = ColorToolsAwt.getCachedColor(PathPrefs.viewerBackgroundColorProperty().get());
-				repaintEntireImage();
-			});
-		}
-	};
-	
-	// We need a more extensive repaint for changes to the image pixel display
-	private InvalidationListener repainterOverlay = new InvalidationListener() {
-		@Override
-		public void invalidated(Observable observable) {
-			forceOverlayUpdate();
+	private void repaintOnNextPulse() {
+		Platform.runLater(() -> {
 			background = ColorToolsAwt.getCachedColor(PathPrefs.viewerBackgroundColorProperty().get());
-			repaint();
-		}
-	};
-	
-	
-	
-	private static class ListenerManager {
-		
-		private final List<ListenerHandler> handlers = new ArrayList<>();
-		
-		public ListenerHandler attachListener(Observable observable, InvalidationListener listener) {
-			ListenerHandler handler = new ObservableListenerHandler(observable, listener);
-			handler.attach();
-			handlers.add(handler);
-			return handler;
-		}
-		
-		public <T> ListenerHandler attachListener(ObservableValue<T> observable, ChangeListener<T> listener) {
-			ListenerHandler handler = new ObservableValueListenerHandler<>(observable, listener);
-			handlers.add(handler);
-			handler.attach();
-			return handler;
-		}
-
-		public <T> ListenerHandler attachListener(ObservableList<T> observable, ListChangeListener<T> listener) {
-			ListenerHandler handler = new ObservableListListenerHandler<>(observable, listener);
-			handlers.add(handler);
-			handler.attach();
-			return handler;
-		}
-
-		public void detachAll() {
-			handlers.forEach(ListenerHandler::detach);
-		}
-		
-		public void clear() {
-			this.handlers.clear();
-		}
-		
-	}
-	
-	interface ListenerHandler {
-		void attach();
-		void detach();
-	}
-	
-	static class ObservableListenerHandler implements ListenerHandler {
-		
-		private Observable observable;
-		private InvalidationListener listener;
-		
-		private ObservableListenerHandler(Observable observable, InvalidationListener listener) {
-			this.observable = observable;
-			this.listener = listener;
-		}
-		
-		@Override
-		public void attach() {
-			this.observable.addListener(listener);
-		}
-		
-		@Override
-		public void detach() {
-			this.observable.removeListener(listener);
-		}
-		
-	}
-	
-	static class ObservableListListenerHandler<T> implements ListenerHandler {
-		
-		private ObservableList<T> observable;
-		private ListChangeListener<T> listener;
-		
-		private ObservableListListenerHandler(ObservableList<T> observable, ListChangeListener<T> listener) {
-			this.observable = observable;
-			this.listener = listener;
-		}
-
-		@Override
-		public void attach() {
-			observable.addListener(listener);
-		}
-
-		@Override
-		public void detach() {
-			observable.removeListener(listener);
-		}
-		
+			repaintEntireImage();
+		});
 	}
 
-	static class ObservableValueListenerHandler<T> implements ListenerHandler {
-		
-		private ObservableValue<T> observable;
-		private ChangeListener<T> listener;
-		
-		private ObservableValueListenerHandler(ObservableValue<T> observable, ChangeListener<T> listener) {
-			this.observable = observable;
-			this.listener = listener;
-		}
-
-		@Override
-		public void attach() {
-			observable.addListener(listener);
-		}
-
-		@Override
-		public void detach() {
-			observable.removeListener(listener);
-		}
-		
+	// We need a more extensive repaint for changes to the image pixel display
+	private void updateOverlaysAndRepaint() {
+		forceOverlayUpdate();
+		background = ColorToolsAwt.getCachedColor(PathPrefs.viewerBackgroundColorProperty().get());
+		repaint();
 	}
-	
-	private ListenerManager manager = new ListenerManager();
-	private ListenerManager overlayOptionsManager = new ListenerManager();
+
+	private Subscription subscription = Subscription.EMPTY;
+	private Subscription overlayOptionsManager = Subscription.EMPTY;
 	
 
 	/**
@@ -757,39 +618,62 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		setOverlayOptions(overlayOptions);
 		
 		// We need a simple repaint for color changes and simple (thick) line changes
-		manager.attachListener(PathPrefs.annotationStrokeThicknessProperty(), repainter);
-		manager.attachListener(PathPrefs.newDetectionRenderingProperty(), repainter);
-		manager.attachListener(PathPrefs.pointRadiusProperty(), repainter);
+		subscription = subscribeObservables(
+				this::repaint,
+				PathPrefs.annotationStrokeThicknessProperty(),
+				PathPrefs.newDetectionRenderingProperty(),
+				PathPrefs.pointRadiusProperty(),
+				PathPrefs.showPointHullsProperty(),
+				PathPrefs.useSelectedColorProperty(),
+				PathPrefs.colorSelectedObjectProperty(),
+				PathPrefs.colorTileProperty(),
+				PathPrefs.colorTMAProperty(),
+				PathPrefs.opacityTMAMissingProperty(),
+				PathPrefs.alwaysPaintSelectedObjectsProperty(),
+				PathPrefs.locationFontSizeProperty(),
+
+				PathPrefs.scalebarFontSizeProperty(),
+				PathPrefs.scalebarFontWeightProperty(),
+				PathPrefs.scalebarLineWidthProperty(),
+
+				PathPrefs.gridSpacingXProperty(),
+				PathPrefs.gridSpacingYProperty(),
+				PathPrefs.gridStartXProperty(),
+				PathPrefs.gridStartYProperty(),
+				PathPrefs.gridScaleMicronsProperty(),
+
+				borderLineWidth
+		).and(
+				subscribeObservables(
+						this::updateOverlaysAndRepaint,
+						PathPrefs.colorDefaultObjectsProperty(),
+						// We need to repaint everything if detection line thickness changes - including any cached regions
+						PathPrefs.detectionStrokeThicknessProperty()
+				)
+		).and(
+				subscribeObservables(
+						this::repaintOnNextPulse,
+						gammaProperty(),
+						PathPrefs.viewerInterpolateBilinearProperty(),
+						PathPrefs.viewerBackgroundColorProperty()
+				)
+		).and(
+				subscribeObservables(
+						this::repaintAfterPlaneUpdate,
+						tPosition,
+						zPosition
+				)
+		).and(
+				subscribeObservables(
+						this::repaintAfterAffineUpdate,
+						rotationProperty(),
+						canvas.widthProperty(),
+						canvas.heightProperty()
+				)
+		);
 
 		gammaProperty.set(PathPrefs.viewerGammaProperty().get());
 		gammaProperty.bind(PathPrefs.viewerGammaProperty());
-		manager.attachListener(gammaProperty, repainterEntire);
-		
-//		manager.attachListener(PathPrefs.viewerGammaProperty(), repainterEntire);
-		manager.attachListener(PathPrefs.viewerInterpolateBilinearProperty(), repainterEntire);
-		manager.attachListener(PathPrefs.viewerBackgroundColorProperty(), repainterEntire);
-		
-		manager.attachListener(PathPrefs.showPointHullsProperty(), repainter);
-		manager.attachListener(PathPrefs.useSelectedColorProperty(), repainter);
-		manager.attachListener(PathPrefs.colorDefaultObjectsProperty(), repainterOverlay);
-		manager.attachListener(PathPrefs.colorSelectedObjectProperty(), repainter);
-		manager.attachListener(PathPrefs.colorTileProperty(), repainter);
-		manager.attachListener(PathPrefs.colorTMAProperty(), repainter);
-		manager.attachListener(PathPrefs.opacityTMAMissingProperty(), repainter);
-		manager.attachListener(PathPrefs.alwaysPaintSelectedObjectsProperty(), repainter);
-		manager.attachListener(PathPrefs.locationFontSizeProperty(), repainter);
-		manager.attachListener(PathPrefs.scalebarFontSizeProperty(), repainter);
-		manager.attachListener(PathPrefs.scalebarFontWeightProperty(), repainter);
-		manager.attachListener(PathPrefs.scalebarLineWidthProperty(), repainter);
-
-		manager.attachListener(PathPrefs.gridSpacingXProperty(), repainter);
-		manager.attachListener(PathPrefs.gridSpacingYProperty(), repainter);
-		manager.attachListener(PathPrefs.gridStartXProperty(), repainter);
-		manager.attachListener(PathPrefs.gridStartYProperty(), repainter);
-		manager.attachListener(PathPrefs.gridScaleMicronsProperty(), repainter);
-
-		// We need to repaint everything if detection line thickness changes - including any cached regions
-		manager.attachListener(PathPrefs.detectionStrokeThicknessProperty(), repainterOverlay);		
 
 		// Can be used to debug graphics
 		//		setDoubleBuffered(false);
@@ -798,16 +682,16 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 		this.imageDisplay = imageDisplay;
 		if (imageDisplay != null)
-			imageDisplay.eventCountProperty().addListener(repainterEntire);
+			subscription = subscription.and(imageDisplay.eventCountProperty().subscribe(this::repaintOnNextPulse));
 
 		// Prepare overlay layers
-		customOverlayLayers.addListener((Change<? extends PathOverlay> e) -> refreshAllOverlayLayers());
-		coreOverlayLayers.addListener((Change<? extends PathOverlay> e) -> refreshAllOverlayLayers());
-		allOverlayLayers.addListener((Change<? extends PathOverlay> e) -> repaint());
+		customOverlayLayers.addListener((Change<? extends PathOverlay> _) -> refreshAllOverlayLayers());
+		coreOverlayLayers.addListener((Change<? extends PathOverlay> _) -> refreshAllOverlayLayers());
+		allOverlayLayers.addListener((Change<? extends PathOverlay> _) -> repaint());
 		
 		hierarchyOverlay = new HierarchyOverlay(this.regionStore, overlayOptions, null);
-		tmaGridOverlay = new TMAGridOverlay(overlayOptions);
-		gridOverlay = new GridOverlay(overlayOptions);
+		var tmaGridOverlay = new TMAGridOverlay(overlayOptions);
+		var gridOverlay = new GridOverlay(overlayOptions);
 //		pixelLayerOverlay = new PixelLayerOverlay(this);
 		// Set up the overlay layers
 		coreOverlayLayers.setAll(
@@ -819,17 +703,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 		this.regionStore.addTileListener(this);
 
-		//		updateCursor();
 		imageUpdated = true;
+	}
 
-		tPosition.subscribe(this::repaintAfterPlaneUpdate)
-				.and(zPosition.subscribe(this::repaintAfterPlaneUpdate));
-		
-		rotationProperty.addListener((v, o, n) -> {
-			imageUpdated = true;
-			updateAffineTransform();
-			repaint();
-		});
+	private void repaintAfterAffineUpdate() {
+		imageUpdated = true;
+		updateAffineTransform();
+		repaint();
 	}
 
 	private void repaintAfterPlaneUpdate() {
@@ -904,43 +784,51 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	private void setOverlayOptions(OverlayOptions overlayOptions) {
 		if (this.overlayOptions == overlayOptions)
 			return;
-		if (this.overlayOptions != null) {
-			overlayOptionsManager.detachAll();
-//			this.overlayOptions.removePropertyChangeListener(this);
+		if (this.overlayOptions != null && overlayOptionsManager != null) {
+			overlayOptionsManager.unsubscribe();
 		}
 		this.overlayOptions = overlayOptions;
 		if (overlayOptions != null) {
 			
-			overlayOptionsManager.attachListener(overlayOptions.fillDetectionsProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.selectedClassesProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.selectedClassVisibilityModeProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.useExactSelectedClassesProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.measurementMapperProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.detectionDisplayModeProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.showConnectionsProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.showObjectPredicateProperty(), repainterOverlay);
-
-			overlayOptionsManager.attachListener(overlayOptions.curtainMinXProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.curtainMinYProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.curtainMaxXProperty(), repainterOverlay);
-			overlayOptionsManager.attachListener(overlayOptions.curtainMaxYProperty(), repainterOverlay);
-
-			overlayOptionsManager.attachListener(overlayOptions.showAnnotationsProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.showNamesProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.fillAnnotationsProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.showDetectionsProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.showPixelClassificationProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.pixelClassificationFilterRegionProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.gridLinesProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.showTMACoreLabelsProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.showGridProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.showTMAGridProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.opacityProperty(), repainter);
-			overlayOptionsManager.attachListener(overlayOptions.fontSizeProperty(), repainter);
-
+			overlayOptionsManager = subscribeObservables(this::updateOverlaysAndRepaint,
+					overlayOptions.fillDetectionsProperty(),
+					overlayOptions.selectedClassesProperty(),
+					overlayOptions.selectedClassVisibilityModeProperty(),
+					overlayOptions.useExactSelectedClassesProperty(),
+					overlayOptions.measurementMapperProperty(),
+					overlayOptions.detectionDisplayModeProperty(),
+					overlayOptions.showConnectionsProperty(),
+					overlayOptions.showObjectPredicateProperty(),
+					overlayOptions.curtainMinXProperty(),
+					overlayOptions.curtainMinYProperty(),
+					overlayOptions.curtainMaxXProperty(),
+					overlayOptions.curtainMaxYProperty())
+					.and(subscribeObservables(
+							this::repaint,
+							overlayOptions.showAnnotationsProperty(),
+							overlayOptions.showNamesProperty(),
+							overlayOptions.fillAnnotationsProperty(),
+							overlayOptions.showDetectionsProperty(),
+							overlayOptions.showPixelClassificationProperty(),
+							overlayOptions.pixelClassificationFilterRegionProperty(),
+							overlayOptions.gridLinesProperty(),
+							overlayOptions.showTMACoreLabelsProperty(),
+							overlayOptions.showGridProperty(),
+							overlayOptions.showTMAGridProperty(),
+							overlayOptions.opacityProperty(),
+							overlayOptions.fontSizeProperty()
+					));
 		}
 		if (isShowing())
 			repaint();
+	}
+
+	private static Subscription subscribeObservables(Runnable runnable, Observable... observables) {
+		Subscription subscription = Subscription.EMPTY;
+		for (var observable : observables) {
+			subscription = subscription.and(observable.subscribe(runnable));
+		}
+		return subscription;
 	}
 
 	/**
@@ -948,7 +836,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @return
 	 */
 	public boolean isShowing() {
-		return canvas != null && canvas.isVisible() && canvas.getScene() != null;
+		return canvas.isVisible() && canvas.getScene() != null;
 	}
 	
 
@@ -968,11 +856,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		zPosition.set(server.nZSlices() / 2);
 		tPosition.set(0);
 		updateThumbnail();
-
-//		if (thumbnailIsFullImage)
-//			overlayOptions.setThinStrokeThickness(1f);
-//		else
-//			overlayOptions.setThinStrokeThickness(2f);
 
 		// Reset the suggested color for the scalebar & grid
 		colorOverlaySuggested = null;
@@ -1031,9 +914,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		double scale = 1. / (3. * w * h); // To convert to mean
 		for (int c : pixels) {
 			int r = (c & ColorTools.MASK_RED) >> 16;
-		int g = (c & ColorTools.MASK_GREEN) >> 8;
-		int b = c & ColorTools.MASK_BLUE;
-		sum += (r + g + b) * scale;
+			int g = (c & ColorTools.MASK_GREEN) >> 8;
+			int b = c & ColorTools.MASK_BLUE;
+			sum += (r + g + b) * scale;
 		}
 		// Convert to mean brightness
 		return (int)(sum + .5);
@@ -1180,7 +1063,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			if (ind >= 0)
 				coreOverlayLayers.remove(ind);
 		} else if (ind < 0) {
-			coreOverlayLayers.add(0, this.customPixelLayerOverlay);
+			coreOverlayLayers.addFirst(this.customPixelLayerOverlay);
 		} else {
 			coreOverlayLayers.set(ind, this.customPixelLayerOverlay);
 		}
@@ -1305,7 +1188,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 */
 	BufferedImage createThumbnailRGB(BufferedImage imgThumbnail) throws IOException {
 		ImageRenderer renderer = getRenderer();
-		if (renderer != null) // && !server.isRGB()) // Transforms will be applied quickly to RGB images, so no need to cache transformed part now
+		if (renderer != null)
 			return renderer.applyTransforms(imgThumbnail, null);
 		else
 			return imgThumbnail;
@@ -1332,10 +1215,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	/**
 	 * Get a shape corresponding to the region of the image currently visible in this viewer.
 	 * Coordinates are in the image space.
-	 * 
+	 * <p>
 	 * If no rotation is applied, the result will be an instance of java.awt.Rectangle.
-	 * Otherwise it will be a Path2D with the rotated rectangle vertices.
-	 * 
+	 * Otherwise, it will be a Path2D with the rotated rectangle vertices.
 	 * @return
 	 */
 	public Shape getDisplayedRegionShape() {
@@ -1358,9 +1240,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			clip2 = clip;
 
 		// Ideally we'd return a rectangle if no rotations are applied, rather than some more complex shape
-		if (clip2 instanceof Rectangle2D && getRotation() == 0) {
-			Rectangle2D rect = (Rectangle2D)clip2;
-			double[] coords = new double[]{rect.getMinX(), rect.getMinY(), rect.getMaxX(), rect.getMaxY()};
+		if (clip2 instanceof Rectangle2D rect && getRotation() == 0) {
+            double[] coords = new double[]{rect.getMinX(), rect.getMinY(), rect.getMaxX(), rect.getMaxY()};
 			transformInverse.transform(coords, 0, coords, 0, 2);
 			// Create a new rectangle if we need to - otherwise reuse one we just created (because clip == null)
 			if (rect == clip)
@@ -1528,7 +1409,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			if (server != null && !server.isRGB()) {
 				var colors = imageDisplay.availableChannels().stream()
 						.filter(c -> c instanceof DirectServerChannelInfo)
-						.map(c -> c.getColor())
+						.map(ChannelDisplayInfo::getColor)
 						.toList();
 				if (server.nChannels() == colors.size())
 					updateServerChannels(server, colors);
@@ -1732,39 +1613,14 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 */
 	public void closeViewer() {
 		//		painter.close();
-		overlayOptionsManager.detachAll();
-		overlayOptionsManager.clear();
-		manager.detachAll();
-		manager.clear();
+		overlayOptionsManager.unsubscribe();
+		subscription.unsubscribe();
 		regionStore.removeTileListener(this);
 //		// Set the server to null
 //		setImageData(null);
 		// Notify listeners
 		for (QuPathViewerListener listener : listeners.toArray(new QuPathViewerListener[0]))
 			listener.viewerClosed(this);
-	}
-
-
-	/*
-	 * Lessons from trying VolatileImages:
-	 * 	- Repainting using BufferedImages is (at least on OSX) frustratingly slow; depending on window size, ~25-30 ms *just* for copying
-	 * 		imgBuffer to screen (ignoring time taken to draw to imgBuffer in the first place, and to draw everything else)
-	 *  - The trouble is that imgBuffer loses isAccelerated() when it is drawn to; when it remains static, drawing is extremely fast as it is accelerated in the background
-	 *  - Avoiding imgBuffer and using a VolatileImage leads to improved performance, about ~9ms to draw to the image, and then copying to display seems instantaneous. But...
-	 *  - Can't access pixels of VolatileImage directly, therefore any image display transforms can kill performance horribly
-	 *  
-	 *  In short, current performance is worse than it needs to be due to the cost of blitting the BufferedImage when panning/zooming.
-	 *  It can easily be improved by switching to using a VolatileImage, but then color transforms become unacceptably terrible.
-	 *  It may be worthwhile to use a compromise solution of a VolatileImage so long as no color transforms are required.
-	 *  
-	 *  But for now this has not been implemented as the code is not stable enough to warrant introducing yet more complexity.
-	 * 
-	 */
-	//	VolatileImage imgVolatile;
-
-	
-	protected void paintComponent(Graphics g) {
-		paintViewer(g, getWidth(), getHeight());
 	}
 
 	
@@ -1839,7 +1695,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		//			g2d.drawImage(imgThumbnailRGB, 0, 0, getWidth(), getHeight(), this);
 
 		if (clipFull)
-			paintFinalImage(g, imgBuffer, this);
+			paintFinalImage(g, imgBuffer);
 		//			g2d.drawImage(imgBuffer, 0, 0, getWidth(), getHeight(), this);
 		else
 			g.drawImage(imgBuffer, clip.x, clip.y, clip.x+clip.width, clip.y+clip.height, clip.x, clip.y, clip.x+clip.width, clip.y+clip.height, null);
@@ -2067,7 +1923,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			}
 		} else {
 			// Just paint the 'thumbnail' version, which has already (potentially) been color-transformed
-			paintThumbnail(gBuffered, imgThumbnailRGB, serverWidth, serverHeight, this);
+			paintThumbnail(gBuffered, imgThumbnailRGB, serverWidth, serverHeight);
 		}
 	}
 
@@ -2090,7 +1946,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 
 
-	static void paintThumbnail(Graphics g, Image img, int width, int height, QuPathViewer viewer) {
+	static void paintThumbnail(Graphics g, Image img, int width, int height) {
 		g.drawImage(img, 0, 0, width, height, null);
 	}
 
@@ -2225,7 +2081,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		return doICCTransform;
 	}
 	
-	static void paintFinalImage(Graphics g, Image img, QuPathViewer viewer) {
+	static void paintFinalImage(Graphics g, Image img) {
 		g.drawImage(img, 0, 0, null);
 	}
 	
@@ -2297,7 +2153,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	/**
 	 * Get a thumbnail representing the image as displayed by this viewer.
-	 * 
+	 * <p>
 	 * Note: This will be a color (aRGB) image, with any color transforms applied -
 	 * therefore should not be used to extract 'original' pixel values
 	 * @return
@@ -2309,7 +2165,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	/**
 	 * Set downsample factor, so that the specified coordinate in the image space is not shifted in the viewer afterwards.
 	 * The purpose is to make it possible to zoom in/out while keeping the cursor focussed on a particular location.
-	 * 
+	 * <p>
 	 * The specified downsample factor will automatically be clipped to the range <code>getMinDownsample</code> to <code>getMaxDownsample</code>.
 	 *  
 	 * @param downsampleFactor
@@ -2699,25 +2555,20 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			double x = p.getX();
 			double y = p.getY();
 			String locationString = getImageLocationString(x, y, useCalibratedUnits);
-			if (locationString == null || locationString.isBlank())
+			if (locationString.isBlank())
 				return "";
 			
 			int z = getZPosition();
 			int t = getTPosition();
 			String classString = getImageObjectClassificationString(x, y).trim();
+
 			var overlayStrings = allOverlayLayers.stream()
 					.map(o -> o.getLocationString(getImageData(), x, y, z, t))
 					.filter(s -> s != null)
 					.collect(Collectors.joining("\n"));
 			
-//			if (classString != null && !classString.isBlank())
-//				classString = classString + "\n";
-			
-			if (classString == null)
-				classString = "\n";
-			else
-				classString = classString + "\n";
-			
+            classString = classString + "\n";
+
 			if (!overlayStrings.isBlank())
 				overlayStrings = overlayStrings + "\n";
 			
@@ -3020,7 +2871,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	class KeyEventHandler implements EventHandler<KeyEvent> {
 
 		private KeyCode lastPressed = null;
-		private Set<KeyCode> keysPressed = new HashSet<>();
+		private final Set<KeyCode> keysPressed = new HashSet<>();
 		private long keyDownTime = Long.MIN_VALUE;
 		private double scale = 1.0;
 
@@ -3048,7 +2899,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 					} else {
 						GuiTools.promptToClearAllSelectedObjects(getImageData());
 					}
-//					setSelectedObject(null);
 				}
 				event.consume();
 				return;
@@ -3100,9 +2950,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				int temp;
 				switch (code) {
 				case LEFT:
-					temp = ind-1 < 0 ? 0 : ind-1;
+					temp = Math.max(ind - 1, 0);
 					while (skipMissingTMACores && cores.get(temp).isMissing() && temp > 0)
-						temp = temp-1 < 0 ? 0 : temp-1;
+						temp = Math.max(temp - 1, 0);
 					break;
 				case UP:
 					temp = ind == 0 ? ind : ind-w < 0 ? (w*h)-(w-ind+1) : ind-w;
