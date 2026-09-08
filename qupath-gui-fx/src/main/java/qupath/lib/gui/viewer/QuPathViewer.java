@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2022 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -56,7 +56,6 @@ import javafx.scene.Cursor;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Label;
-import javafx.scene.control.Tooltip;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -170,7 +169,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	private final ObjectProperty<ImageData<BufferedImage>> imageDataProperty = new SimpleObjectProperty<>();
 
-	private DefaultImageRegionStore regionStore;
+	private final DefaultImageRegionStore regionStore;
 
 	// Overlay (ROI/object) display variables
 	private OverlayOptions overlayOptions;
@@ -178,11 +177,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	// An overlay used to display an ImageServer wrapping a PathObjectHierarchy, for faster painting when there are a lot of objects
 	private HierarchyOverlay hierarchyOverlay = null;
 	// An overlay to show a TMA grid
-	private TMAGridOverlay tmaGridOverlay;
+	private final TMAGridOverlay tmaGridOverlay;
 	// An overlay to show a regular grid (e.g. for counting)
-	private GridOverlay gridOverlay;
-//	// A default overlay to show a pixel layer on top of an image
-//	private PixelLayerOverlay pixelLayerOverlay = null;
+	private final GridOverlay gridOverlay;
 	// A custom pixel overlay to use instead of the default
 	private PathOverlay customPixelLayerOverlay = null;
 
@@ -218,25 +215,17 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	protected boolean locationUpdated = false;
 	
 	// Flag that is temporarily set to true while the ImageData is being set
-	private BooleanProperty imageDataChanging = new SimpleBooleanProperty(false);
+	private final BooleanProperty imageDataChanging = new SimpleBooleanProperty(false);
 	
-	// Create tooltip to use!
-	// Currently disabled because JavaFX tooltips seem to behave quite erratically -
-	// remaining too long in the same place
-	private Tooltip tooltip = null; //new Tooltip();
-
 	// Location & magnification variables
 	// x & y coordinates - in the image space - of the center of the displayed region
 	private double xCenter = 0;
 	private double yCenter = 0;
-	private DoubleProperty downsampleFactor = new SimpleDoubleProperty(1.0);
-	private DoubleProperty rotationProperty = new SimpleDoubleProperty(0);
+	private final DoubleProperty downsampleFactor = new SimpleDoubleProperty(1.0);
 
-	private DoubleProperty gammaProperty = new SimpleDoubleProperty(1.0);
-	
 	// Affine transform used to apply rotation
-	private AffineTransform transform = new AffineTransform();
-	private AffineTransform transformInverse = new AffineTransform();
+	private final AffineTransform transform = new AffineTransform();
+	private final AffineTransform transformInverse = new AffineTransform();
 
 	// Flag to indicate that repainting should occur faster if possible (less detail required)
 	// This can be useful when rapidly changing view, for example
@@ -257,13 +246,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	// Used to determine whether the visible part of the image has been changed
 	private Shape lastVisibleShape = null;
 
-	private RoiEditor roiEditor = RoiEditor.createInstance();
+	private final RoiEditor roiEditor = RoiEditor.createInstance();
 
-	private ObjectProperty<PathTool> currentTool = new SimpleObjectProperty<>(PathTools.MOVE);
-	private ImageDisplay imageDisplay;
+	private final ObjectProperty<PathTool> currentTool = new SimpleObjectProperty<>(PathTools.MOVE);
+	private final ImageDisplay imageDisplay;
 	private transient long lastDisplayChangeTimestamp = 0; // Used to indicate imageDisplay changes
 
-	private LongProperty lastRepaintTimestamp = new SimpleLongProperty(0L); // Used for debugging repaint times
+	private final LongProperty lastRepaintTimestamp = new SimpleLongProperty(0L); // Used for debugging repaint times
 	
 	private boolean repaintRequested = false;
 	
@@ -300,14 +289,10 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			}
 
 			@Override
-			public void visibleRegionChanged(QuPathViewer viewer, Shape shape) {
-//				paintCanvas();
-			}
+			public void visibleRegionChanged(QuPathViewer viewer, Shape shape) {}
 
 			@Override
-			public void selectedObjectChanged(QuPathViewer viewer, PathObject pathObjectSelected) {
-//				paintCanvas();
-			}
+			public void selectedObjectChanged(QuPathViewer viewer, PathObject pathObjectSelected) {}
 
 			@Override
 			public void viewerClosed(QuPathViewer viewer) {
@@ -327,7 +312,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		});
 		
 		pane = new StackPane();
-//		pane.setStyle("fx-background-color: black;");
 		pane.getChildren().add(canvas);
 		canvas.widthProperty().bind(pane.widthProperty());
 		canvas.heightProperty().bind(pane.heightProperty());
@@ -345,9 +329,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		pane.addEventFilter(MouseEvent.ANY, e -> {
 			mouseX = e.getX();
 			mouseY = e.getY();
-			
-			if (tooltip != null && tooltip.isShowing())
-				updateTooltip(tooltip);
 		});
 		
 		pane.addEventFilter(KeyEvent.ANY, new KeyEventFilter());
@@ -440,11 +421,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			return;
 		}
 		
-//		if (canvas == null || !canvas.isVisible())
-//			return;
-		
 		if (!Platform.isFxApplicationThread()) {
-			Platform.runLater(() -> paintCanvas());
+			Platform.runLater(this::paintCanvas);
 			return;
 		}
 		
@@ -545,7 +523,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		logger.trace("Repaint requested!");
 		repaintRequested = true;
 
-		Platform.runLater(() -> paintCanvas());
+		Platform.runLater(this::paintCanvas);
 	}
 
 	/**
@@ -646,9 +624,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	
 	
 	
-	static class ListenerManager {
+	private static class ListenerManager {
 		
-		private List<ListenerHandler> handlers = new ArrayList<>();
+		private final List<ListenerHandler> handlers = new ArrayList<>();
 		
 		public ListenerHandler attachListener(Observable observable, InvalidationListener listener) {
 			ListenerHandler handler = new ObservableListenerHandler(observable, listener);
@@ -672,7 +650,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		}
 
 		public void detachAll() {
-			handlers.stream().forEach(h -> h.detach());
+			handlers.forEach(ListenerHandler::detach);
 		}
 		
 		public void clear() {
@@ -681,7 +659,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		
 	}
 	
-	static interface ListenerHandler {
+	interface ListenerHandler {
 		void attach();
 		void detach();
 	}
@@ -844,41 +822,21 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		//		updateCursor();
 		imageUpdated = true;
 
-		if (tooltip != null) {
-			tooltip.setTextAlignment(TextAlignment.CENTER);
-			tooltip.activatedProperty().addListener((v, o, n) -> {
-				if (n) 
-					updateTooltip(tooltip);
-			});
-			tooltip.setAutoHide(true);
-			Tooltip.install(getView(), tooltip);
-		}
-		
-		
-		zPosition.addListener((v, o, n) -> {
-//			if (zPosition.get() == n)
-//				return;
-			imageUpdated = true;
-			updateThumbnail(false);
-			repaint();
-			fireVisibleRegionChangedEvent(getDisplayedRegionShape());
-		});
-		
-		
-		tPosition.addListener((v, o, n) -> {
-//			if (zPosition.get() == n)
-//				return;
-			imageUpdated = true;
-			updateThumbnail(false);
-			repaint();
-			fireVisibleRegionChangedEvent(getDisplayedRegionShape());
-		});
+		tPosition.subscribe(this::repaintAfterPlaneUpdate)
+				.and(zPosition.subscribe(this::repaintAfterPlaneUpdate));
 		
 		rotationProperty.addListener((v, o, n) -> {
 			imageUpdated = true;
 			updateAffineTransform();
 			repaint();
 		});
+	}
+
+	private void repaintAfterPlaneUpdate() {
+		imageUpdated = true;
+		updateThumbnail(false);
+		repaint();
+		fireVisibleRegionChangedEvent(getDisplayedRegionShape());
 	}
 
 	/**
@@ -1102,7 +1060,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		Color c = getSuggestedOverlayColor();
 		if (c == ColorToolsAwt.TRANSLUCENT_BLACK)
 			return ColorToolsFX.TRANSLUCENT_BLACK_FX;
-//		else if (c == DisplayHelpers.TRANSLUCENT_WHITE):
+		else
 			return ColorToolsFX.TRANSLUCENT_WHITE_FX;
 	}
 
@@ -1332,7 +1290,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		} catch (IOException e) {
 			imgThumbnailRGB = null;
 			colorOverlaySuggested = null;
-			logger.warn("Error requesting thumbnail {}", e.getLocalizedMessage());
+			logger.warn("Error requesting thumbnail {}", e.getMessage());
 		}
 	}
 	
@@ -1441,42 +1399,40 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		return getServer() != null;
 	}
 
-
-	private final IntegerProperty tPosition = new SimpleIntegerProperty(0);
-	private final IntegerProperty zPosition = new SimpleIntegerProperty(0);
-
 	/**
-	 * Set the requested z-slice to be visible.
-	 * @param zPos
+	 * Index of the currently visible z-slice.
 	 */
+	private final IntegerProperty zPosition = new SimpleIntegerProperty(null, "zPosition", 0);
+
+	public IntegerProperty zPositionProperty() {
+		return zPosition;
+	}
+
 	public void setZPosition(int zPos) {
-		zPosition.set(zPos);
+		zPositionProperty().set(zPos);
 	}
 
-	/**
-	 * Get the currently-visible time point.
-	 * @return
-	 */
-	public int getTPosition() {
-		return tPosition.get();
-	}
-
-	/**
-	 * Set the requested time point to be visible.
-	 * @param tPosition
-	 */
-	public void setTPosition(int tPosition) {
-		this.tPosition.set(tPosition);
-	}
-
-	/**
-	 * Get the currently-visible z-slice.
-	 * @return
-	 */
 	public int getZPosition() {
-		return zPosition.get();
+		return zPositionProperty().get();
 	}
-	
+
+	/**
+	 * Index of the currently visible time point.
+	 */
+	private final IntegerProperty tPosition = new SimpleIntegerProperty(null, "tPositon", 0);
+
+	public IntegerProperty tPositionProperty() {
+		return tPosition;
+	}
+
+	public int getTPosition() {
+		return tPositionProperty().get();
+	}
+
+	public void setTPosition(int tPosition) {
+		tPositionProperty().set(tPosition);
+	}
+
 	/**
 	 * Get the {@link ImagePlane} currently being displayed, including z and t positions. Channels are ignored.
 	 * 
@@ -1590,27 +1546,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 		fireImageDataChanged(imageDataOld, imageDataNew);
 
-		//		featureMapWrapper = new TiledFeatureMapImageWrapper(server.getWidth(), server.getHeight());
-
-//		// Notify overlays of change to ImageData
-//		Iterator<PathOverlay> iter = allOverlayLayers.iterator();
-//		while (iter.hasNext()) {
-//			PathOverlay overlay = iter.next();
-//			if (overlay instanceof ImageDataOverlay) {
-//				ImageDataOverlay overlay2 = (ImageDataOverlay)overlay;
-//				if (!overlay2.supportsImageDataChange()) {
-//					// Remove any non-core overlay layers that don't support an ImageData change
-//					if (!coreOverlayLayers.contains(overlay2))
-//						iter.remove();
-//					continue;
-//				} else
-//					overlay2.setImageData(imageDataNew);
-//			}
-//		}
-		//		overlay.setImageData(imageData);
-
 		if (imageDataNew != null) {
-			//			hierarchyPainter = new PathHierarchyPainter(hierarchy);
 			hierarchy.addListener(this);
 			hierarchy.getSelectionModel().addPathObjectSelectionListener(this);
 		}
@@ -1653,7 +1589,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		var channels = server.getMetadata().getChannels();
 		if (channels.size() != colors.size())
 			throw new IllegalArgumentException(String.format("Number of channels (%d) does not match the number of colors (%d)!", channels.size(), colors.size()));
-		var serverChannelColors = channels.stream().map(c -> c.getColor()).toList();
+		var serverChannelColors = channels.stream().map(ImageChannel::getColor).toList();
 		if (colors.equals(serverChannelColors))
 			return false;
 		channels = new ArrayList<>(channels);
@@ -1692,8 +1628,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		if (currentServer == null || tempServer == null)
 			return false;
 		if (tempServer.nChannels() == currentServer.nChannels() && tempServer.getPixelType() == currentServer.getPixelType()) {
-			var tempNames = tempServer.getMetadata().getChannels().stream().map(c -> c.getName()).toList();
-			var currentNames = currentServer.getMetadata().getChannels().stream().map(c -> c.getName()).toList();
+			var tempNames = tempServer.getMetadata().getChannels().stream().map(ImageChannel::getName).toList();
+			var currentNames = currentServer.getMetadata().getChannels().stream().map(ImageChannel::getName).toList();
 			return tempNames.equals(currentNames);
 		}
 		return false;
@@ -1891,18 +1827,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			//			updateBufferedImage(imgVolatile, shapeRegion, w, h);
 			updateBufferedImage(imgBuffer, shapeRegion, w, h);
 		}
-
-		//		if (imageUpdated || locationUpdated) {
-		//			updateBufferedImage(imgVolatile, shapeRegion, w, h);
-		////			updateBufferedImage(imgBuffer, shapeRegion, w, h);
-		////			logger.info("INITIAL Image drawing time: " + (System.currentTimeMillis() - t1));			
-		//			imgVolatile.createGraphics().drawImage(imgBuffer, 0, 0, this);
-		//		}
-
-
-		//		while (imgVolatile.contentsLost()) {
-		//			imgVolatile.createGraphics().drawImage(imgBuffer, 0, 0, this);
-		//		}
 
 		// Store the last shape visible
 		lastVisibleShape = shapeRegion;
@@ -2216,7 +2140,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				return ICC_Profile.getInstance(bytes);
 			}
 		} catch (Exception e) {
-			logger.warn("Unable to read ICC profile: {}", e.getLocalizedMessage());
+			logger.warn("Unable to read ICC profile: {}", e.getMessage());
 		}
 		return null;
 	}
@@ -2239,19 +2163,43 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				iccSource,
 				ICC_Profile.getInstance(ColorSpace.CS_sRGB)}, null);
 	}
+
+
+	private ColorConvertOp iccTransformOp = null;
+	private boolean doICCTransform = false;
+
+	/**
+	 * Gamma property affecting the display of all images in the viewer.
+	 * By default, this is bound to {@link PathPrefs#viewerGammaProperty()}.
+	 */
+	private final DoubleProperty gammaProperty = new SimpleDoubleProperty(1.0);
+
+	public DoubleProperty gammaProperty() {
+		return gammaProperty;
+	}
+
+	public double getGamma() {
+		return gammaProperty().get();
+	}
 	
-	
-	private ObjectBinding<LookupOp> gammaOp = Bindings.createObjectBinding(() -> {
-		double gamma = gammaProperty.get();
+	public void setGamma(double gamma) {
+		// If we're bound to the preferences value, we can't set the gamma
+		if (gammaProperty().isBound()) {
+			logger.warn("Unable to set gamma for viewer - property is bound.");
+			logger.warn("Call viewer.gammaProperty().unbind() first.");
+			return;
+		}
+		gammaProperty().set(gamma);
+	}
+
+	private final ObjectBinding<LookupOp> gammaOp = Bindings.createObjectBinding(() -> {
+		double gamma = gammaProperty().get();
 		if (gamma == 1.0 || gamma <= 0 || !Double.isFinite(gamma))
 			return null;
 		else
 			return createGammaOp(gamma);
-	}, gammaProperty);
-	
-	private ColorConvertOp iccTransformOp = null;
-	private boolean doICCTransform = false;
-	
+	}, gammaProperty());
+
 	/**
 	 * Get a {@link LookupOp} that can perform any requested gamma correction in this viewer.
 	 * Note that the gamma is applied to the RGB image (not the original data).
@@ -2260,41 +2208,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	public LookupOp getGammaOp() {
 		return gammaOp.get();
 	}
-	
-	/**
-	 * Get the gamma value used for this viewer.
-	 * @return
-	 */
-	public double getGamma() {
-		return gammaProperty.get();
-	}
-	
-	/**
-	 * Set the gamma value for this viewer.
-	 * Note that if the property is bound (as it is by default, the method does not
-	 * change the gamma value but rather logs a warning that {@code viewer.gammaProperty().unbind()}
-	 * should be called first.
-	 * @param gamma
-	 */
-	public void setGamma(double gamma) {
-		// If we're bound to the preferences value, we can't set the gamma
-		if (gammaProperty.isBound()) {
-			logger.warn("Unable to set gamma for viewer - property is bound.");
-			logger.warn("Call viewer.gammaProperty().unbind() first.");
-			return;
-		}
-		gammaProperty.set(gamma);
-	}
-	
-	/**
-	 * Get the gamma property for this viewer.
-	 * By default, this is bound to {@link PathPrefs#viewerGammaProperty()}.
-	 * @return
-	 */
-	public DoubleProperty gammaProperty() {
-		return gammaProperty;
-	}
-	
+
 	void updateICCTransform() {
 		if (getDoICCTransform())
 			iccTransformOp = createICCConvertOp();
@@ -2323,32 +2237,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		return roiEditor;
 	}
 
-
-	private void updateTooltip(final Tooltip tooltip) {
-		String text = getTooltipText(mouseX, mouseY);
-		tooltip.setText(text);
-		if (text == null)
-			tooltip.setOpacity(0);
-		else
-			tooltip.setOpacity(1);
-	}
-
-	private String getTooltipText(final double x, final double y) {
-		// Try to show which TMA core is selected - if we have a TMA image
-		PathObjectHierarchy hierarchy = getHierarchy();
-		TMAGrid tmaGrid = hierarchy == null ? null : hierarchy.getTMAGrid();
-		if (tmaGrid != null) {
-			Point2D p = componentPointToImagePoint(x, y, null, false);
-			TMACoreObject core = PathObjectTools.getTMACoreForPixel(tmaGrid, p.getX(), p.getY());
-			if (core != null) {
-				return MessageFormat.format(
-						QuPathResources.getString(core.isMissing() ? "Viewer.QuPathViewer.tmaCoreMissing" : "Viewer.QuPathViewer.tmaCoreX"),
-						core.getName()
-				);
-			}
-		}
-		return null;
-	}
 
 	/**
 	 * Get the {@link ImageDisplay} object used to determine how the image is converted to RGB for display.
@@ -2506,8 +2394,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	protected double getZoomToFitDownsampleFactor() {
 		if (!hasServer())
 			return Double.NaN;
-		double fullWidth = (double)getServerWidth();
-		double fullHeight = (double)getServerHeight();
+		double fullWidth = getServerWidth();
+		double fullHeight = getServerHeight();
 		// TODO: Consider handling rotation
 		double maxDownsample = fullWidth / getWidth();
 		maxDownsample = Math.max(maxDownsample, fullHeight / getHeight());
@@ -2533,11 +2421,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		return server == null ? 0 : server.getHeight();
 	}
 
-
-//	public Rectangle getServerBounds() {
-//		ImageServer server = getServer();
-//		return server == null ? null : new Rectangle(0, 0, server.getWidth(), server.getHeight());
-//	}
 	
 	/**
 	 * Get an {@link ImageRegion} representing the full width and height of the current image.
@@ -2591,8 +2474,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		ImageServer<BufferedImage> server = getServer();
 		if (constrainToBounds && server != null) {
 			pointDest.setLocation(
-					Math.min(Math.max(pointDest.getX(), 0), server.getWidth()),
-					Math.min(Math.max(pointDest.getY(), 0), server.getHeight())
+                    Math.clamp(pointDest.getX(), 0, server.getWidth()),
+                    Math.clamp(pointDest.getY(), 0, server.getHeight())
 					);
 		}
 		return pointDest;
@@ -2622,8 +2505,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		// Constrain, if necessary
 		if (constrainToBounds) {
 			pointDest.setLocation(
-					Math.min(Math.max(pointDest.getX(), 0), getWidth()),
-					Math.min(Math.max(pointDest.getY(), 0), getHeight())
+                    Math.clamp(pointDest.getX(), 0, getWidth()),
+                    Math.clamp(pointDest.getY(), 0, getHeight())
 					);
 		}
 		return pointDest;
@@ -2655,21 +2538,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		var p2 = componentPointToImagePoint(x, y, null, false);
 		return getImageObjectClassificationString(p2.getX(), p2.getY());
 	}
-	
-//	/**
-//	 * Get a string representing the image coordinates for a particular x &amp; y location in the viewer component.
-//	 * 
-//	 * @param x x-coordinate in the component space (not image space)
-//	 * @param y y-coordinate in the component space (not image space)
-//	 * @param useCalibratedUnits 
-//	 * @return a String to display representing the cursor location
-//	 */
-//	private String getLocationString(double x, double y, boolean useCalibratedUnits) {
-//		Point2D p = componentPointToImagePoint(x, y, null, false);
-//		double xx = p.getX();
-//		double yy = p.getY();
-//		return getImageLocationString(xx, yy, useCalibratedUnits);
-//	}
+
 
 	/**
 	 * Get a string representing the object classification x &amp; y location in the viewer component,
@@ -2690,7 +2559,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				0);
 		if (!pathObjects.isEmpty()) {
 			return pathObjects.stream()
-					.filter(pathObject -> pathObject.isDetection())
+					.filter(PathObject::isDetection)
 					.map(pathObject -> {
 				var pathClass = pathObject.getPathClass();
 				return pathClass == null ? PathClass.NULL_CLASS.toString() : pathClass.toString();
@@ -2938,54 +2807,37 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			logger.warn("Transform not invertible!", e);
 		}
 	}
-	
-//	
-//	public AffineTransform getTransform() {
-//		return new AffineTransform(transform);
-//	}
-//
-//	public AffineTransform getInverseTransform() {
-//		return new AffineTransform(transformInverse);
-//	}
-
 
 	/**
-	 * Set the rotation; angle in radians.
-	 * 
-	 * @param theta
+	 * Rotation property for the viewer, defined in radians.
 	 */
+	private final DoubleProperty rotationProperty = new SimpleDoubleProperty(0);
+
+	public DoubleProperty rotationProperty() {
+		return rotationProperty;
+	}
+
 	public void setRotation(double theta) {
-		if (rotationProperty.get() == theta)
+		var prop = rotationProperty();
+		if (prop.get() == theta)
 			return;
 		while (theta < MIN_ROTATION)
 			theta += MAX_ROTATION;
 		theta = (theta % MAX_ROTATION) + MIN_ROTATION;
 
-		rotationProperty.set(theta);
+		prop.set(theta);
 	}
 
 	/**
-	 * Returns true if {@code viewer.getRotation() != 0}.
-	 * @return isRotated
+	 * Query if the image in the viewer is rotated for visualization.
+	 * @return true if the rotation is not 0.
 	 */
 	public boolean isRotated() {
 		return getRotation() != 0;
 	}
 
-	/**
-	 * Get the current rotation; angle in radians.
-	 * @return rotation in radians
-	 */
 	public double getRotation() {
-		return rotationProperty.get();
-	}
-	
-	/**
-	 * Return the rotation property of this viewer.
-	 * @return rotation property
-	 */
-	public DoubleProperty rotationProperty() {
-		return rotationProperty;
+		return rotationProperty().get();
 	}
 
 	@Override
@@ -3136,25 +2988,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			return getClass().getSimpleName() + " - " + temp.getServerPath();
 		return getClass().getSimpleName() + " - no server";
 	}
-
-
-	/**
-	 * Current z-position for the z-slice currently visible in the viewer.
-	 *
-	 * @return
-	 */
-	public IntegerProperty zPositionProperty() {
-		return zPosition;
-	}
-	
-	/**
-	 * Current t-position for the timepoint currently visible in the viewer.
-	 * @return
-	 */
-	public IntegerProperty tPositionProperty() {
-		return tPosition;
-	}
-	
 	
 	
 	
@@ -3224,16 +3057,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			PathObjectHierarchy hierarchy = getHierarchy();
 			if (hierarchy == null)
 				return;
-
-//			// Center selected object if Enter pressed ('center on enter')
-//			if (event.getEventType() == KeyEvent.KEY_RELEASED && code == KeyCode.ENTER) {
-//				PathObject selectedObject = getSelectedObject();
-//				if (selectedObject != null && selectedObject.hasROI())
-//					setCenterPixelLocation(selectedObject.getROI().getCentroidX(), selectedObject.getROI().getCentroidY());
-//				event.consume();
-//				return;
-//			}
-
 
 			if (!(code == KeyCode.LEFT || code == KeyCode.UP || code == KeyCode.RIGHT || code == KeyCode.DOWN))
 				return;
@@ -3461,7 +3284,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 	
 	
-	private MoveToolEventHandler.ViewerMover mover = new MoveToolEventHandler.ViewerMover(this);
+	private final MoveToolEventHandler.ViewerMover mover = new MoveToolEventHandler.ViewerMover(this);
 	
 	
 	/**
