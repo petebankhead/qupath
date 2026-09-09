@@ -201,25 +201,6 @@ class QuPathViewerUtils {
         return null;
     }
 
-    static Label createPlaceholder(QuPathViewer viewer) {
-        var placeholderText = viewer.placeholderTextProperty();
-        var placeholder = new Label(placeholderText.getValueSafe());
-        placeholder.setWrapText(true);
-        placeholder.setTextAlignment(TextAlignment.CENTER);
-        placeholder.setPadding(new Insets(5.0));
-        placeholder.textProperty().bind(placeholderText);
-        placeholder.styleProperty().bind(Bindings.createStringBinding(() -> {
-            Integer rgb = PathPrefs.viewerBackgroundColorProperty().getValue();
-            var c = rgb == null ? Color.BLACK : ColorToolsFX.getCachedColor(rgb);
-            if (c.getBrightness() > 0.5)
-                return "-fx-text-fill: black;";
-            else
-                return "-fx-text-fill: white";
-        }, PathPrefs.viewerBackgroundColorProperty()));
-        placeholder.setOpacity(0.7);
-        placeholder.visibleProperty().bind(viewer.imageDataProperty().isNull().and(placeholderText.isNotEmpty()));
-        return placeholder;
-    }
 
     static String getImageObjectClassificationString(PathObjectHierarchy hierarchy, double x, double y, ImagePlane plane) {
         if (hierarchy == null)

@@ -38,23 +38,12 @@ import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleLongProperty;
 import javafx.beans.property.SimpleObjectProperty;
-import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 import javafx.collections.ListChangeListener.Change;
 import javafx.collections.ObservableList;
-import javafx.embed.swing.SwingFXUtils;
-import javafx.geometry.Pos;
 import javafx.scene.Cursor;
-import javafx.scene.canvas.Canvas;
-import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.image.WritableImage;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
-import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
-import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.util.Subscription;
 import org.slf4j.Logger;
@@ -134,12 +123,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	private OverlayOptions overlayOptions;
 
-	/**
-	 * String property to hold text that should be displayed whenever no image is open in the viewer.
-	 * @since v0.6.0
-	 */
-	private final StringProperty placeholderText = new SimpleStringProperty();
-
 	// Create separate buffers for the image and overlay,
 	// because often the overlay changes while the image remains static
 	private ViewerBuffers buffers = ViewerBuffers.createEmpty();
@@ -195,8 +178,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	private final ObjectProperty<PathTool> currentTool = new SimpleObjectProperty<>(PathTools.MOVE);
 
-	private final Canvas canvas = new Canvas();
-	private final Pane pane = createPane(canvas);
+	private final ViewerPane pane = createPane();
 
 	private final ViewerOverlays overlays;
 
@@ -205,22 +187,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	private final LongProperty lastRepaintTimestamp = new SimpleLongProperty(0L); // Used for debugging repaint times
 	private boolean repaintRequested = false;
 	private BufferedImage imgCache;
-	private WritableImage imgCacheFX;
 	private long lastPaint = 0;
 	private long minimumRepaintSpacingMillis = -1; // This can be used (temporarily) to prevent repaints happening too frequently
 
-
-	/**
-	 * Width of the border line used to indicate that a viewer is active.
-	 */
-	private final DoubleProperty borderLineWidthProperty = new SimpleDoubleProperty(6);
-
-	/**
-	 * Color of the border around the viewer.
-	 * This can be set to indicate that a viewer is active.
-	 */
-	private final ObjectProperty<Color> borderColorProperty = new SimpleObjectProperty<>();
-	
 	/**
 	 * Get the main JavaFX component representing this viewer.
 	 * This is what should be added to a scene.
@@ -281,8 +250,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				PathPrefs.gridStartYProperty(),
 				PathPrefs.gridScaleMicronsProperty(),
 
-				borderLineWidthProperty,
-				borderColorProperty
+				pane.borderLineWidthProperty(),
+				borderColorProperty()
 		).and(
 				QuPathViewerUtils.subscribeObservables(
 						this::updateOverlaysAndRepaint,
@@ -307,8 +276,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				QuPathViewerUtils.subscribeObservables(
 						this::repaintAfterAffineUpdate,
 						rotationProperty(),
-						canvas.widthProperty(),
-						canvas.heightProperty()
+						pane.widthProperty(),
+						pane.heightProperty()
 				)
 		);
 
@@ -375,35 +344,26 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 
-	private Pane createPane(Canvas canvas) {
-		var pane = new StackPane();
-		pane.getChildren().add(canvas);
-		canvas.widthProperty().bind(pane.widthProperty());
-		canvas.heightProperty().bind(pane.heightProperty());
-
-		pane.setAlignment(Pos.CENTER);
-		var placeholder = QuPathViewerUtils.createPlaceholder(this);
-		pane.getChildren().add(placeholder);
-
-		// Resize to anything
-		pane.setMinWidth(1);
-		pane.setMinHeight(1);
-		pane.setMaxWidth(Double.MAX_VALUE);
-		pane.setMaxHeight(Double.MAX_VALUE);
-
-		pane.addEventFilter(MouseEvent.ANY, e -> {
-			mouseX = e.getX();
-			mouseY = e.getY();
+	private ViewerPane createPane() {
+		var pane = new ViewerPane();
+		pane.spaceDownProperty().subscribe(this::setSpaceDown);
+		pane.mouseLocationProperty().subscribe(p -> {
+			if (p != null) {
+				mouseX = p.getX();
+				mouseY = p.getY();
+			} else {
+				mouseX = -1;
+				mouseY = -1;
+			}
 		});
-
-		pane.addEventFilter(KeyEvent.ANY, this::checkForSpacebar);
 		pane.addEventHandler(KeyEvent.ANY, new QuPathViewerKeyEventHandler(this));
+		pane.placeholderVisibleProperty().bind(imageDataProperty().isNull().and(pane.placeholderTextProperty().isNotEmpty()));
 		return pane;
 	}
 
 
 	public StringProperty placeholderTextProperty() {
-		return placeholderText;
+		return pane.placeholderTextProperty();
 	}
 
 
@@ -446,7 +406,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			repaintRequested = true;
 		}
 
-		if (!repaintRequested || canvas.getWidth() <= 0 || canvas.getHeight() <= 0) {
+		if (!repaintRequested || pane.getWidth() <= 0 || pane.getHeight() <= 0) {
 			repaintRequested = false;
 			return;
 		}
@@ -463,11 +423,10 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				return;
 		}
 
-		if (imgCache == null || imgCache.getWidth() < canvas.getWidth() || imgCache.getHeight() < canvas.getHeight()) {
-			int w = (int)(canvas.getWidth() + 1);
-			int h = (int)(canvas.getHeight() + 1);
+		if (imgCache == null || imgCache.getWidth() < pane.getWidth() || imgCache.getHeight() < pane.getHeight()) {
+			int w = (int)(pane.getWidth() + 1);
+			int h = (int)(pane.getHeight() + 1);
 			imgCache = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE);
-			imgCacheFX = new WritableImage(w, h);
 		}
 
 		// Reset repaint flag
@@ -480,31 +439,19 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		g.dispose();
 		updateRepaintTimestamp();
 
+		pane.drawImage(imgCache);
+
 		long endTime = System.currentTimeMillis();
-		logger.trace("Viewer painting: {} ms", endTime - startTime);
-
-		imgCacheFX = SwingFXUtils.toFXImage(imgCache, imgCacheFX);
-
-		GraphicsContext context = canvas.getGraphicsContext2D();
-		context.drawImage(imgCacheFX, 0, 0);
-
-		var borderColor = getBorderColor();
-		var borderLineWidth = borderLineWidthProperty.get();
-		if (borderColor != null && borderLineWidth > 0) {
-			context.setStroke(borderColor);
-			context.setLineWidth(borderLineWidth);
-			context.strokeRect(0, 0, canvas.getWidth(), canvas.getHeight());
-		}
-
-		long time = System.currentTimeMillis();
-		logger.trace("Time since last repaint: {} ms", (time - lastPaint));
+		logger.trace("Viewer painting: {} ms ({} ms since last repaint()",
+				endTime - startTime,
+				endTime - lastPaint);
 		lastPaint = System.currentTimeMillis();
 
 		imageDataChanging.set(false);
 	}
 
 	public ObjectProperty<Color> borderColorProperty() {
-		return borderColorProperty;
+		return pane.borderColorProperty();
 	}
 
 	public void setBorderColor(final Color color) {
@@ -654,7 +601,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @return
 	 */
 	public Point2D getMousePosition() {
-		if (mouseX >= 0 && mouseX <= canvas.getWidth() && mouseY >= 0 && mouseY <= canvas.getHeight())
+		if (mouseX >= 0 && mouseX <= pane.getWidth() && mouseY >= 0 && mouseY <= pane.getHeight())
 			return new Point2D.Double(mouseX, mouseY);
 		return null;
 	}
@@ -707,7 +654,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @return
 	 */
 	public boolean isShowing() {
-		return canvas.isVisible() && canvas.getScene() != null;
+		return pane.isVisible() && pane.getScene() != null;
 	}
 	
 
@@ -2265,18 +2212,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			return Math.abs(region.getZ() - getZPosition()) <= 3 && region.getT() == getTPosition() && getDisplayedClipShape(null).intersects(AwtTools.getBounds(region));
 		}
 		return false;
-	}
-
-
-	private final KeyCombination comboSpace = new KeyCodeCombination(KeyCode.SPACE);
-	
-	private void checkForSpacebar(KeyEvent event) {
-		if (comboSpace.match(event)) {
-			if (event.getEventType() == KeyEvent.KEY_PRESSED)
-				setSpaceDown(true);
-			else if (event.getEventType() == KeyEvent.KEY_RELEASED)
-				setSpaceDown(false);
-		}
 	}
 
 
