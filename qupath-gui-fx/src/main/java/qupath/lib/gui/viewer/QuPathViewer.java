@@ -2232,22 +2232,30 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	/**
 	 * Rotation property for the viewer, defined in radians.
+	 * Note that this automatically converts values to fall within 0 and 2 PI radians.
 	 */
-	private final DoubleProperty rotationProperty = new SimpleDoubleProperty(0);
+	private final DoubleProperty rotationProperty = new SimpleDoubleProperty(null, "rotation", 0) {
+
+		@Override
+		public void set(double value) {
+			double theta = value;
+			while (theta < MIN_ROTATION)
+				theta += MAX_ROTATION;
+			theta = (theta % MAX_ROTATION) + MIN_ROTATION;
+			if (value != theta) {
+				logger.warn("Converting rotation {} to {}", value, theta);
+			}
+			super.set(theta);
+		}
+
+	};
 
 	public DoubleProperty rotationProperty() {
 		return rotationProperty;
 	}
 
 	public void setRotation(double theta) {
-		var prop = rotationProperty();
-		if (prop.get() == theta)
-			return;
-		while (theta < MIN_ROTATION)
-			theta += MAX_ROTATION;
-		theta = (theta % MAX_ROTATION) + MIN_ROTATION;
-
-		prop.set(theta);
+		rotationProperty().set(theta);
 	}
 
 	/**
