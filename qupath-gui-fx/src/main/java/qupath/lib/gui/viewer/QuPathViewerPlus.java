@@ -256,7 +256,7 @@ public class QuPathViewerPlus extends QuPathViewer {
 	}
 
 	@Override
-	void paintCanvas() {
+	protected void paintCanvas() {
 		boolean imageWasUpdated = imageUpdated || locationUpdated;
 		
 		super.paintCanvas();
