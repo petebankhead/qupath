@@ -39,6 +39,7 @@ import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleLongProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.StringProperty;
+import javafx.beans.value.ObservableValue;
 import javafx.collections.ListChangeListener.Change;
 import javafx.collections.ObservableList;
 import javafx.scene.Cursor;
@@ -87,7 +88,6 @@ import java.awt.AlphaComposite;
 import java.awt.Composite;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.Image;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
@@ -158,7 +158,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	// This can be useful when rapidly changing view, for example
 	private boolean doFasterRepaint = false;
 	
-	private java.awt.Color background = ColorToolsAwt.getCachedColor(PathPrefs.viewerBackgroundColorProperty().get());
+	private final ObservableValue<java.awt.Color> background = createBackgroundColorBinding();
 
 	// Keep a record of when the spacebar is pressed, to help with dragging to pan
 	private boolean spaceDown = false;
@@ -183,10 +183,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	private final ViewerOverlays overlays;
 
 	private final ImageDisplay imageDisplay;
-	private transient long lastDisplayChangeTimestamp = 0; // Used to indicate imageDisplay changes
+	private long lastDisplayChangeTimestamp = 0; // Used to indicate imageDisplay changes
 	private final LongProperty lastRepaintTimestamp = new SimpleLongProperty(0L); // Used for debugging repaint times
 	private boolean repaintRequested = false;
-	private BufferedImage imgCache;
 	private long lastPaint = 0;
 	private long minimumRepaintSpacingMillis = -1; // This can be used (temporarily) to prevent repaints happening too frequently
 
@@ -423,17 +422,12 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				return;
 		}
 
-		if (imgCache == null || imgCache.getWidth() < pane.getWidth() || imgCache.getHeight() < pane.getHeight()) {
-			int w = (int)(pane.getWidth() + 1);
-			int h = (int)(pane.getHeight() + 1);
-			imgCache = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE);
-		}
-
 		// Reset repaint flag
 		repaintRequested = false;
 
 		long startTime = System.currentTimeMillis();
 
+		var imgCache = buffers.ensureSize(getWidth(), getHeight()).getCompositeBuffer();
 		Graphics2D g = imgCache.createGraphics();
 		paintViewer(g, getWidth(), getHeight());
 		g.dispose();
@@ -448,6 +442,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		lastPaint = System.currentTimeMillis();
 
 		imageDataChanging.set(false);
+	}
+
+	private static ObservableValue<java.awt.Color> createBackgroundColorBinding() {
+		return Bindings.createObjectBinding(() -> {
+			var c = PathPrefs.viewerBackgroundColorProperty();
+			return c == null ? java.awt.Color.BLACK : ColorToolsAwt.getCachedColor(c.intValue());
+		}, PathPrefs.viewerBackgroundColorProperty());
 	}
 
 	public ObjectProperty<Color> borderColorProperty() {
@@ -565,16 +566,12 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	// We need a more extensive repaint for changes to the image pixel display
 	private void repaintOnNextPulse() {
-		Platform.runLater(() -> {
-			background = ColorToolsAwt.getCachedColor(PathPrefs.viewerBackgroundColorProperty().get());
-			repaintEntireImage();
-		});
+		Platform.runLater(this::repaintEntireImage);
 	}
 
 	// We need a more extensive repaint for changes to the image pixel display
 	private void updateOverlaysAndRepaint() {
 		forceOverlayUpdate();
-		background = ColorToolsAwt.getCachedColor(PathPrefs.viewerBackgroundColorProperty().get());
 		repaint();
 	}
 
@@ -1324,7 +1321,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		
 		ImageServer<BufferedImage> server = getServer();
 		if (server == null) {
-			g.setColor(background);
+			g.setColor(background.getValue());
 			g.fillRect(0, 0, w, h);
 			return;
 		}
@@ -1372,9 +1369,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		lastVisibleShape = shapeRegion;
 
 		// Draw the image from the buffer
-		g.setColor(background);
+		g.setColor(background.getValue());
 		if (clipFull)
-			paintFinalImage(g, imgBuffer);
+			g.drawImage(imgBuffer, 0, 0, null);
 		else
 			g.drawImage(imgBuffer, clip.x, clip.y, clip.x+clip.width, clip.y+clip.height, clip.x, clip.y, clip.x+clip.width, clip.y+clip.height, null);
 
@@ -1512,7 +1509,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		Graphics2D gBuffered = imgBuffer.createGraphics();
 
 		// Set all image pixels to be the background color
-		gBuffered.setColor(background);
+		gBuffered.setColor(background.getValue());
 		gBuffered.fillRect(0, 0, w, h);
 
 		// Apply the transform so we don't need to worry about converting coordinates so much
@@ -1628,10 +1625,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		return gammaOp.get();
 	}
 
-	private static void paintFinalImage(Graphics g, Image img) {
-		g.drawImage(img, 0, 0, null);
-	}
-	
 	/**
 	 * Get the {@link RoiEditor} used by this viewer.
 	 * @return

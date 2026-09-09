@@ -8,15 +8,18 @@ class ViewerBuffers {
 
     private final BufferedImage imgBuffer;
     private final BufferedImage imgOverlay;
+    private final BufferedImage imgComposite;
 
     private ViewerBuffers() {
         this.imgBuffer = EMPTY_IMAGE;
         this.imgOverlay = EMPTY_IMAGE;
+        this.imgComposite = EMPTY_IMAGE;
     }
 
     private ViewerBuffers(int width, int height) {
         imgBuffer = createBufferedImage(width, height);
         imgOverlay = createBufferedImage(width, height);
+        imgComposite = createBufferedImage(width, height);
     }
 
     public boolean matchesSize(int width, int height) {
@@ -29,12 +32,28 @@ class ViewerBuffers {
         return img;
     }
 
+    /**
+     * Get the buffer for the main image, with overlays.
+     * @return
+     */
     public BufferedImage getImageBuffer() {
         return imgBuffer;
     }
 
+    /**
+     * Get the buffer for the overlays only.
+     * @return
+     */
     public BufferedImage getOverlayBuffer() {
         return imgOverlay;
+    }
+
+    /**
+     * Get the buffer for the final image, with overlays on top.
+     * @return
+     */
+    public BufferedImage getCompositeBuffer() {
+        return imgComposite;
     }
 
     /**
