@@ -173,8 +173,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	// Create separate buffers for the image and overlay,
 	// because often the overlay changes while the image remains static
-	private BufferedImage imgBuffer = null;
-	private BufferedImage imgOverlay = null;
+	private ViewerBuffers buffers = ViewerBuffers.createEmpty();
 
 	// Keep a reference to a thumbnail image here, and apply color transforms to it
 	//	private BufferedImage imgThumbnail;
@@ -1458,14 +1457,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		} else
 			clipFull = clip.x == 0 && clip.y == 0 && clip.width == w && clip.height == h;
 
-		// Ensure we have a sufficiently-large buffer
-		if (imgBuffer == null || imgBuffer.getWidth() != w || imgBuffer.getHeight() != h) {
-			// Create buffered images & buffers for RGB pixel values
-			imgBuffer = QuPathViewerUtils.createBufferedImage(w, h);
-			imgBuffer.setAccelerationPriority(1f);
-			imgOverlay = QuPathViewerUtils.createBufferedImage(w, h);
-			imgOverlay.setAccelerationPriority(1f);
-			logger.trace("New buffered images created: {}, {}", imgBuffer, imgOverlay);
+		// Ensure we have sufficiently-large buffers
+		if (!buffers.matchesSize(w, h)) {
+			buffers = buffers.ensureSize(w, h);
 			imageUpdated = true;
 			// If the size changed, ensure the AffineTransform is up-to-date
 			updateAffineTransform();
@@ -1481,15 +1475,16 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 		long t1 = System.currentTimeMillis();
 
+		// The buffer for the main image in the viewer
+		var imgBuffer = buffers.getImageBuffer();
+
 		// Only repaint the image if this is requested, otherwise only overlays need to be repainted
 		if (imageUpdated || locationUpdated) {// || imgVolatile.contentsLost()) {
 			// Set flags that image no longer requiring an update
 			// By setting them early, they might still be reset during this run... in which case we don't want to thwart the re-run
 			imageUpdated = false;
 			locationUpdated = false;
-
-			//			updateBufferedImage(imgVolatile, shapeRegion, w, h);
-			updateBufferedImage(imgBuffer, shapeRegion, w, h);
+			updateImageBuffer(imgBuffer, shapeRegion, w, h);
 		}
 
 		// Store the last shape visible
@@ -1518,6 +1513,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		
 		double downsample = getDownsampleFactor();
 
+		// The buffer for the overlay
+		var imgOverlay = buffers.getOverlayBuffer();
 		Graphics2D gOverlay = imgOverlay.createGraphics();
 		gOverlay.setBackground(new java.awt.Color(0, true));
 		gOverlay.clearRect(0, 0, imgOverlay.getWidth(), imgOverlay.getHeight());
@@ -1630,18 +1627,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 
-    private void updateBufferedImage(final BufferedImage imgBuffer, final Shape shapeRegion, final int w, final int h) {
+    private void updateImageBuffer(final BufferedImage imgBuffer, final Shape shapeRegion, final int w, final int h) {
 		Graphics2D gBuffered = imgBuffer.createGraphics();
-		updateBufferedImage(gBuffered, shapeRegion, w, h);
-		gBuffered.dispose();
-		// Apply color transforms, if required
-		var gammaOp = getGammaOp();
-		if (gammaOp != null) {
-			gammaOp.filter(this.imgBuffer.getRaster(), this.imgBuffer.getRaster());
-		}
-	}
 
-	private void updateBufferedImage(final Graphics2D gBuffered, final Shape shapeRegion, final int w, final int h) {
 		// Set all image pixels to be the background color
 		gBuffered.setColor(background);
 		gBuffered.fillRect(0, 0, w, h);
@@ -1676,20 +1664,28 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 			// Try to repaint higher resolution tiles for only the requested region
 			// A small optimization (that can make a difference in repaint speed...) is that for an RGB image we don't need to transform
-			// the image as we go along (tile by tile), but we can apply a single transform afterwards.
+			// the image as we go along (tile by tile), but we can apply a single in-place transform afterwards.
 			// *However* this shouldn't be applied if the region we are viewing extends beyond the image boundary, as it means we would be color-transforming the background color.
 			// For a non-RGB image, or if the viewed region is over the image boundary, the transform should be applied in advance to the thumbnail, and then tile-by-tile during painting.
 			if (server.isRGB() && !overBoundary) {
 				regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, null);
 				gBuffered.dispose();
-				if (imageDisplay != null)
-					imgBuffer = getRenderer().applyTransforms(imgBuffer, null);
+				if (imageDisplay != null) {
+					getRenderer().applyTransforms(imgBuffer, imgBuffer);
+				}
 			} else {
 				regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, getRenderer());
 			}
 		} else {
 			// Just paint the 'thumbnail' version, which has already (potentially) been color-transformed
 			gBuffered.drawImage(imgThumbnailRGB, 0, 0, serverWidth, serverHeight, null);
+		}
+
+		gBuffered.dispose();
+		// Apply color transforms, if required
+		var gammaOp = getGammaOp();
+		if (gammaOp != null) {
+			gammaOp.filter(imgBuffer.getRaster(), imgBuffer.getRaster());
 		}
 	}
 
