@@ -256,10 +256,10 @@ public class QuPathViewerPlus extends QuPathViewer {
 	}
 
 	@Override
-	protected void paintCanvas() {
-		boolean imageWasUpdated = imageUpdated || locationUpdated;
-		
-		super.paintCanvas();
+	public void handlePulse(long now) {
+		boolean imageWasUpdated = imageUpdated;
+
+		super.handlePulse(now);
 		
 		if (scalebar == null)
 			return;

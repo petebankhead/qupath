@@ -23,6 +23,7 @@
 
 package qupath.lib.gui.viewer;
 
+import javafx.animation.AnimationTimer;
 import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.binding.ObjectBinding;
@@ -86,7 +87,6 @@ import qupath.lib.roi.interfaces.ROI;
 
 import java.awt.AlphaComposite;
 import java.awt.Composite;
-import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
@@ -115,6 +115,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	private static final Logger logger = LoggerFactory.getLogger(QuPathViewer.class);
 
+	private final AnimationTimer timer = new AnimationTimer() {
+		@Override
+		public void handle(long now) {
+			handlePulse(now);
+		}
+	};
+
 	private final List<QuPathViewerListener> listeners = new ArrayList<>();
 
 	private final ObjectProperty<ImageData<BufferedImage>> imageDataProperty = new SimpleObjectProperty<>();
@@ -133,14 +140,22 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	private boolean thumbnailIsFullImage = false;
 
 	/**
-	 *  Flag used to indicate that the image was updated for a repaint (otherwise it's assumed only the overlay may have changed)
+	 * Flag used to indicate that the image was updated and a full repaint is required.
 	 */
 	protected boolean imageUpdated = false;
+
 	/**
-	 * Flag used to indicate that the visible region in the viewer has changed
+	 * Flag used to indicate that the image slice has been updated, so that a new thumbnail is required.
 	 */
-	protected boolean locationUpdated = false;
-	
+	protected boolean sliceUpdated = false;
+
+	/**
+	 * Flag to indicate that one or more overlays should be repainted.
+	 * If imageUpdated is false, then the image itself need not be updated.
+	 */
+	protected boolean overlayUpdated = false;
+
+
 	// Flag that is temporarily set to true while the ImageData is being set
 	private final BooleanProperty imageDataChanging = new SimpleBooleanProperty(false);
 	
@@ -185,7 +200,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	private final ImageDisplay imageDisplay;
 	private long lastDisplayChangeTimestamp = 0; // Used to indicate imageDisplay changes
 	private final LongProperty lastRepaintTimestamp = new SimpleLongProperty(0L); // Used for debugging repaint times
-	private boolean repaintRequested = false;
 	private long lastPaint = 0;
 	private long minimumRepaintSpacingMillis = -1; // This can be used (temporarily) to prevent repaints happening too frequently
 
@@ -260,7 +274,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				)
 		).and(
 				QuPathViewerUtils.subscribeObservables(
-						this::repaintOnNextPulse,
+						this::repaintEntireImage,
 						gammaProperty(),
 						PathPrefs.viewerInterpolateBilinearProperty(),
 						PathPrefs.viewerBackgroundColorProperty()
@@ -285,7 +299,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 		this.imageDisplay = imageDisplay;
 		if (imageDisplay != null)
-			subscription = subscription.and(imageDisplay.eventCountProperty().subscribe(this::repaintOnNextPulse));
+			subscription = subscription.and(imageDisplay.eventCountProperty().subscribe(this::repaintEntireImage));
 
 		// Prepare overlay layers
 		this.overlays = ViewerOverlays.create(overlayOptions, regionStore);
@@ -295,6 +309,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		this.regionStore.addTileListener(this);
 
 		imageUpdated = true;
+		timer.start();
 	}
 
 	private void repaintAfterAffineUpdate() {
@@ -389,60 +404,19 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 */
 	public void resetMinimumRepaintSpacingMillis() {
 		this.minimumRepaintSpacingMillis = -1;
-		repaintRequested = false;
-		repaint();
+		imageUpdated = true;
 	}
 
-	/**
-	 * The main paint method to update the JavaFX canvas.
-	 * This delegates to {@link #paintViewer(Graphics, int, int)} to do the actual
-	 * painting on image buffers, using the Graphics2D pipeline.
-	 */
-	protected void paintCanvas() {
-		// Ensure there's always a repaint requested whenever the image is updated
-		// (Should be the case anyway)
-		if (imageUpdated) {
-			repaintRequested = true;
+	private boolean requireThumbnailUpdate() {
+		if (sliceUpdated)
+			return true;
+		if (imageDisplay != null) {
+			return lastDisplayChangeTimestamp != imageDisplay.getLastChangeTimestamp();
+		} else {
+			return false;
 		}
-
-		if (!repaintRequested || pane.getWidth() <= 0 || pane.getHeight() <= 0) {
-			repaintRequested = false;
-			return;
-		}
-
-		if (!Platform.isFxApplicationThread()) {
-			Platform.runLater(this::paintCanvas);
-			return;
-		}
-
-		// Skip repaint if the minimum time hasn't elapsed
-		if (minimumRepaintSpacingMillis > 0) {
-			long timeSinceRepaint = System.currentTimeMillis() - lastPaint;
-			if (timeSinceRepaint < minimumRepaintSpacingMillis)
-				return;
-		}
-
-		// Reset repaint flag
-		repaintRequested = false;
-
-		long startTime = System.currentTimeMillis();
-
-		var imgCache = buffers.ensureSize(getWidth(), getHeight()).getCompositeBuffer();
-		Graphics2D g = imgCache.createGraphics();
-		paintViewer(g, getWidth(), getHeight());
-		g.dispose();
-		updateRepaintTimestamp();
-
-		pane.drawImage(imgCache);
-
-		long endTime = System.currentTimeMillis();
-		logger.trace("Viewer painting: {} ms ({} ms since last repaint()",
-				endTime - startTime,
-				endTime - lastPaint);
-		lastPaint = System.currentTimeMillis();
-
-		imageDataChanging.set(false);
 	}
+
 
 	private static ObservableValue<java.awt.Color> createBackgroundColorBinding() {
 		return Bindings.createObjectBinding(() -> {
@@ -481,19 +455,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @see #repaintEntireImage()
 	 */
 	public void repaint() {
-		if (repaintRequested && minimumRepaintSpacingMillis <= 0)
-			return;
-
 		// We need to repaint everything if the display changed
 		if (imageDisplay != null && (lastDisplayChangeTimestamp != imageDisplay.getLastChangeTimestamp())) {
 			repaintEntireImage();
 			return;
 		}
-
 		logger.trace("Repaint requested!");
-		repaintRequested = true;
-
-		Platform.runLater(this::paintCanvas);
+		imageUpdated = true;
 	}
 
 	/**
@@ -565,14 +533,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 
 	// We need a more extensive repaint for changes to the image pixel display
-	private void repaintOnNextPulse() {
-		Platform.runLater(this::repaintEntireImage);
-	}
-
-	// We need a more extensive repaint for changes to the image pixel display
 	private void updateOverlaysAndRepaint() {
-		forceOverlayUpdate();
-		repaint();
+		overlayUpdated = true;
 	}
 
 	/**
@@ -718,7 +680,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * Update colorOverlaySuggested from the entire (RGB, i.e. color-transformed) image thumbnail
 	 */
 	private void updateSuggestedOverlayColorFromThumbnail() {
-		if (QuPathViewerUtils.getMeanBrightnessRGB(imgThumbnailRGB, 0, 0, imgThumbnailRGB.getWidth(), imgThumbnailRGB.getHeight()) > 127)
+		if (imgThumbnailRGB == null || QuPathViewerUtils.getMeanBrightnessRGB(imgThumbnailRGB, 0, 0, imgThumbnailRGB.getWidth(), imgThumbnailRGB.getHeight()) > 127)
 			colorOverlaySuggested = ColorToolsAwt.TRANSLUCENT_BLACK;
 		else
 			colorOverlaySuggested = ColorToolsAwt.TRANSLUCENT_WHITE;
@@ -1180,7 +1142,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			centerImage();
 		}
 
-		paintCanvas();
 		fireImageDataChanged(imageDataOld, imageDataNew);
 
 		if (imageDataNew != null) {
@@ -1250,10 +1211,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 */
 	public void repaintEntireImage() {
 		imageUpdated = true;
-		if (imageDisplay != null)
-			lastDisplayChangeTimestamp = imageDisplay.getLastChangeTimestamp();
-		updateThumbnail();
-		repaint();		
+		sliceUpdated = true;
 	}
 
 	/**
@@ -1302,6 +1260,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * any viewer listeners.
 	 */
 	public void closeViewer() {
+		timer.stop();
 		overlayOptionsManager.unsubscribe();
 		subscription.unsubscribe();
 		regionStore.removeTileListener(this);
@@ -1315,27 +1274,25 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		long timestamp = System.currentTimeMillis();
 		lastRepaintTimestamp.set(timestamp);
 	}
-	
 
-	private void paintViewer(Graphics g, int w, int h) {
-		
-		ImageServer<BufferedImage> server = getServer();
-		if (server == null) {
-			g.setColor(background.getValue());
-			g.fillRect(0, 0, w, h);
+	protected void handlePulse(long now) {
+		boolean empty = getWidth() <= 0 || getHeight() <= 0;
+		if (empty) {
+			imageUpdated = false;
+			overlayUpdated = false;
 			return;
 		}
 
-		Rectangle clip = g.getClipBounds();
-		boolean clipFull;
-		if (clip == null) {
-			clip = new Rectangle(0, 0, w, h);
-			g.setClip(0, 0, w, h);
-			clipFull = true;
-		} else
-			clipFull = clip.x == 0 && clip.y == 0 && clip.width == w && clip.height == h;
+		// Skip repaint if the minimum time hasn't elapsed
+		if (minimumRepaintSpacingMillis > 0) {
+			long timeSinceRepaint = System.currentTimeMillis() - lastPaint;
+			if (timeSinceRepaint < minimumRepaintSpacingMillis)
+				return;
+		}
 
 		// Ensure we have sufficiently-large buffers
+		int w = getWidth();
+		int h = getHeight();
 		if (!buffers.matchesSize(w, h)) {
 			buffers = buffers.ensureSize(w, h);
 			imageUpdated = true;
@@ -1343,149 +1300,175 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			updateAffineTransform();
 		}
 
-		// Get the displayed region
-		Shape shapeRegion = getDisplayedRegionShape();
+		if (requireThumbnailUpdate()) {
+			updateThumbnail();
+			imageUpdated = true;
+			sliceUpdated = false;
+			if (imageDisplay != null) {
+				lastDisplayChangeTimestamp = imageDisplay.getLastChangeTimestamp();
+			}
+		}
+
+		// Get region and downsample now (lest they change)
+		var shapeRegion = getDisplayedRegionShape();
+		double downsample = getDownsampleFactor();
 
 		// The visible shape must have changed if there wasn't one previously...
-		// Otherwise check if it has changed & update accordingly
+		// Otherwise, check if it has changed & update accordingly
 		// This will be used to notify listeners soon
 		boolean shapeChanged = lastVisibleShape == null || !lastVisibleShape.equals(shapeRegion);
-
-		long t1 = System.currentTimeMillis();
-
-		// The buffer for the main image in the viewer
-		var imgBuffer = buffers.getImageBuffer();
-
-		// Only repaint the image if this is requested, otherwise only overlays need to be repainted
-		if (imageUpdated || locationUpdated) {// || imgVolatile.contentsLost()) {
-			// Set flags that image no longer requiring an update
-			// By setting them early, they might still be reset during this run... in which case we don't want to thwart the re-run
-			imageUpdated = false;
-			locationUpdated = false;
-			updateImageBuffer(imgBuffer, shapeRegion, w, h);
-		}
 
 		// Store the last shape visible
 		lastVisibleShape = shapeRegion;
 
-		// Draw the image from the buffer
-		g.setColor(background.getValue());
-		if (clipFull)
-			g.drawImage(imgBuffer, 0, 0, null);
-		else
-			g.drawImage(imgBuffer, clip.x, clip.y, clip.x+clip.width, clip.y+clip.height, clip.x, clip.y, clip.x+clip.width, clip.y+clip.height, null);
-
-		if (logger.isTraceEnabled()) {
-			long t2 = System.currentTimeMillis();
-			logger.trace("Final image drawing time: {}", (t2 - t1));
+		if (imageUpdated) {
+			imageUpdated = !updateImageBuffer(buffers.getImageBuffer(), shapeRegion);
+			overlayUpdated = true;
 		}
-
-		// Really useful only for debugging graphics
-		if (!(g instanceof Graphics2D)) {
-			imageUpdated = false;
-			// Notify any listeners of shape changes
-			if (shapeChanged)
-				fireVisibleRegionChangedEvent(lastVisibleShape);
-			return;
+		if (overlayUpdated) {
+			overlayUpdated = !updateOverlayBuffer(buffers.getOverlayBuffer(), downsample, shapeRegion);
 		}
-		
-		double downsample = getDownsampleFactor();
+		updateCompositeBuffer();
 
-		// The buffer for the overlay
-		var imgOverlay = buffers.getOverlayBuffer();
-		Graphics2D gOverlay = imgOverlay.createGraphics();
-		gOverlay.setBackground(new java.awt.Color(0, true));
-		gOverlay.clearRect(0, 0, imgOverlay.getWidth(), imgOverlay.getHeight());
-		gOverlay.setClip(0, 0, imgOverlay.getWidth(), imgOverlay.getHeight());
-		gOverlay.transform(transform);
+		pane.drawImage(buffers.getCompositeBuffer());
+		updateRepaintTimestamp();
 
-		float opacity = overlayOptions.getOpacity();
-		Composite previousComposite = gOverlay.getComposite();
-		boolean paintCompletely = thumbnailIsFullImage || !doFasterRepaint;
-		if (opacity > 0 || PathPrefs.alwaysPaintSelectedObjectsProperty().get()) {
-			if (opacity < 1) {
-				AlphaComposite composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, opacity);
-				gOverlay.setComposite(composite);
-			}
-
-			var color = getSuggestedOverlayColor();
-			// Paint the overlay layers
-			var imageData = this.imageDataProperty.get();
-			for (PathOverlay overlay : overlays.getAllOverlayLayersSnapshot()) {
-				logger.trace("Painting overlay: {}", overlay);
-				if (overlay instanceof AbstractOverlay abstractOverlay)
-					abstractOverlay.setPreferredOverlayColor(color);
-				overlay.paintOverlay(gOverlay, getServerBounds(), downsample, imageData, paintCompletely);
-			}
-		}
-		
-		// Paint the selected objects
-		PathObjectHierarchy hierarchy = getHierarchy();
-		PathObject mainSelectedObject = getSelectedObject();
-		Rectangle2D boundsRect = null;
-		boolean useSelectedColor = PathPrefs.useSelectedColorProperty().get();
-		boolean paintSelectedBounds = PathPrefs.paintSelectedBoundsProperty().get();
-		for (PathObject selectedObject : hierarchy.getSelectionModel().getSelectedObjects().toArray(new PathObject[0])) {
-			// TODO: Simplify this...
-			if (selectedObject != null && selectedObject.hasROI() && selectedObject.getROI().getZ() == getZPosition() && selectedObject.getROI().getT() == getTPosition()) {
-				
-				if (!selectedObject.isDetection()) {
-					// Ensure a selected ROI can be seen clearly
-					if (previousComposite != null)
-						gOverlay.setComposite(previousComposite);
-					gOverlay.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-				}
-								
-				ROI pathROI = selectedObject.getROI();
-				if (pathROI != null && (paintSelectedBounds || (!useSelectedColor)) && !(pathROI instanceof RectangleROI) && !pathROI.isEmpty()) {
-					Shape boundsShape = null;
-					if (pathROI.isPoint()) {
-						var hull = pathROI.getConvexHull();
-						if (hull != null)
-							boundsShape = hull.getShape();
-					}
-					if (boundsShape == null) {
-						boundsRect = AwtTools.getBounds2D(pathROI, boundsRect);
-						boundsShape = boundsRect;
-					}
-					PathObjectPainter.paintShape(boundsShape, gOverlay, getSuggestedOverlayColor(), PathObjectPainter.getCachedStroke(Math.max(downsample, 1)*2), null);
-				}
-				
-				// Avoid double-painting of annotations (which looks odd if they are filled in)
-				// However do always paint detections, since they are otherwise painted (unselected) 
-				// in a cached way
-				if ((selectedObject.isDetection() && PathPrefs.useSelectedColorProperty().get()) || !PathObjectTools.hierarchyContainsObject(hierarchy, selectedObject)) {
-					gOverlay.setClip(shapeRegion);
-					PathObjectPainter.paintObject(selectedObject, gOverlay, overlayOptions, getHierarchy().getSelectionModel(), downsample);
-				}
-				// Paint ROI handles, if required
-				if (selectedObject == mainSelectedObject && roiEditor.hasROI()) {
-					Stroke strokeThick = PathObjectPainter.getCachedStroke(PathPrefs.annotationStrokeThicknessProperty().get() * downsample);
-					java.awt.Color color = useSelectedColor ? ColorToolsAwt.getCachedColor(PathPrefs.colorSelectedObjectProperty().get()) : null;
-					if (color == null)
-						color = ColorToolsAwt.getCachedColor(ColorToolsFX.getDisplayedColorARGB(selectedObject));
-					gOverlay.setStroke(strokeThick);
-					// Draw ROI handles using adaptive size
-					double maxHandleSize = getMaxROIHandleSize();
-					double minHandleSize = downsample;
-					PathObjectPainter.paintHandles(roiEditor, gOverlay, minHandleSize, maxHandleSize, color, ColorToolsAwt.getTranslucentColor(color));
-				}
-			}
-		}
-
-		// Draw overlay, applying curtain effect if needed
-		int x = (int)GeneralTools.clipValue(overlayOptions.getCurtainMinX() * w, 0, w);
-		int y = (int)GeneralTools.clipValue(overlayOptions.getCurtainMinY() * h, 0, h);
-		int x2 = (int)GeneralTools.clipValue(overlayOptions.getCurtainMaxX() * w, 0, w);
-		int y2 = (int)GeneralTools.clipValue(overlayOptions.getCurtainMaxY() * h, 0, h);
-		if (x2 - x > 0 && y2 - y > 0) {
-			g.drawImage(imgOverlay, x, y, x2, y2,
-					x, y, x2, y2, null);
-		}
+		imageDataChanging.set(false);
 
 		// Notify any listeners of shape changes
 		if (shapeChanged)
 			fireVisibleRegionChangedEvent(lastVisibleShape);
+
+	}
+
+	private boolean updateImageBuffer(BufferedImage img, Shape shapeRegion) {
+		var g2d = img.createGraphics();
+		try {
+			ImageServer<BufferedImage> server = getServer();
+			if (server == null) {
+				g2d.setColor(background.getValue());
+				g2d.fillRect(0, 0, img.getWidth(), img.getHeight());
+				return true;
+			}
+			// Get the displayed region
+			return updateImageBuffer(img, shapeRegion, img.getWidth(), img.getHeight());
+		} finally {
+			g2d.dispose();
+			return false;
+		}
+	}
+
+	private boolean updateOverlayBuffer(BufferedImage imgOverlay, double downsample, Shape shapeRegion) {
+		if (!hasServer())
+			return true;
+
+		// The buffer for the overlay
+		Graphics2D gOverlay = imgOverlay.createGraphics();
+		try {
+			gOverlay.setBackground(new java.awt.Color(0, true));
+			gOverlay.clearRect(0, 0, imgOverlay.getWidth(), imgOverlay.getHeight());
+			gOverlay.setClip(0, 0, imgOverlay.getWidth(), imgOverlay.getHeight());
+			gOverlay.transform(transform);
+
+			float opacity = overlayOptions.getOpacity();
+			Composite previousComposite = gOverlay.getComposite();
+			boolean paintCompletely = thumbnailIsFullImage || !doFasterRepaint;
+			if (opacity > 0 || PathPrefs.alwaysPaintSelectedObjectsProperty().get()) {
+				if (opacity < 1) {
+					AlphaComposite composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, opacity);
+					gOverlay.setComposite(composite);
+				}
+
+				var color = getSuggestedOverlayColor();
+				// Paint the overlay layers
+				var imageData = this.imageDataProperty.get();
+				for (PathOverlay overlay : overlays.getAllOverlayLayersSnapshot()) {
+					logger.trace("Painting overlay: {}", overlay);
+					if (overlay instanceof AbstractOverlay abstractOverlay)
+						abstractOverlay.setPreferredOverlayColor(color);
+					overlay.paintOverlay(gOverlay, getServerBounds(), downsample, imageData, paintCompletely);
+				}
+			}
+
+			// Paint the selected objects
+			PathObjectHierarchy hierarchy = getHierarchy();
+			PathObject mainSelectedObject = getSelectedObject();
+			Rectangle2D boundsRect = null;
+			boolean useSelectedColor = PathPrefs.useSelectedColorProperty().get();
+			boolean paintSelectedBounds = PathPrefs.paintSelectedBoundsProperty().get();
+			for (PathObject selectedObject : hierarchy.getSelectionModel().getSelectedObjects().toArray(new PathObject[0])) {
+				// TODO: Simplify this...
+				if (selectedObject != null && selectedObject.hasROI() && selectedObject.getROI().getZ() == getZPosition() && selectedObject.getROI().getT() == getTPosition()) {
+
+					if (!selectedObject.isDetection()) {
+						// Ensure a selected ROI can be seen clearly
+						if (previousComposite != null)
+							gOverlay.setComposite(previousComposite);
+						gOverlay.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+					}
+
+					ROI pathROI = selectedObject.getROI();
+					if (pathROI != null && (paintSelectedBounds || (!useSelectedColor)) && !(pathROI instanceof RectangleROI) && !pathROI.isEmpty()) {
+						Shape boundsShape = null;
+						if (pathROI.isPoint()) {
+							var hull = pathROI.getConvexHull();
+							if (hull != null)
+								boundsShape = hull.getShape();
+						}
+						if (boundsShape == null) {
+							boundsRect = AwtTools.getBounds2D(pathROI, boundsRect);
+							boundsShape = boundsRect;
+						}
+						PathObjectPainter.paintShape(boundsShape, gOverlay, getSuggestedOverlayColor(), PathObjectPainter.getCachedStroke(Math.max(downsample, 1) * 2), null);
+					}
+
+					// Avoid double-painting of annotations (which looks odd if they are filled in)
+					// However do always paint detections, since they are otherwise painted (unselected)
+					// in a cached way
+					if ((selectedObject.isDetection() && PathPrefs.useSelectedColorProperty().get()) || !PathObjectTools.hierarchyContainsObject(hierarchy, selectedObject)) {
+						gOverlay.setClip(shapeRegion);
+						PathObjectPainter.paintObject(selectedObject, gOverlay, overlayOptions, getHierarchy().getSelectionModel(), downsample);
+					}
+					// Paint ROI handles, if required
+					if (selectedObject == mainSelectedObject && roiEditor.hasROI()) {
+						Stroke strokeThick = PathObjectPainter.getCachedStroke(PathPrefs.annotationStrokeThicknessProperty().get() * downsample);
+						java.awt.Color color = useSelectedColor ? ColorToolsAwt.getCachedColor(PathPrefs.colorSelectedObjectProperty().get()) : null;
+						if (color == null)
+							color = ColorToolsAwt.getCachedColor(ColorToolsFX.getDisplayedColorARGB(selectedObject));
+						gOverlay.setStroke(strokeThick);
+						// Draw ROI handles using adaptive size
+						double maxHandleSize = getMaxROIHandleSize();
+						double minHandleSize = downsample;
+						PathObjectPainter.paintHandles(roiEditor, gOverlay, minHandleSize, maxHandleSize, color, ColorToolsAwt.getTranslucentColor(color));
+					}
+				}
+			}
+		} finally {
+			gOverlay.dispose();
+		}
+		return true;
+	}
+
+	private void updateCompositeBuffer() {
+		// Update the (final) composite buffer
+		var imgBuffer = buffers.getCompositeBuffer();
+		int w = imgBuffer.getWidth();
+		int h = imgBuffer.getHeight();
+		var g2d = imgBuffer.createGraphics();
+		try {
+			g2d.drawImage(buffers.getImageBuffer(), 0, 0, null);
+			// Draw overlay, applying curtain effect if needed
+			int x = (int) GeneralTools.clipValue(overlayOptions.getCurtainMinX() * w, 0, w);
+			int y = (int) GeneralTools.clipValue(overlayOptions.getCurtainMinY() * h, 0, h);
+			int x2 = (int) GeneralTools.clipValue(overlayOptions.getCurtainMaxX() * w, 0, w);
+			int y2 = (int) GeneralTools.clipValue(overlayOptions.getCurtainMaxY() * h, 0, h);
+			if (x2 - x > 0 && y2 - y > 0) {
+				g2d.drawImage(buffers.getOverlayBuffer(), x, y, x2, y2,
+						x, y, x2, y2, null);
+			}
+		} finally {
+			g2d.dispose();
+		}
 	}
 	
 	/**
@@ -1505,7 +1488,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 
-    private void updateImageBuffer(final BufferedImage imgBuffer, final Shape shapeRegion, final int w, final int h) {
+    private boolean updateImageBuffer(final BufferedImage imgBuffer, final Shape shapeRegion, final int w, final int h) {
+
 		Graphics2D gBuffered = imgBuffer.createGraphics();
 
 		// Set all image pixels to be the background color
@@ -1565,6 +1549,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		if (gammaOp != null) {
 			gammaOp.filter(imgBuffer.getRaster(), imgBuffer.getRaster());
 		}
+		return true;
 	}
 
 
@@ -1782,9 +1767,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		}
 		this.downsampleFactor.set(downsampleFactor);
 		updateAffineTransform();
-
-		imageUpdated = true;
-		repaint();
 	}
 
 	private double getZoomToFitDownsampleFactor() {
@@ -1997,14 +1979,10 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	public void setCenterPixelLocation(double x, double y) {
 		if ((this.xCenter == x && this.yCenter == y) || Double.isNaN(x + y))
 			return;
-		
 		this.xCenter = x;
 		this.yCenter = y;
 		updateAffineTransform();
-
-		// Flag that the location has been updated
-		locationUpdated = true;
-		repaint();
+		this.imageUpdated = true;
 	}
 
 	
