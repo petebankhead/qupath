@@ -534,6 +534,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	// We need a more extensive repaint for changes to the image pixel display
 	private void updateOverlaysAndRepaint() {
+		overlays.getHierarchyOverlay().clearCachedOverlay();
 		overlayUpdated = true;
 	}
 
@@ -2085,12 +2086,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * Due to the usefulness of caching for performance, it should not be called too often.
 	 */
 	public void forceOverlayUpdate() {
-		if (Platform.isFxApplicationThread()) {
-			overlays.getHierarchyOverlay().clearCachedOverlay();
-			repaint();
-		} else {
-			Platform.runLater(this::forceOverlayUpdate);
-		}
+		overlays.getHierarchyOverlay().clearCachedOverlay();
+		overlayUpdated = true;
 	}
 
 
@@ -2100,22 +2097,20 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		// Measurement changes don't modify the hierarchy
 		if (event.isObjectMeasurementEvent())
 			return;
-
-		if (Platform.isFxApplicationThread())
-			handleHierarchyChange(event);
-		else
-			Platform.runLater(() -> handleHierarchyChange(event));
+		handleHierarchyChange(event);
 	}
 
 
 	private void handleHierarchyChange(final PathObjectHierarchyEvent event) {
 		if (event != null)
 			logger.trace(event.toString());
-		
-		if (!Platform.isFxApplicationThread()) {
-			Platform.runLater(() -> handleHierarchyChange(event));
-			return;
-		}
+
+		// TODO: Be aware that this used to be on the application thread...
+		//       and may need to be again, if this proves problematic
+//		if (!Platform.isFxApplicationThread()) {
+//			Platform.runLater(() -> handleHierarchyChange(event));
+//			return;
+//		}
 		
 		// Clear any cached regions of the overlay, if necessary
 		// TODO: Make this update a bit less conservative - it isn't really needed if we don't modify detections?
@@ -2141,7 +2136,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		if (event != null && !event.isChanging())
 			updateRoiEditor();
 		// Request repaint
-		repaint();
+		overlayUpdated = true;
 	}
 
 
