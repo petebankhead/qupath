@@ -40,7 +40,6 @@ import javafx.beans.property.SimpleLongProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
-import javafx.collections.FXCollections;
 import javafx.collections.ListChangeListener.Change;
 import javafx.collections.ObservableList;
 import javafx.embed.swing.SwingFXUtils;
@@ -75,11 +74,8 @@ import qupath.lib.gui.measure.ObservableMeasurementTableData;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.tools.ColorToolsFX;
 import qupath.lib.gui.viewer.overlays.AbstractOverlay;
-import qupath.lib.gui.viewer.overlays.GridOverlay;
-import qupath.lib.gui.viewer.overlays.HierarchyOverlay;
 import qupath.lib.gui.viewer.overlays.PathOverlay;
 import qupath.lib.gui.viewer.overlays.PixelClassificationOverlay;
-import qupath.lib.gui.viewer.overlays.TMAGridOverlay;
 import qupath.lib.gui.viewer.tools.PathTool;
 import qupath.lib.gui.viewer.tools.PathTools;
 import qupath.lib.gui.viewer.tools.handlers.MoveToolEventHandler;
@@ -136,40 +132,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	private final DefaultImageRegionStore regionStore;
 
-	// Overlay (ROI/object) display variables
 	private OverlayOptions overlayOptions;
-
-	// An overlay used to display an ImageServer wrapping a PathObjectHierarchy, for faster painting when there are a lot of objects
-	private HierarchyOverlay hierarchyOverlay = null;
-
-	// A custom pixel overlay to use instead of the default
-	private PathOverlay customPixelLayerOverlay = null;
 
 	/**
 	 * String property to hold text that should be displayed whenever no image is open in the viewer.
 	 * @since v0.6.0
 	 */
 	private final StringProperty placeholderText = new SimpleStringProperty();
-
-	/**
-	 * Editable list of custom overlay layers.
-	 * Overlays can be added or removed.
- 	 */
-	private final ObservableList<PathOverlay> customOverlayLayers = FXCollections.synchronizedObservableList(FXCollections.observableArrayList());
-	
-	/**
-	 * List of core overlay layers.
-	 * These are always retained, and painted on top of any custom layers.
-	 */
-	private final ObservableList<PathOverlay> coreOverlayLayers = FXCollections.synchronizedObservableList(FXCollections.observableArrayList());
-	
-	private final ObservableList<PathOverlay> allOverlayLayers = FXCollections.synchronizedObservableList(FXCollections.observableArrayList());
-
-	/**
-	 *  Unmodifiable list that concatenates the custom and core overlay layers.
-	 *  The order corresponds to the order in which overlays are painted.
-	 */
-	private final ObservableList<PathOverlay> allOverlayLayersUnmodifiable = FXCollections.unmodifiableObservableList(allOverlayLayers);
 
 	// Create separate buffers for the image and overlay,
 	// because often the overlay changes while the image remains static
@@ -229,6 +198,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	private final Canvas canvas = new Canvas();
 	private final Pane pane = createPane(canvas);
 
+	private final ViewerOverlays overlays;
+
 	private final ImageDisplay imageDisplay;
 	private transient long lastDisplayChangeTimestamp = 0; // Used to indicate imageDisplay changes
 	private final LongProperty lastRepaintTimestamp = new SimpleLongProperty(0L); // Used for debugging repaint times
@@ -283,8 +254,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 		this.regionStore = regionStore;
 
-		setOverlayOptions(overlayOptions);
-		
+		initOverlayOptions(overlayOptions);
+
 		// We need a simple repaint for color changes and simple (thick) line changes
 		subscription = QuPathViewerUtils.subscribeObservables(
 				this::repaint,
@@ -349,19 +320,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			subscription = subscription.and(imageDisplay.eventCountProperty().subscribe(this::repaintOnNextPulse));
 
 		// Prepare overlay layers
-		customOverlayLayers.addListener((Change<? extends PathOverlay> _) -> refreshAllOverlayLayers());
-		coreOverlayLayers.addListener((Change<? extends PathOverlay> _) -> refreshAllOverlayLayers());
-		allOverlayLayers.addListener((Change<? extends PathOverlay> _) -> repaint());
-		
-		hierarchyOverlay = new HierarchyOverlay(this.regionStore, overlayOptions, null);
-		var tmaGridOverlay = new TMAGridOverlay(overlayOptions);
-		var gridOverlay = new GridOverlay(overlayOptions);
-		// Set up the overlay layers
-		coreOverlayLayers.setAll(
-				tmaGridOverlay,
-				hierarchyOverlay,
-				gridOverlay
-		);
+		this.overlays = ViewerOverlays.create(overlayOptions, regionStore);
+		this.overlays.getAllOverlayLayers().addListener((Change<? extends PathOverlay> _) -> repaint());
+
 
 		this.regionStore.addTileListener(this);
 
@@ -447,16 +408,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 
 	/**
-	 * Update allOverlayLayers to make sure it contains all the required PathOverlays.
-	 */
-	private synchronized void refreshAllOverlayLayers() {
-		List<PathOverlay> temp = new ArrayList<>();
-		temp.addAll(customOverlayLayers);
-		temp.addAll(coreOverlayLayers);
-		allOverlayLayers.setAll(temp);
-	}
-
-	/**
 	 * Prevent frequent repaints (temporarily) by setting a minimum time that must have elapsed
 	 * after the previous repaint for a new one to be triggered.
 	 * (Repaint requests that come in between are simply disregarded for performance.)
@@ -522,8 +473,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		// Reset repaint flag
 		repaintRequested = false;
 
-		GraphicsContext context = canvas.getGraphicsContext2D();
-
 		long startTime = System.currentTimeMillis();
 
 		Graphics2D g = imgCache.createGraphics();
@@ -535,6 +484,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		logger.trace("Viewer painting: {} ms", endTime - startTime);
 
 		imgCacheFX = SwingFXUtils.toFXImage(imgCache, imgCacheFX);
+
+		GraphicsContext context = canvas.getGraphicsContext2D();
 		context.drawImage(imgCacheFX, 0, 0);
 
 		var borderColor = getBorderColor();
@@ -709,7 +660,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 	
 
-	private void setOverlayOptions(OverlayOptions overlayOptions) {
+	private void initOverlayOptions(OverlayOptions overlayOptions) {
 		if (this.overlayOptions == overlayOptions)
 			return;
 		if (this.overlayOptions != null && overlayOptionsManager != null) {
@@ -948,21 +899,10 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @param pathOverlay
 	 */
 	public void setCustomPixelLayerOverlay(PathOverlay pathOverlay) {
-		if (this.customPixelLayerOverlay == pathOverlay)
+		if (getCustomPixelLayerOverlay() == pathOverlay)
 			return;
-		
-		// Get existing custom overlay
-		var previousOverlay = getCurrentPixelLayerOverlay();
-		int ind = coreOverlayLayers.indexOf(previousOverlay);
-		this.customPixelLayerOverlay = pathOverlay;
-		if (this.customPixelLayerOverlay == null) {
-			if (ind >= 0)
-				coreOverlayLayers.remove(ind);
-		} else if (ind < 0) {
-			coreOverlayLayers.addFirst(this.customPixelLayerOverlay);
-		} else {
-			coreOverlayLayers.set(ind, this.customPixelLayerOverlay);
-		}
+
+		overlays.setCustomPixelLayerOverlay(pathOverlay);
 		
 		var imageData = getImageData();
 		if (imageData != null) {
@@ -982,19 +922,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		setCustomPixelLayerOverlay(null);
 	}
 
-	
-	private PathOverlay getCurrentPixelLayerOverlay() {
-		return customPixelLayerOverlay;
-	}
-	
-
 	/**
 	 * Get the custom pixel layer overlay, or null if it has not be set.
 	 * 
 	 * @return
 	 */
 	public PathOverlay getCustomPixelLayerOverlay() {
-		return customPixelLayerOverlay;
+		return overlays.getCustomPixelLayerOverlay();
 	}
 
 	/**
@@ -1221,7 +1155,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			return;
 
 		// We want to stop caching the hierarchy
-		hierarchyOverlay.resetImageData();
+		overlays.getHierarchyOverlay().resetImageData();
 
 		imageDataChanging.set(true);
 		
@@ -1533,7 +1467,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			var color = getSuggestedOverlayColor();
 			// Paint the overlay layers
 			var imageData = this.imageDataProperty.get();
-			for (PathOverlay overlay : allOverlayLayers.toArray(PathOverlay[]::new)) {
+			for (PathOverlay overlay : overlays.getAllOverlayLayersSnapshot()) {
 				logger.trace("Painting overlay: {}", overlay);
 				if (overlay instanceof AbstractOverlay abstractOverlay)
 					abstractOverlay.setPreferredOverlayColor(color);
@@ -1695,7 +1629,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @return
 	 */
 	public List<PathOverlay> getOverlayLayers() {
-		return allOverlayLayersUnmodifiable;
+		return overlays.getAllOverlayLayers();
 	}
 	
 	/**
@@ -1703,7 +1637,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * @return
 	 */
 	public ObservableList<PathOverlay> getCustomOverlayLayers() {
-		return customOverlayLayers;
+		return overlays.getCustomOverlayLayers();
 	}
 
 	/**
@@ -2233,11 +2167,12 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 * Due to the usefulness of caching for performance, it should not be called too often.
 	 */
 	public void forceOverlayUpdate() {
-		if (Platform.isFxApplicationThread())
-			hierarchyOverlay.clearCachedOverlay();
-		else
-			Platform.runLater(() -> hierarchyOverlay.clearCachedOverlay());
-		repaint();
+		if (Platform.isFxApplicationThread()) {
+			overlays.getHierarchyOverlay().clearCachedOverlay();
+			repaint();
+		} else {
+			Platform.runLater(this::forceOverlayUpdate);
+		}
 	}
 
 
@@ -2266,6 +2201,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		
 		// Clear any cached regions of the overlay, if necessary
 		// TODO: Make this update a bit less conservative - it isn't really needed if we don't modify detections?
+		var hierarchyOverlay = overlays.getHierarchyOverlay();
 		if (event == null || event.isStructureChangeEvent())
 			hierarchyOverlay.clearCachedOverlay();
 		else {
@@ -2369,8 +2305,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	/**
 	 * Request that the viewer start panning with a velocity determined by dx and dy.
-	 *
-	 * <p>This can be used in combination with {@code requestDecelerate} to end a panning event more smoothly.
+	 * <p>
+	 * This can be used in combination with {@code requestDecelerate} to end a panning event more smoothly.
 	 *
 	 * @param dx
 	 * @param dy
