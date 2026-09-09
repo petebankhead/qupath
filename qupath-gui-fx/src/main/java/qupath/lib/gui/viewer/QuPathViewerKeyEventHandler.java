@@ -271,8 +271,12 @@ class QuPathViewerKeyEventHandler implements EventHandler<KeyEvent> {
                     lastPressed = null;
             }
 
-            if (keysPressed.size() == 1)
-                viewer.requestCancelDirection(code == KeyCode.LEFT || code == KeyCode.RIGHT);
+            if (keysPressed.size() == 1) {
+                if (code == KeyCode.LEFT || code == KeyCode.RIGHT)
+                    viewer.requestCancelMoveX();
+                else
+                    viewer.requestCancelMoveY();
+            }
 
             switch (code) {
                 case LEFT:

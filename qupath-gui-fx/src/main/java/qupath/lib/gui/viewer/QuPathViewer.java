@@ -130,9 +130,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
 	private static final Logger logger = LoggerFactory.getLogger(QuPathViewer.class);
 
-	private static final double MIN_ROTATION = 0;
-	private static final double MAX_ROTATION = 360 * Math.PI / 180;
-
 	private final List<QuPathViewerListener> listeners = new ArrayList<>();
 
 	private final ObjectProperty<ImageData<BufferedImage>> imageDataProperty = new SimpleObjectProperty<>();
@@ -487,7 +484,11 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		repaint();
 	}
 
-
+	/**
+	 * The main paint method to update the JavaFX canvas.
+	 * This delegates to {@link #paintViewer(Graphics, int, int)} to do the actual
+	 * painting on image buffers, using the Graphics2D pipeline.
+	 */
 	protected void paintCanvas() {
 		// Ensure there's always a repaint requested whenever the image is updated
 		// (Should be the case anyway)
@@ -529,6 +530,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		Graphics2D g = imgCache.createGraphics();
 		paintViewer(g, getWidth(), getHeight());
 		g.dispose();
+		updateRepaintTimestamp();
 
 		long endTime = System.currentTimeMillis();
 		logger.trace("Viewer painting: {} ms", endTime - startTime);
@@ -1438,13 +1440,12 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 	
 
-	protected void paintViewer(Graphics g, int w, int h) {
+	private void paintViewer(Graphics g, int w, int h) {
 		
 		ImageServer<BufferedImage> server = getServer();
 		if (server == null) {
 			g.setColor(background);
 			g.fillRect(0, 0, w, h);
-			updateRepaintTimestamp();
 			return;
 		}
 
@@ -1610,9 +1611,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		// Notify any listeners of shape changes
 		if (shapeChanged)
 			fireVisibleRegionChangedEvent(lastVisibleShape);
-		
-		
-		updateRepaintTimestamp();
 	}
 	
 	/**
@@ -2182,6 +2180,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 */
 	private final DoubleProperty rotationProperty = new SimpleDoubleProperty(null, "rotation", 0) {
 
+		private static final double MIN_ROTATION = 0;
+		private static final double MAX_ROTATION = 2 * Math.PI;
+
 		@Override
 		public void set(double value) {
 			double theta = value;
@@ -2387,11 +2388,17 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 	/**
-	 * Requests that the viewer cancels either the x- or y-axis direction.
-	 * @param xAxis
+	 * Requests that the viewer cancels movement in the x-axis direction.
 	 */
-	public void requestCancelDirection(final boolean xAxis) {
-		mover.cancelDirection(xAxis);
+	void requestCancelMoveX() {
+		mover.cancelDirection(true);
+	}
+
+	/**
+	 * Requests that the viewer cancels movement in the y-axis direction.
+	 */
+	void requestCancelMoveY() {
+		mover.cancelDirection(false);
 	}
 
 
