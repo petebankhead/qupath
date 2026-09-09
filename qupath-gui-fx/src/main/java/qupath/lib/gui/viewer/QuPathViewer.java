@@ -107,17 +107,13 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.Stroke;
-import java.awt.color.ColorSpace;
-import java.awt.color.ICC_Profile;
 import java.awt.geom.AffineTransform;
 import java.awt.geom.NoninvertibleTransformException;
 import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
-import java.awt.image.ColorConvertOp;
 import java.awt.image.LookupOp;
 import java.io.IOException;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -774,8 +770,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			return;
 		}
 		
-		updateICCTransform();
-
 		zPosition.set(server.nZSlices() / 2);
 		tPosition.set(0);
 		updateThumbnail();
@@ -1034,15 +1028,10 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		hierarchy.getSelectionModel().setSelectedObject(pathObject, addToSelected);
 	}
 
-
-	// TODO: Consider making thumbnail update private
 	private void updateThumbnail() {
 		updateThumbnail(true);
 	}
 
-
-
-	// TODO: Consider making thumbnail update private
 	private void updateThumbnail(final boolean updateOverlayColor) {
 		ImageServer<BufferedImage> server = getServer();
 		if (server == null)
@@ -1648,9 +1637,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		updateBufferedImage(gBuffered, shapeRegion, w, h);
 		gBuffered.dispose();
 		// Apply color transforms, if required
-		if (iccTransformOp != null) {
-			iccTransformOp.filter(this.imgBuffer.getRaster(), this.imgBuffer.getRaster());
-		}
 		var gammaOp = getGammaOp();
 		if (gammaOp != null) {
 			gammaOp.filter(this.imgBuffer.getRaster(), this.imgBuffer.getRaster());
@@ -1726,30 +1712,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		return customOverlayLayers;
 	}
 
-
-    /**
-	 * Try to create a <code>ColorConvertOp</code> that can be applied to transform using the color space of 
-	 * the source image (read from TIFF tags, if possible) to sRGB.
-	 * 
-	 * @return the <code>ColorConvertOp</code> if an appropriate conversion could be found, or <code>null</code> otherwise.
-	 */
-	private ColorConvertOp createICCConvertOp() {
-		var server = getServer();
-		var uris = server == null ? null : server.getURIs();
-		if (uris == null || uris.isEmpty())
-			return null;
-		ICC_Profile iccSource = QuPathViewerUtils.readICC(Paths.get(uris.iterator().next()).toFile());
-		if (iccSource == null)
-			return null;
-		return new ColorConvertOp(new ICC_Profile[]{
-				iccSource,
-				ICC_Profile.getInstance(ColorSpace.CS_sRGB)}, null);
-	}
-
-
-	private ColorConvertOp iccTransformOp = null;
-	private boolean doICCTransform = false;
-
 	/**
 	 * Gamma property affecting the display of all images in the viewer.
 	 * By default, this is bound to {@link PathPrefs#viewerGammaProperty()}.
@@ -1789,22 +1751,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	 */
 	public LookupOp getGammaOp() {
 		return gammaOp.get();
-	}
-
-	private void updateICCTransform() {
-		if (getDoICCTransform())
-			iccTransformOp = createICCConvertOp();
-		else
-			iccTransformOp = null;
-	}
-
-	private void setDoICCTransform(final boolean doTransform) {
-		this.doICCTransform = doTransform;
-		updateICCTransform();
-	}
-
-	private boolean getDoICCTransform() {
-		return doICCTransform;
 	}
 
 	private static void paintFinalImage(Graphics g, Image img) {
