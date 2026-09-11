@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -42,6 +42,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -60,7 +61,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 
 	private static final Logger logger = LoggerFactory.getLogger(DefaultImageRegionStore.class);
 	
-	private static boolean DEBUG_TILES = false;
+	private static boolean DEBUG_TILES = !Objects.equals(System.getProperty("qupath.debug.tiles", "false"), "false");
 
 	DefaultImageRegionStore(int thumbnailWidth, long tileCacheSize) {
 		super(new BufferedImageSizeEstimator(), thumbnailWidth, tileCacheSize);
@@ -88,30 +89,24 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 	@SuppressWarnings("unchecked")
 	public void paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageObserver observer, ImageRenderer imageDisplay, long timeoutMilliseconds) {
 
-//		if (downsampleFactor > 1)
-//			((Graphics2D)g).setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-//		else
-//			((Graphics2D)g).setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-
-
 		// Loop through and create the image
 		List<TileWorker<BufferedImage>> workers = new ArrayList<>();
 		BufferedImage imgTemp = null;
 
 		for (RegionRequest request : ImageRegionStoreHelpers.getTilesToRequest(server, clipShapeVisible, downsampleFactor, zPosition, tPosition, null)) {
 
-			Object result = requestImageTile(server, request, cache, true);
+			Object result = requestImageTile(server, request, cache);
 
 			// If we have an image, paint it & record coordinates
-			if (result instanceof BufferedImage) {
+			if (result instanceof BufferedImage img) {
 				if (imageDisplay != null) {
-					imgTemp = imageDisplay.applyTransforms((BufferedImage)result, imgTemp);
+					imgTemp = imageDisplay.applyTransforms(img, imgTemp);
 					g.drawImage(imgTemp, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
 				} else
-					g.drawImage((BufferedImage)result, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
-			} else if (result instanceof TileWorker) {
+					g.drawImage(img, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
+			} else if (result instanceof TileWorker worker) {
 				// If we've a tile worker, prepare for requesting its results soon...
-				workers.add((TileWorker<BufferedImage>)result);
+				workers.add(worker);
 			}
 		}
 
@@ -211,11 +206,10 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				if (nextDownsample > 0)
 //					paintRegion(server, g, clipShapeVisible, zPosition, tPosition, nextDownsample, imgThumbnail, observer, imageDisplay);
 					paintRegionInternal(server, g, missingBounds, zPosition, tPosition, nextDownsample, imgThumbnail, observer, imageDisplay);
-				else if (imgThumbnail != null) {
+				else {
 					// The best we can do is paint the thumbnail
 					if (imageDisplay != null) {
-						BufferedImage imgTemp = imageDisplay.applyTransforms(imgThumbnail, null);
-						imgThumbnail = imgTemp;
+                        imgThumbnail = imageDisplay.applyTransforms(imgThumbnail, null);
 					}
 					g.drawImage(imgThumbnail, 0, 0, server.getWidth(), server.getHeight(), observer);
 				}
@@ -230,7 +224,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 		if (useDisplayCache) {
 			if (imageDisplay == null)
 				displayCachePath = "RGB::" + server.getPath();
-			else if (server != null)
+			else
 				displayCachePath = server.getPath() + imageDisplay.getUniqueID();
 		}
 
@@ -274,11 +268,9 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				} else {
 					// Apply transforms, trying to reuse temp image
 					if (imgTemp != null && (imgTemp.getWidth() != img.getWidth() || imgTemp.getHeight() != img.getHeight()))
-						imgTemp = null;
-					if (imageDisplay != null)
-						imgTemp = imageDisplay.applyTransforms(img, imgTemp);
+						imgTemp = imageDisplay.applyTransforms(img, null);
 					else
-						imgTemp = img;
+						imgTemp = imageDisplay.applyTransforms(img, imgTemp);
 				}
 				img = imgTemp;
 			}

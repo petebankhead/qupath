@@ -24,7 +24,6 @@
 package qupath.lib.gui.viewer;
 
 import javafx.animation.AnimationTimer;
-import javafx.application.Platform;
 import javafx.beans.binding.Bindings;
 import javafx.beans.binding.ObjectBinding;
 import javafx.beans.property.BooleanProperty;
@@ -107,9 +106,18 @@ import java.util.List;
 
 /**
  * JavaFX component for viewing a (possibly large) image, along with overlays.
- * 
- * @author Pete Bankhead
- *
+ * <p>
+ * Internally, this uses 3 buffers:
+ * <ol>
+ *     <li><b>Image buffer:</b> for the main image in the viewer</li>
+ *     <li><b>Overlay buffer:</b> for all the overlays drawn on top of the image</li>
+ *     <li><b>Composite buffer:</b> simply the image buffer, with the overlay buffer drawn on top.</li>
+ * </ol>
+ * This means that overlay updates can be processed more quickly, because the image
+ * buffer contents do not need to change.
+ * <p>
+ * Starting with v0.8.0, this class was substantially redesigned to process updates using an
+ * {@link AnimationTimer}; previously, it responded to updates triggered elsewhere.
  */
 public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHierarchyListener, PathObjectSelectionListener {
 
@@ -202,8 +210,9 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	private final LongProperty lastRepaintTimestamp = new SimpleLongProperty(0L); // Used for debugging repaint times
 	private long lastPaint = 0;
 	private long minimumRepaintSpacingMillis = -1; // This can be used (temporarily) to prevent repaints happening too frequently
+    private boolean updateOverlayColor;
 
-	/**
+    /**
 	 * Get the main JavaFX component representing this viewer.
 	 * This is what should be added to a scene.
 	 * @return
@@ -319,10 +328,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	}
 
 	private void repaintAfterPlaneUpdate() {
-		imageUpdated = true;
-		updateThumbnail(false);
-		repaint();
-		fireVisibleRegionChangedEvent(getDisplayedRegionShape());
+		sliceUpdated = true;
+		lastVisibleShape = null; // This ensures an update to the visible region is fired on the next pulse
 	}
 
 	/**
@@ -870,31 +877,37 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		hierarchy.getSelectionModel().setSelectedObject(pathObject, addToSelected);
 	}
 
-	private void updateThumbnail() {
-		updateThumbnail(true);
+	private boolean updateThumbnail() {
+		return updateThumbnail(true);
 	}
 
-	private void updateThumbnail(final boolean updateOverlayColor) {
-		ImageServer<BufferedImage> server = getServer();
+	private boolean updateThumbnail(final boolean updateOverlayColor) {
+        this.updateOverlayColor = updateOverlayColor;
+        ImageServer<BufferedImage> server = getServer();
 		if (server == null)
-			return;
+			return true;
 
 		// Read a thumbnail image
 		try {
 			int z = GeneralTools.clipValue(getZPosition(), 0, server.nZSlices()-1);
 			int t = GeneralTools.clipValue(getTPosition(), 0, server.nTimepoints()-1);
-			BufferedImage imgThumbnail = regionStore.getThumbnail(server, z, t, true);
+			BufferedImage imgThumbnail = regionStore.getOrRequestThumbnail(server, z, t);
+			if (imgThumbnail == null) {
+				return false;
+			}
 			imgThumbnailRGB = createThumbnailRGB(imgThumbnail);
 			thumbnailIsFullImage = imgThumbnailRGB.getWidth() == server.getWidth() && imgThumbnailRGB.getHeight() == server.getHeight();
 			if (updateOverlayColor)
 				colorOverlaySuggested = null;
+			return true;
 		} catch (IOException e) {
 			imgThumbnailRGB = null;
 			colorOverlaySuggested = null;
 			logger.warn("Error requesting thumbnail {}", e.getMessage());
+			return false;
 		}
 	}
-	
+
 	/**
 	 * Create an RGB thumbnail image using the current rendering settings.
 	 * <p>
@@ -1291,20 +1304,27 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 				return;
 		}
 
-		// Ensure we have sufficiently-large buffers
+		// Avoid repaints if there's no reason for them
+		boolean somethingUpdated = false;
+
+		// Ensure we have sufficiently-large buffers.
+		// If these need to be resized, we definitely need to up the the image and overlays.
 		int w = getWidth();
 		int h = getHeight();
 		if (!buffers.matchesSize(w, h)) {
 			buffers = buffers.ensureSize(w, h);
 			imageUpdated = true;
+			overlayUpdated = true;
 			// If the size changed, ensure the AffineTransform is up-to-date
 			updateAffineTransform();
 		}
 
+		// If we need to update the thumbnail, we also need to update the image.
+		// *However*, we want to permit painting as much as we can even if the thumbnail
+		// could not be returned (to avoid freezing the viewer).
 		if (requireThumbnailUpdate()) {
-			updateThumbnail();
 			imageUpdated = true;
-			sliceUpdated = false;
+			sliceUpdated = sliceUpdated & !updateThumbnail();
 			if (imageDisplay != null) {
 				lastDisplayChangeTimestamp = imageDisplay.getLastChangeTimestamp();
 			}
@@ -1322,24 +1342,32 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		// Store the last shape visible
 		lastVisibleShape = shapeRegion;
 
+		imageUpdated = imageUpdated || shapeChanged;
+
 		if (imageUpdated) {
+			// Only change status if the image update could be made fully,
+			// otherwise continue on next pulse
 			imageUpdated = !updateImageBuffer(buffers.getImageBuffer(), shapeRegion);
-			overlayUpdated = true;
+			somethingUpdated = true;
 		}
 		if (overlayUpdated) {
+			// Only change status if the overlay update could be made fully,
+			// otherwise continue on next pulse
 			overlayUpdated = !updateOverlayBuffer(buffers.getOverlayBuffer(), downsample, shapeRegion);
+			somethingUpdated = true;
 		}
-		updateCompositeBuffer();
 
-		pane.drawImage(buffers.getCompositeBuffer());
-		updateRepaintTimestamp();
+		if (somethingUpdated) {
+			updateCompositeBuffer();
+			pane.drawImage(buffers.getCompositeBuffer());
+			updateRepaintTimestamp();
+		}
 
 		imageDataChanging.set(false);
 
 		// Notify any listeners of shape changes
 		if (shapeChanged)
 			fireVisibleRegionChangedEvent(lastVisibleShape);
-
 	}
 
 	private boolean updateImageBuffer(BufferedImage img, Shape shapeRegion) {
@@ -1355,7 +1383,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			return updateImageBuffer(img, shapeRegion, img.getWidth(), img.getHeight());
 		} finally {
 			g2d.dispose();
-			return false;
 		}
 	}
 
@@ -1491,6 +1518,8 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
     private boolean updateImageBuffer(final BufferedImage imgBuffer, final Shape shapeRegion, final int w, final int h) {
 
+		boolean repaintSuccess = true;
+
 		Graphics2D gBuffered = imgBuffer.createGraphics();
 
 		// Set all image pixels to be the background color
@@ -1507,9 +1536,18 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		int serverHeight = server.getHeight();
 
 		// Check if we require tiling the image, or if the low-resolution version does all we need
-		BufferedImage imgThumbnail = regionStore.getThumbnail(server, getZPosition(), getTPosition(), true);
-		double lowResolutionDownsample = 0.5 * ((double)serverWidth / imgThumbnail.getWidth() + (double)serverHeight / imgThumbnail.getHeight());
-		boolean requiresTiling = !thumbnailIsFullImage && lowResolutionDownsample > Math.max(downsampleFactor.get(), 1);
+		int z = getZPosition();
+		int t = getZPosition();
+		BufferedImage imgThumbnail = regionStore.getOrRequestThumbnail(server, z, t);
+		repaintSuccess = imgThumbnail != null;
+		boolean requiresTiling = !thumbnailIsFullImage;
+		if (imgThumbnail == null) {
+			imgThumbnail = regionStore.getClosestCachedThumbnail(server, z, t);
+		}
+		if (imgThumbnail != null) {
+			double lowResolutionDownsample = 0.5 * ((double)serverWidth / imgThumbnail.getWidth() + (double)serverHeight / imgThumbnail.getHeight());
+			requiresTiling = !thumbnailIsFullImage && lowResolutionDownsample > Math.max(downsampleFactor.get(), 1);
+		}
 
 		// Check if we will be painting some background beyond the image edge
 		Rectangle shapeBounds = shapeRegion.getBounds();
@@ -1541,7 +1579,10 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			}
 		} else {
 			// Just paint the 'thumbnail' version, which has already (potentially) been color-transformed
-			gBuffered.drawImage(imgThumbnailRGB, 0, 0, serverWidth, serverHeight, null);
+			if (imgThumbnailRGB != null)
+				gBuffered.drawImage(imgThumbnailRGB, 0, 0, serverWidth, serverHeight, null);
+			else
+				return false;
 		}
 
 		gBuffered.dispose();
@@ -1550,7 +1591,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		if (gammaOp != null) {
 			gammaOp.filter(imgBuffer.getRaster(), imgBuffer.getRaster());
 		}
-		return true;
+		return repaintSuccess;
 	}
 
 

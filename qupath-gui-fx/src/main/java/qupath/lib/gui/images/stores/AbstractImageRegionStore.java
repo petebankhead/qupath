@@ -45,6 +45,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -98,7 +99,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	// Create two threadpools: a larger one for images that need to be fetched (e.g. from disk, cloud storage), and a smaller one
 	// for painting image tiles... the reason being that the high latency of distantly-stored images otherwise risks lowering
 	// repainting performance
-	private final ExecutorService pool = Executors.newFixedThreadPool(Math.max(8, Math.min(Runtime.getRuntime().availableProcessors() * 4, 32)), ThreadTools.createThreadFactory("region-store-", false));
+	private final ExecutorService pool = Executors.newFixedThreadPool(Math.clamp(Runtime.getRuntime().availableProcessors() * 4L, 8, 32), ThreadTools.createThreadFactory("region-store-", false));
 	private final ExecutorService poolLocal = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(), ThreadTools.createThreadFactory("region-store-local-", false));
 	
 	
@@ -179,6 +180,38 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	public T getCachedThumbnail(ImageServer<T> server, int zPosition, int tPosition) {
 		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
 		return cache.get(request);
+	}
+
+	public T getClosestCachedThumbnail(ImageServer<T> server, int zPosition, int tPosition) {
+		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
+		var dist = new PlaneDistance(request.getZ(), request.getT());
+		return cache.keySet().stream().filter(r -> sameRegionIgnoringPlane(request, r))
+				.sorted(Comparator.comparingDouble(dist::distance))
+				.map(key -> cache.get(key))
+				.findFirst()
+				.orElse(null);
+	}
+
+	private static class PlaneDistance {
+		private final int z;
+		private final int t;
+		public PlaneDistance(int z, int t) {
+			this.z = z;
+			this.t = t;
+		}
+
+		public int distance(RegionRequest region) {
+			int dz = Math.abs(z - region.getZ());
+			int dt = Math.abs(t - region.getT());
+			return dz + dt;
+		}
+
+	}
+
+	private static boolean sameRegionIgnoringPlane(RegionRequest r1, RegionRequest r2) {
+		return Objects.equals(r1.getPath(), r2.getPath()) &&
+				r1.getX() == r2.getX() && r1.getY() == r2.getY() &&
+				r1.getWidth() == r2.getWidth() && r1.getHeight() == r2.getHeight();
 	}
 
 
@@ -285,7 +318,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 		// Only need to use server path & region as the hash key, because we are relying on the tile size never changing...
 		// so different requests should never end up wanting the same region
 		// If this gives trouble, the downsample could be added
-		Object result = requestImageTile(server, request, cache, false);
+		Object result = requestImageTile(server, request, cache);
 		if (!(result == null || result instanceof TileWorker<?>)) {
 			@SuppressWarnings("unchecked")
 			T img = (T)result;
@@ -315,10 +348,9 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	 * @param server
 	 * @param request
 	 * @param cache 
-	 * @param ensureTileReturned 
 	 * @return
 	 */
-	protected synchronized Object requestImageTile(final ImageServer<T> server, final RegionRequest request, final Map<RegionRequest, T> cache, final boolean ensureTileReturned) {
+	protected synchronized Object requestImageTile(final ImageServer<T> server, final RegionRequest request, final Map<RegionRequest, T> cache) {
 		T img = cache.get(request);
 		if (img != null)
 			return img;
@@ -328,26 +360,25 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 		// If the region request can be known to return null quickly, avoid making a full request
 		// (at the time of writing, this only makes a difference with PathHierarchyImageServers)
 		if (server.isEmptyRegion(request)) {
-//			cache.put(request, null); // Guava cache does not support null
 			return null;
 		}
+
 		// Start a worker & add to the list
 		TileWorker<T> worker = null;
-		worker = (TileWorker<T>)waitingMap.get(request); // TODO: Consider if this is a bad idea...
+		worker = (TileWorker<T>) waitingMap.get(request); // TODO: Consider if this is a bad idea...
 		if (worker != null && worker.isCancelled()) {
 			// Try to fix a bug with z-projection overlays where the projection was lost when the cache filled up
 			workers.remove(worker);
 			worker = null;
 		}
 		if (worker == null) {
-			worker = createTileWorker(server, request, cache, ensureTileReturned);
+			worker = createTileWorker(server, request, cache);
 			workers.add(worker);
 			if (server instanceof GeneratingImageServer) {
 				if (poolLocal.isShutdown())
 					return null;
 				poolLocal.execute(worker);
-			}
-			else {
+			} else {
 				if (pool.isShutdown())
 					return null;
 				pool.execute(worker);
@@ -358,23 +389,35 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	}
 	
 	
-	
-//	protected abstract TileWorker<T> createTileWorker(final BaseImageServer<T> server, final RegionRequest request, final RegionCache<T> cache, final boolean ensureTileReturned);
 
-	protected TileWorker<T> createTileWorker(final ImageServer<T> server, final RegionRequest request, final Map<RegionRequest, T> cache, final boolean ensureTileReturned) {
-		return new DefaultTileWorker(server, request, cache, ensureTileReturned);
+	protected TileWorker<T> createTileWorker(final ImageServer<T> server, final RegionRequest request, final Map<RegionRequest, T> cache) {
+		return new DefaultTileWorker(server, request, cache);
 	}
 
-	
-	
+	/**
+	 * Get a thumbnail image if it is cached, otherwise request it and return null.
+	 * @param server
+	 * @param zPosition
+	 * @param tPosition
+	 * @return
+	 */
+	public T getOrRequestThumbnail(ImageServer<T> server, int zPosition, int tPosition) {
+		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
+		Object result = requestImageTile(server, request, cache);
+		if (result instanceof TileWorker<?> worker)
+			return null;
+		else
+			return (T)result;
+	}
+
 	/* (non-Javadoc)
 	 * @see qupath.lib.images.stores.ImageRegionStore#getThumbnail(qupath.lib.images.servers.ImageServer, int, int, boolean)
 	 */
 	@Override
 	@SuppressWarnings("unchecked")
-	public synchronized T getThumbnail(ImageServer<T> server, int zPosition, int tPosition, boolean addToCache) {
+	public T getThumbnail(ImageServer<T> server, int zPosition, int tPosition, boolean addToCache) {
 		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
-		Object result = requestImageTile(server, request, cache, true);
+		Object result = requestImageTile(server, request, cache);
 		if (!(result instanceof TileWorker<?>))
 			return (T)result;
 		
@@ -382,12 +425,10 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 		TileWorker<T> worker = (TileWorker<T>)result;
 		try {
 			return worker.get();
-		} catch (InterruptedException e) {
-			logger.error(e.getLocalizedMessage());
-		} catch (ExecutionException e) {
-			logger.error(e.getLocalizedMessage());
+		} catch (InterruptedException | ExecutionException e) {
+			logger.error(e.getMessage());
 		}
-		try {
+        try {
 			// Last resort... shouldn't happen
 			logger.warn("Fallback to requesting thumbnail directly...");
 			return server.readRegion(request);
@@ -564,8 +605,8 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 				if (cache.containsKey(request) || waitingMap.containsKey(request))
 					continue;
 				
-				TileWorker<T> worker = createTileWorker(temp.server, request, cache, false);
-				logger.trace("Adding {} to waiting map for thread {}", request, Thread.currentThread().getId());
+				TileWorker<T> worker = createTileWorker(temp.server, request, cache);
+				logger.trace("Adding {} to waiting map for thread {}", request, Thread.currentThread().threadId());
 				waitingMap.put(request, worker);
 				if (temp.server instanceof GeneratingImageServer) {
 					if (!poolLocal.isShutdown())
@@ -705,7 +746,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 		private final Map<RegionRequest, T> cache;
 		private final RegionRequest request;
 		
-		DefaultTileWorker(final ImageServer<T> server, final RegionRequest request, final Map<RegionRequest, T> cache, final boolean ensureTileReturned) {
+		DefaultTileWorker(final ImageServer<T> server, final RegionRequest request, final Map<RegionRequest, T> cache) {
 			super(new Callable<>() {
 
 				@Override
@@ -715,12 +756,6 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 					T imgTile = cache.get(request);
 					if (imgTile != null)
 						return imgTile;
-					// TODO: Investigate the (current) purpose of ensureTileReturned... doesn't seem to do anything here
-					if (ensureTileReturned)
-						return server.readRegion(request);
-					// Check if we still need the tile... if not, and we go searching, there can be a backlog
-					// making any requests slower to fulfill
-					// (Also, grab a snapshot of the listener list to avoid concurrent modifications)
                     return server.readRegion(request);
 				}
 
