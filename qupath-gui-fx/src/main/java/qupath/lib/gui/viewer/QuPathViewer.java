@@ -56,10 +56,8 @@ import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.DirectServerChannelInfo;
 import qupath.lib.display.ImageDisplay;
 import qupath.lib.gui.QuPathGUI;
-import qupath.lib.gui.images.servers.PathHierarchyImageServer;
 import qupath.lib.gui.images.stores.DefaultImageRegionStore;
 import qupath.lib.gui.images.stores.ImageRenderer;
-import qupath.lib.gui.images.stores.TileListener;
 import qupath.lib.gui.measure.ObservableMeasurementTableData;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.tools.ColorToolsFX;
@@ -119,7 +117,7 @@ import java.util.List;
  * Starting with v0.8.0, this class was substantially redesigned to process updates using an
  * {@link AnimationTimer}; previously, it responded to updates triggered elsewhere.
  */
-public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHierarchyListener, PathObjectSelectionListener {
+public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSelectionListener {
 
 	private static final Logger logger = LoggerFactory.getLogger(QuPathViewer.class);
 
@@ -313,9 +311,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		// Prepare overlay layers
 		this.overlays = ViewerOverlays.create(overlayOptions, regionStore);
 		this.overlays.getAllOverlayLayers().addListener((Change<? extends PathOverlay> _) -> repaint());
-
-
-		this.regionStore.addTileListener(this);
 
 		imageUpdated = true;
 		timer.start();
@@ -1277,7 +1272,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		timer.stop();
 		overlayOptionsManager.unsubscribe();
 		subscription.unsubscribe();
-		regionStore.removeTileListener(this);
 		// Notify listeners
 		for (QuPathViewerListener listener : listeners.toArray(new QuPathViewerListener[0]))
 			listener.viewerClosed(this);
@@ -1518,8 +1512,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 
     private boolean updateImageBuffer(final BufferedImage imgBuffer, final Shape shapeRegion, final int w, final int h) {
 
-		boolean repaintSuccess = true;
-
 		Graphics2D gBuffered = imgBuffer.createGraphics();
 
 		// Set all image pixels to be the background color
@@ -1539,7 +1531,7 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		int z = getZPosition();
 		int t = getZPosition();
 		BufferedImage imgThumbnail = regionStore.getOrRequestThumbnail(server, z, t);
-		repaintSuccess = imgThumbnail != null;
+		boolean repaintSuccess = imgThumbnail != null;
 		boolean requiresTiling = !thumbnailIsFullImage;
 		if (imgThumbnail == null) {
 			imgThumbnail = regionStore.getClosestCachedThumbnail(server, z, t);
@@ -1569,13 +1561,13 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 			// *However* this shouldn't be applied if the region we are viewing extends beyond the image boundary, as it means we would be color-transforming the background color.
 			// For a non-RGB image, or if the viewed region is over the image boundary, the transform should be applied in advance to the thumbnail, and then tile-by-tile during painting.
 			if (server.isRGB() && !overBoundary) {
-				regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, null);
+				repaintSuccess = repaintSuccess & regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, null);
 				gBuffered.dispose();
 				if (imageDisplay != null) {
 					getRenderer().applyTransforms(imgBuffer, imgBuffer);
 				}
 			} else {
-				regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, getRenderer());
+				repaintSuccess = repaintSuccess & regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, getRenderer());
 			}
 		} else {
 			// Just paint the 'thumbnail' version, which has already (potentially) been color-transformed
@@ -2107,18 +2099,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 		return rotationProperty().get();
 	}
 
-	@Override
-	public void tileAvailable(String serverPath, ImageRegion region, BufferedImage tile) {
-		var server = getServer();
-		if (server == null)
-			return;
-		
-		// Check contains rather than equals to all for derived servers (e.g. for painting hierarchies)
-		if (serverPath == null || serverPath.contains(server.getPath()))
-			repaintImageRegion(AwtTools.getBounds(region), true);
-		
-	}
-
 
 	/**
 	 * Force the overlay displaying detections and annotations to be repainted.
@@ -2211,14 +2191,6 @@ public class QuPathViewer implements TileListener<BufferedImage>, PathObjectHier
 	private synchronized String getServerPath() {
 		ImageServer<BufferedImage> server = getServer();
 		return server == null ? null : server.getPath();
-	}
-
-	@Override
-	public synchronized boolean requiresTileRegion(final String serverPath, final ImageRegion region) {
-		if (serverPath.startsWith(PathHierarchyImageServer.DEFAULT_PREFIX) || serverPath.equals(getServerPath())) {
-			return Math.abs(region.getZ() - getZPosition()) <= 3 && region.getT() == getTPosition() && getDisplayedClipShape(null).intersects(AwtTools.getBounds(region));
-		}
-		return false;
 	}
 
 

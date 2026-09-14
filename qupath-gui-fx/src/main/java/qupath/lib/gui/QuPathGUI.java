@@ -867,7 +867,7 @@ public class QuPathGUI {
 	
 	private void initializeImageTileCache() {
 		PathPrefs.tileCachePercentageProperty().addListener((v, o, n) -> {
-			imageRegionStore.getCache().clear();
+			imageRegionStore.clearCache();
 		});
 		ImageServerProvider.setCache(imageRegionStore.getCache(), BufferedImage.class);
 		// Turn off the use of ImageIODiskCache (it causes some trouble)

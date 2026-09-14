@@ -30,8 +30,6 @@ import java.awt.image.ImageObserver;
 
 /**
  * Interface for painting regions of an {@link ImageServer} onto a {@link Graphics} object.
- * 
- * @author Pete Bankhead
  */
 public interface ImageRegionRenderer {
 	
@@ -63,7 +61,8 @@ public interface ImageRegionRenderer {
 	 * @param imgThumbnail a thumbnail image; if not null, this will be used to 'fill the gaps'
 	 * @param observer an {@link ImageObserver} (often ignored)
 	 * @param renderer an {@link ImageRenderer} to convert images to RGB
+	 * @return true if the region is painted completely, false if tiles are missing
 	 */
-	public void paintRegion(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer renderer);
+	public boolean paintRegion(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer renderer);
 
 }

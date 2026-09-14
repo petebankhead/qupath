@@ -198,7 +198,7 @@ public abstract class AbstractTileableImageServer extends AbstractImageServer<Bu
 		
 		var cache = getCache();
 		if (cache != null) {
-			var imgCached = cache.get(request);
+			var imgCached = cache.getOrDefault(request, null);
 			if (imgCached != null) { 
 				logger.trace("Returning cached tile: {}", request);
 				return imgCached;
@@ -228,7 +228,7 @@ public abstract class AbstractTileableImageServer extends AbstractImageServer<Bu
 					if (isEmptyTile(imgCached)) {
 						emptyTiles.add(tileRequest);
 					} else if (cache != null) {
-						cache.put(request, imgCached);
+						cache.putIfAbsent(request, imgCached);
 						// Check if we were able to cache the tile; sometimes we can't if it is too big
 						if (!cache.containsKey(request) && failedCacheTiles.add(request))
 							logger.warn("Unable to add {} to cache.\nYou might need to give QuPath more memory, or to increase the 'Percentage memory for tile caching' preference.", request);

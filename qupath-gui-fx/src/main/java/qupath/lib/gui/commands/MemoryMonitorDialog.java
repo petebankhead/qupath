@@ -354,7 +354,7 @@ class MemoryMonitorDialog {
 			this.maxMemory = runtime.maxMemory();
 			this.usedMemory = totalMemory - runtime.freeMemory();
 			this.undoRedoSizeBytes = qupath.getUndoRedoManager().totalBytes();
-			this.cachedTiles = qupath.getViewer().getImageRegionStore().getCache().size();
+			this.cachedTiles = qupath.getViewer().getImageRegionStore().getCacheSize();
 		}
 		
 	}

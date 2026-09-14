@@ -38,22 +38,19 @@ import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.image.BufferedImage;
 import java.awt.image.ImageObserver;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 
 /**
  * An ImageRegionStore suitable for either Swing or JavaFX applications.
- *
- * @author Pete Bankhead
- *
  */
 public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedImage> implements ImageRegionRenderer {
 
@@ -90,31 +87,32 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 	public void paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageObserver observer, ImageRenderer imageDisplay, long timeoutMilliseconds) {
 
 		// Loop through and create the image
-		List<TileWorker<BufferedImage>> workers = new ArrayList<>();
+		List<RequestedTile> workers = new ArrayList<>();
 		BufferedImage imgTemp = null;
 
 		for (RegionRequest request : ImageRegionStoreHelpers.getTilesToRequest(server, clipShapeVisible, downsampleFactor, zPosition, tPosition, null)) {
 
-			Object result = requestImageTile(server, request, cache);
+			Future<BufferedImage> future = requestImageTile(server, request);
 
 			// If we have an image, paint it & record coordinates
-			if (result instanceof BufferedImage img) {
+			if (future.isDone() && future.resultNow() instanceof BufferedImage img) {
 				if (imageDisplay != null) {
 					imgTemp = imageDisplay.applyTransforms(img, imgTemp);
 					g.drawImage(imgTemp, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
 				} else
 					g.drawImage(img, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
-			} else if (result instanceof TileWorker worker) {
+			} else {
 				// If we've a tile worker, prepare for requesting its results soon...
-				workers.add(worker);
+				workers.add(new RequestedTile(request, future));
 			}
+
 		}
 
 		// Loop through any workers now, drawing their tiles too
-		for (TileWorker<BufferedImage> worker : workers) {
+		for (var worker : workers) {
 			BufferedImage imgTile = null;
 			try {
-				imgTile = worker.get(timeoutMilliseconds, TimeUnit.MILLISECONDS);
+				imgTile = worker.future().get(timeoutMilliseconds, TimeUnit.MILLISECONDS);
 			} catch (CancellationException e) {
 				logger.debug("Repaint skipped...");
 				continue;
@@ -126,56 +124,36 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				return;
 			} catch (TimeoutException e) {
 				// If we timed out, try reading directly
-				logger.warn("Timed out requesting region ({} ms)... {}", timeoutMilliseconds, worker.getRequest());
-				RegionRequest request = worker.getRequest();
-				if (server.isEmptyRegion(request))
-					imgTile = null;
-				else {
-					if (worker.cancel(false)) {
-						try {
-							imgTile = server.readRegion(request);
-							if (imgTile != null)
-								cache.put(request, imgTile);
-						} catch (IOException e1) {
-                            logger.warn("Unable to read tile for {}", request, e1);
-						}
-					} else
-						try {
-							imgTile = worker.get();
-						} catch (InterruptedException e1) {
-							logger.warn("Tile request interrupted; {}", e1.getLocalizedMessage());
-						} catch (ExecutionException e1) {
-							logger.warn("Execution exception during tile request: {}", e1.getLocalizedMessage());
-						} catch (CancellationException e1) {
-							logger.warn("Tile request cancelled: {}", e1.getLocalizedMessage());
-						}
-				}
+				logger.warn("Timed out requesting region ({} ms)... {}", timeoutMilliseconds, worker.request());
 			}
 			if (imgTile == null)
 				continue;
-			RegionRequest request = worker.getRequest();
+			RegionRequest request = worker.request();
 			if (imageDisplay != null) {
 				imgTemp = imageDisplay.applyTransforms(imgTile, imgTemp);
 				g.drawImage(imgTemp, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
-
 			} else
 				g.drawImage(imgTile, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
 		}
 
 	}
 
+	private record RequestedTile(RegionRequest request, Future<BufferedImage> future) {}
+
 
 	@Override
-	public void paintRegion(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer imageDisplay) {
-		registerRequest(null, server, clipShapeVisible, downsampleFactor, zPosition, tPosition);
-		paintRegionInternal(server, g, clipShapeVisible, zPosition, tPosition, downsampleFactor, imgThumbnail, observer, imageDisplay);
+	public boolean paintRegion(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer imageDisplay) {
+		return paintRegionInternal(server, g, clipShapeVisible, zPosition, tPosition, downsampleFactor, imgThumbnail, observer, imageDisplay);
 	}
 
 
-	private void paintRegionInternal(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer imageDisplay) {
+	private boolean paintRegionInternal(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer imageDisplay) {
+
+		boolean isComplete = true;
 
 		// Check if we have all the regions required for this request
 		List<RegionRequest> requests = ImageRegionStoreHelpers.getTilesToRequest(server, clipShapeVisible, downsampleFactor, zPosition, tPosition, null);
+		requests.forEach(r -> requestImageTile(server, r));
 
 		// If we should be painting recursively, ending up with the thumbnail, do so
 		if (imgThumbnail != null) {
@@ -183,7 +161,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			for (RegionRequest request : requests) {
 				// Load the image
 				BufferedImage img = getCachedTile(server, request);
-				if (img == null && !cache.containsKey(request)) {
+				if (img == null && !mapCache.containsKey(request)) {
 					if (missingBounds == null)
 						missingBounds = AwtTools.getBounds(request);
 					else
@@ -232,23 +210,25 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 		BufferedImage imgTemp = null;
 		for (RegionRequest request : requests) {
 			// Load the image
-			BufferedImage img = getCachedRegion(server, request);
+			BufferedImage img = getIfPresent(request);
 
 			// If there is no image tile, try to get a lower-resolution version to draw -
 			// this can actually paint over previously-available regions, but they will be repainted again when this region's request comes through
-			if (img == null)
+			if (img == null) {
+				isComplete = false;
 				continue;
+			}
 
 			// If we have an image, paint it & record coordinates
 			// Apply any required color transformations
 			if (imageDisplay != null || useDisplayCache) {
 				// We can abort now - we know the display has changed, additional painting is futile...
 				if (imageDisplay != null && displayTimestamp != imageDisplay.getLastChangeTimestamp())
-					return;
+					return false;
 				if (useDisplayCache) {
 					// Apply transforms, creating & caching new temp images
 					RegionRequest requestCache = RegionRequest.createInstance(displayCachePath, request.getDownsample(), request);
-					imgTemp = cache.get(requestCache);
+					imgTemp = mapCache.get(requestCache);
 					if (imgTemp == null) {
 						if (imageDisplay != null)
 							imgTemp = imageDisplay.applyTransforms(img, null);
@@ -261,9 +241,9 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 						// Store this if we know we've still got the same display settings
 						// This avoids making the cache inconsistent
 						if (imgTemp != null && (imageDisplay == null || displayTimestamp == imageDisplay.getLastChangeTimestamp()))
-							cache.put(requestCache, imgTemp);
+							mapCache.put(requestCache, imgTemp);
 						else
-							return;
+							return false;
 					}
 				} else {
 					// Apply transforms, trying to reuse temp image
@@ -280,7 +260,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				g.drawRect(request.getX(), request.getY(), request.getWidth(), request.getHeight());				
 			}
 		}
-
+		return isComplete;
 	}
 
 

@@ -39,10 +39,6 @@ interface ImageRegionStore<T> {
 
 	T getCachedThumbnail(ImageServer<T> server, int zPosition, int tPosition);
 
-	void addTileListener(TileListener<T> listener);
-
-	void removeTileListener(TileListener<T> listener);
-
 	T getCachedTile(ImageServer<T> server, RegionRequest request);
 
 	T getThumbnail(ImageServer<T> server, int zPosition, int tPosition, boolean addToCache);
