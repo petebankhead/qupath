@@ -154,14 +154,15 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 
 		// Check if we have all the regions required for this request
 		List<RegionRequest> requests = ImageRegionStoreHelpers.getTilesToRequest(server, clipShapeVisible, downsampleFactor, zPosition, tPosition, null);
-		requests.forEach(r -> requestImageTile(server, r));
+//		requests.forEach(r -> requestImageTile(server, r));
+//		requestAllTiles(server, requests);
 
 		// If we should be painting recursively, ending up with the thumbnail, do so
 		if (imgThumbnail != null) {
 			Rectangle missingBounds = null;
 			for (RegionRequest request : requests) {
 				// Load the image
-				BufferedImage img = getCachedTile(server, request);
+				BufferedImage img = requestTile(server, request);
 				if (img == null) {// && !mapCache.containsKey(request)) {
 					if (missingBounds == null)
 						missingBounds = AwtTools.getBounds(request);
@@ -233,6 +234,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 					imgTemp = getCache().computeIfAbsent(requestCache, r -> toRGB(imgTile, imageDisplay));
 				} else {
 					// Apply transforms, trying to reuse temp image
+					// Note: this assumes pixels can't be transparent
 					if (imgTemp != null && (imgTemp.getWidth() != img.getWidth() || imgTemp.getHeight() != img.getHeight()))
 						imgTemp = imageDisplay.applyTransforms(img, null);
 					else

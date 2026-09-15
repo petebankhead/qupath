@@ -11,7 +11,6 @@ import qupath.lib.regions.RegionRequest;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,14 +20,16 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.function.Function;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
 class ImageCache<T> {
 
-    private static final Logger logger = LoggerFactory.getLogger(AbstractImageRegionStore.class);
+    private static final Logger logger = LoggerFactory.getLogger(ImageCache.class);
 
     private final AsyncCache<RegionRequest, T> cache;
+
+    private final SizeEstimator<T> sizeEstimator;
     private final long maxSizeBytes;
 
     private boolean isClosed = false;
@@ -42,6 +43,7 @@ class ImageCache<T> {
 
     ImageCache(final SizeEstimator<T> sizeEstimator, final long maxSizeBytes) {
         this.maxSizeBytes = maxSizeBytes;
+        this.sizeEstimator = sizeEstimator;
 
         // Because Caffeine uses integer weights, and we sometimes have *very* large images, we convert our size estimates KB
         Weigher<RegionRequest, T> weigher = (var r, var t) -> (int)Long.min(Integer.MAX_VALUE, sizeEstimator.getApproxImageSize(t)/1024);
@@ -51,7 +53,9 @@ class ImageCache<T> {
                 .maximumWeight(maxWeight)
 //				.softValues() // Not possible for an async cache
                 .recordStats()
-                .removalListener((k, v, cause) -> {
+                // Use evictionListener because it is notified as part of an atomic removal;
+                // using a removalListener can result in exceptions during shutdown
+                .evictionListener((k, v, cause) -> {
                     if (cause == RemovalCause.COLLECTED) {
                         logger.debug("Cached tile collected: {}", k);
                     } else {
@@ -59,8 +63,29 @@ class ImageCache<T> {
                     }
                 })
                 .executor(pool)
+                .initialCapacity(1024)
                 .buildAsync();
 
+        Runtime.getRuntime().addShutdownHook(new Thread(this::close));
+    }
+
+    /**
+     * Create a new cache populated with the entries from an existing cache.
+     * <p>
+     * The intended use is to update the size of a cache dynamically (either shrinking or growing).
+     * <p>
+     * Note that this method does not close or otherwise modify the existing cache,
+     * but rather only queries its entries.
+     *
+     * @param oldCache the existing cache
+     * @param maxSizeBytes the required size of the new cache
+     * @return a new cache
+     * @param <T> the type of each image
+     */
+    public static <T> ImageCache<T> createResized(ImageCache<T> oldCache, long maxSizeBytes) {
+        var newCache = new ImageCache<>(oldCache.sizeEstimator, maxSizeBytes);
+        newCache.cache.synchronous().putAll(oldCache.cache.synchronous().asMap());
+        return newCache;
     }
 
 
@@ -85,10 +110,6 @@ class ImageCache<T> {
 
     public long getCacheSize() {
         return cache.synchronous().estimatedSize();
-    }
-
-    public T getCachedTile(RegionRequest request) {
-        return getIfPresent(request);
     }
 
     Set<RegionRequest> getKeys() {
@@ -193,10 +214,19 @@ class ImageCache<T> {
     public void close() {
         // Try to cancel all workers
         isClosed = true;
-        pool.shutdownNow();
         clearCache();
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(10, TimeUnit.SECONDS)) {
+                logger.warn("Timed out waiting for pool to shut down");
+                var futures = pool.shutdownNow();
+                if (!futures.isEmpty()) {
+                    logger.warn("Number of shut down tasks in pool: {}", futures.size());
+                    }
+            }
+        } catch (InterruptedException e) {
+            logger.warn("Interrupted while waiting for pool to shutdown");
+        }
     }
-
-
 
 }

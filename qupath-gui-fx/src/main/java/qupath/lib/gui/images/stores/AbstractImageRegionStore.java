@@ -157,10 +157,12 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 		return cache.getCacheSize();
 	}
 
-	
-	/* (non-Javadoc)
-	 * @see qupath.lib.images.stores.ImageRegionStore#getCachedTile(qupath.lib.images.servers.ImageServer, qupath.lib.regions.RegionRequest)
-	 */
+	protected T requestTile(ImageServer<T> server, RegionRequest request) {
+		var future = cache.requestImageTile(server, request);
+		return future.isDone() ? future.resultNow() : null;
+	}
+
+
 	@Override
 	public T getCachedTile(ImageServer<T> server, RegionRequest request) {
 		return getIfPresent(request);
@@ -190,7 +192,6 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	protected Future<T> requestImageTile(final ImageServer<T> server, final RegionRequest request) {
 		return cache.requestImageTile(server, request);
 	}
-	
 
 
 	/**
