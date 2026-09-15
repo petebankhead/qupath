@@ -59,7 +59,7 @@ class ImageCache<T> {
                     if (cause == RemovalCause.COLLECTED) {
                         logger.debug("Cached tile collected: {}", k);
                     } else {
-                        logger.trace("Cached tile removed due to {}: {}",cause, k);
+                        logger.trace("Cached tile removed due to {}: {}", cause, k);
                     }
                 })
                 .executor(pool)
@@ -67,6 +67,18 @@ class ImageCache<T> {
                 .buildAsync();
 
         Runtime.getRuntime().addShutdownHook(new Thread(this::close));
+    }
+
+
+    /**
+     * Create a new image cache.
+     * @param sizeEstimator an estimator that can calculate the size (in bytes) of
+     * @param maxSizeBytes the maximum permitted size of the cache, in bytes.
+     * @return
+     * @param <T>
+     */
+    public static <T> ImageCache<T> create(SizeEstimator<T> sizeEstimator, long maxSizeBytes) {
+        return new ImageCache<>(sizeEstimator, maxSizeBytes);
     }
 
     /**
@@ -79,13 +91,28 @@ class ImageCache<T> {
      *
      * @param oldCache the existing cache
      * @param maxSizeBytes the required size of the new cache
-     * @return a new cache
+     * @return a new cache, including as many entries from the existing cache as could fit
      * @param <T> the type of each image
      */
     public static <T> ImageCache<T> createResized(ImageCache<T> oldCache, long maxSizeBytes) {
-        var newCache = new ImageCache<>(oldCache.sizeEstimator, maxSizeBytes);
+        var newCache = createResizedEmpty(oldCache, maxSizeBytes);
         newCache.cache.synchronous().putAll(oldCache.cache.synchronous().asMap());
         return newCache;
+    }
+
+    /**
+     * Create a new cache that is similar to an existing cache, with a (possibly) different maximum size.
+     * <p>
+     * Note that this method does not close or otherwise modify the existing cache,
+     * but rather only queries its entries.
+     *
+     * @param oldCache the existing cache
+     * @param maxSizeBytes the required size of the new cache
+     * @return a new cache
+     * @param <T> the type of each image
+     */
+    public static <T> ImageCache<T> createResizedEmpty(ImageCache<T> oldCache, long maxSizeBytes) {
+        return new ImageCache<>(oldCache.sizeEstimator, maxSizeBytes);
     }
 
 
@@ -106,7 +133,6 @@ class ImageCache<T> {
     public ConcurrentMap<RegionRequest, T> getCache() {
         return cache.synchronous().asMap();
     }
-
 
     public long getCacheSize() {
         return cache.synchronous().estimatedSize();
@@ -188,7 +214,7 @@ class ImageCache<T> {
     }
 
 
-    private synchronized void clearCache(Predicate<RegionRequest> filter) {
+    private synchronized void clearCache(Predicate<? super RegionRequest> filter) {
         var iterator = cache.asMap().entrySet().iterator();
         List<RegionRequest> toRemove = new ArrayList<>();
         while (iterator.hasNext()) {
