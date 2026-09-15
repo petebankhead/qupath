@@ -36,11 +36,11 @@
 * Caffeine 3.2.4
 * Commonmark 0.30.0
 * ControlsFX 11.2.6
-* DeepJavaLibrary 0.37.0
+* DeepJavaLibrary 0.38.0
 * Groovy 5.1.2
 * Guava 33.7.1
 * JavaCPP 1.5.13
-* JavaFX 26.0.2
+* JavaFX 27
 * Logback 1.6.1
 * OpenCV 4.14.0
 * qupath-fxtras 0.4.1

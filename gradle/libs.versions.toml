@@ -11,7 +11,7 @@ commonsMath3    = "3.6.1"
 commonsText     = "1.14.0"
 controlsFX      = "11.2.5"
 
-deepJavaLibrary = "0.37.0"
+deepJavaLibrary = "0.38.0"
 
 groovy          = "5.0.8"
 gson            = "2.14.0"
@@ -29,7 +29,7 @@ javacpp         = "1.5.10"
 opencv          = "4.14.0-1.5.14"
 
 # Warning! JavaFX 20.0.1 and later seem to break search links in Javadocs
-javafx          = "26.0.2"
+javafx          = "27"
 jna             = "5.16.0"
 jfreeSvg        = "5.0.6"
 jfxtras         = "17-r1"
