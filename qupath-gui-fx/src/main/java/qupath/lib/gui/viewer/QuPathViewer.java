@@ -466,6 +466,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		}
 		logger.trace("Repaint requested!");
 		imageUpdated = true;
+		overlayUpdated = true;
 	}
 
 	/**
