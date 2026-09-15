@@ -1529,7 +1529,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 
 		// Check if we require tiling the image, or if the low-resolution version does all we need
 		int z = getZPosition();
-		int t = getZPosition();
+		int t = getTPosition();
 		BufferedImage imgThumbnail = regionStore.getOrRequestThumbnail(server, z, t);
 		boolean repaintSuccess = imgThumbnail != null;
 		boolean requiresTiling = !thumbnailIsFullImage;
