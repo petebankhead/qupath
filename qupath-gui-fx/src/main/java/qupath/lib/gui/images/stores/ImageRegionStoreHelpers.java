@@ -138,9 +138,8 @@ public class ImageRegionStoreHelpers {
 		int xx = (int)(x / tileWidthForLevel) * tileWidthForLevel;
 		int yy = (int)(y / tileHeightForLevel) * tileHeightForLevel;
 
-		RegionRequest request = RegionRequest.createInstance(server.getPath(), downsamplePreferred, xx, yy, (int)Math.min(serverWidth, (xx+tileWidthForLevel))-xx,
-				(int)Math.min(serverHeight, (yy+tileHeightForLevel))-yy, zPosition, tPosition);
-		return request;
+        return RegionRequest.createInstance(server.getPath(), downsamplePreferred, xx, yy, (int)Math.min(serverWidth, (xx+tileWidthForLevel))-xx,
+                (int)Math.min(serverHeight, (yy+tileHeightForLevel))-yy, zPosition, tPosition);
 	}
 
 }

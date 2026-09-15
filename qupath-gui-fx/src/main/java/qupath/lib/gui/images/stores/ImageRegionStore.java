@@ -28,10 +28,8 @@ import qupath.lib.regions.RegionRequest;
 
 /**
  * Interface to define a store for image tiles.
- * 
+ * <p>
  * This is used to cache tiles and merge them into larger images, where necessary.
- * 
- * @author Pete Bankhead
  *
  * @param <T>
  */

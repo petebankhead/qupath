@@ -26,6 +26,7 @@ package qupath.lib.gui.images.stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
+import qupath.lib.display.ImageDisplay;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.images.servers.PixelType;
@@ -161,7 +162,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			for (RegionRequest request : requests) {
 				// Load the image
 				BufferedImage img = getCachedTile(server, request);
-				if (img == null && !mapCache.containsKey(request)) {
+				if (img == null) {// && !mapCache.containsKey(request)) {
 					if (missingBounds == null)
 						missingBounds = AwtTools.getBounds(request);
 					else
@@ -228,23 +229,8 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				if (useDisplayCache) {
 					// Apply transforms, creating & caching new temp images
 					RegionRequest requestCache = RegionRequest.createInstance(displayCachePath, request.getDownsample(), request);
-					imgTemp = mapCache.get(requestCache);
-					if (imgTemp == null) {
-						if (imageDisplay != null)
-							imgTemp = imageDisplay.applyTransforms(img, null);
-						else {
-							imgTemp = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
-							Graphics2D g2d = imgTemp.createGraphics();
-							g2d.drawImage(img, 0, 0, null);
-							g2d.dispose();
-						}
-						// Store this if we know we've still got the same display settings
-						// This avoids making the cache inconsistent
-						if (imgTemp != null && (imageDisplay == null || displayTimestamp == imageDisplay.getLastChangeTimestamp()))
-							mapCache.put(requestCache, imgTemp);
-						else
-							return false;
-					}
+					var imgTile = img;
+					imgTemp = getCache().computeIfAbsent(requestCache, r -> toRGB(imgTile, imageDisplay));
 				} else {
 					// Apply transforms, trying to reuse temp image
 					if (imgTemp != null && (imgTemp.getWidth() != img.getWidth() || imgTemp.getHeight() != img.getHeight()))
@@ -261,6 +247,18 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			}
 		}
 		return isComplete;
+	}
+
+	private static BufferedImage toRGB(BufferedImage img, ImageRenderer renderer) {
+		if (renderer != null)
+			return renderer.applyTransforms(img, null);
+		else {
+			BufferedImage imgTemp = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
+			Graphics2D g2d = imgTemp.createGraphics();
+			g2d.drawImage(img, 0, 0, null);
+			g2d.dispose();
+			return imgTemp;
+		}
 	}
 
 

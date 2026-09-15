@@ -23,26 +23,16 @@
 
 package qupath.lib.gui.images.stores;
 
-import com.github.benmanes.caffeine.cache.AsyncCache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.RemovalCause;
-import com.github.benmanes.caffeine.cache.Weigher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.regions.RegionRequest;
 
-import java.io.IOException;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.function.Predicate;
 
 
 /**
@@ -55,9 +45,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractImageRegionStore.class);
 
-	protected final AsyncCache<RegionRequest, T> originalCache;
-	protected final ConcurrentMap<RegionRequest, CompletableFuture<T>> mapCacheAsync;
-	protected final Map<RegionRequest, T> mapCache;
+	private final ImageCache<T> cache;
 
 	/**
 	 * Maximum size of thumbnail, in any dimension.
@@ -69,37 +57,10 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	 */
 	private int minThumbnailSize = 16;
 
-	/**
-	 * Maximum tile cache size, in bytes
-	 */
-	private long tileCacheSizeBytes;
-
-	private final ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor();
-
 
 	protected AbstractImageRegionStore(final SizeEstimator<T> sizeEstimator, final int thumbnailSize, final long tileCacheSizeBytes) {
 		this.maxThumbnailSize = thumbnailSize;
-		this.tileCacheSizeBytes = tileCacheSizeBytes;
-		
-		// Because Caffeine uses integer weights, and we sometimes have *very* large images, we convert our size estimates KB
-		Weigher<RegionRequest, T> weigher = (var r, var t) -> (int)Long.min(Integer.MAX_VALUE, sizeEstimator.getApproxImageSize(t)/1024);
-		long maxWeight = Long.max(1, tileCacheSizeBytes / 1024);
-		this.originalCache = Caffeine.newBuilder()
-				.weigher(weigher)
-				.maximumWeight(maxWeight)
-//				.softValues()
-				.recordStats()
-				.removalListener((k, v, cause) -> {
-					if (cause == RemovalCause.COLLECTED) {
-						logger.debug("Cached tile collected: {}", k);
-					} else {
-						logger.trace("Cached tile removed due to {}: {}",cause, k);
-					}
-				})
-				.executor(pool)
-				.buildAsync();
-		this.mapCacheAsync = this.originalCache.asMap();
-		this.mapCache = this.originalCache.synchronous().asMap();
+		this.cache = new ImageCache<>(sizeEstimator, tileCacheSizeBytes);
 	}
 
 
@@ -109,7 +70,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	 * @return
 	 */
 	public long getTileCacheSize() {
-		return tileCacheSizeBytes;
+		return cache.getMaxSizeBytes();
 	}
 	
 	/**
@@ -126,7 +87,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 			double maxDownsample = minDim / minThumbnailSize;
 			return Math.max(1, Math.min(maxDim / maxThumbnailSize, maxDownsample));
 		}
-		return 1.0;g
+		return 1.0;
 	}
 	
 
@@ -142,8 +103,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	}
 
 	protected T getIfPresent(final RegionRequest request) {
-		var future = originalCache.getIfPresent(request);
-		return future == null ? null : future.getNow(null);
+		return cache.getIfPresent(request);
 	}
 	
 	/* (non-Javadoc)
@@ -158,7 +118,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	public T getClosestCachedThumbnail(ImageServer<T> server, int zPosition, int tPosition) {
 		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
 		var dist = new PlaneDistance(request.getZ(), request.getT());
-		return mapCache.keySet().stream().filter(r -> sameRegionIgnoringPlane(request, r))
+		return cache.getKeys().stream().filter(r -> sameRegionIgnoringPlane(request, r))
 				.sorted(Comparator.comparingDouble(dist::distance))
 				.map(this::getIfPresent)
 				.filter(Objects::nonNull)
@@ -189,12 +149,12 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	}
 
 	
-	public Map<RegionRequest, T> getCache() {
-		return mapCache;
+	public ConcurrentMap<RegionRequest, T> getCache() {
+		return cache.getCache();
 	}
 
 	public long getCacheSize() {
-		return originalCache.synchronous().estimatedSize();
+		return cache.getCacheSize();
 	}
 
 	
@@ -211,14 +171,8 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	 * @param server
 	 * @return
 	 */
-	public synchronized Map<RegionRequest, T> getCachedTilesForServer(ImageServer<T> server) {
-		Map<RegionRequest, T> tiles = new HashMap<>();
-		var serverPath = server.getPath();
-		for (var entry : mapCache.entrySet()) {
-			if (entry.getValue() != null && entry.getKey().getPath().equals(serverPath))
-				tiles.put(entry.getKey(), entry.getValue());
-		}
-		return tiles;
+	public Map<RegionRequest, T> getCachedTilesForServer(ImageServer<T> server) {
+		return cache.getCachedTilesForServer(server.getPath());
 	}	
 	
 	
@@ -234,22 +188,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	 * @return
 	 */
 	protected Future<T> requestImageTile(final ImageServer<T> server, final RegionRequest request) {
-		return originalCache.get(request, r -> readTile(server, r));
-	}
-
-	private T readTile(ImageServer<T> server, RegionRequest request) {
-		try {
-			System.err.println("Requesting in " + Thread.currentThread());
-			var img = server.readRegion(request);
-			logger.info("Read tile in {}", Thread.currentThread());
-				System.err.println("Got " + img + " - " + Thread.currentThread());
-				System.err.flush();
-			return img;
-		} catch (IOException e) {
-			logger.error("Error reading image region: {} ({})", e.getMessage(), request);
-			logger.debug("Error reading image region", e);
-			return null; // TODO: Consider exception propagation
-		}
+		return cache.requestImageTile(server, request);
 	}
 	
 
@@ -284,8 +223,8 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	/**
 	 * Clear the cache, including thumbnails, and cancel any pending requests.
 	 */
-	public synchronized void clearCache() {
-		clearCache(true);
+	public void clearCache() {
+		cache.clearCache();
 	}
 	
 	
@@ -295,40 +234,18 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	 * @param stopWaiting cancel any tasks that are currently fetching tiles
 	 */
 	public synchronized void clearCache(final boolean stopWaiting) {
-		if (stopWaiting) {
-			for (var future : mapCacheAsync.values().toArray(Future[]::new)) {
-				future.cancel(true);
-			}
-		}
-		mapCacheAsync.clear();
-		originalCache.synchronous().cleanUp();
-	}
-
-
-	private synchronized void clearCache(final boolean stopWaiting, Predicate<RegionRequest> filter) {
-		var iterator = mapCacheAsync.entrySet().iterator();
-		while (iterator.hasNext()) {
-			var entry = iterator.next();
-			if (filter.test(entry.getKey())) {
-				if (stopWaiting) {
-					entry.getValue().cancel(true);
-				}
-				iterator.remove();
-			}
-		}
-		originalCache.synchronous().cleanUp();
+		cache.clearCache(stopWaiting);
 	}
 	
 	
 	@Override
 	public synchronized void clearCacheForServer(final ImageServer<T> server) {
-		var path = server.getPath();
-		clearCache(true, r -> Objects.equals(path, r.getPath()));
+		cache.clearCacheForServer(server.getPath());
 	}
 	
 	@Override
 	public synchronized void clearCacheForRequestOverlap(final RegionRequest request) {
-		clearCache(true, r -> r.overlapsRequest(request));
+		cache.clearCacheForRequestOverlap(request);
 	}
 
 	
@@ -337,11 +254,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	 */
 	@Override
 	public void close() {
-		// Try to cancel all workers
-		clearCache(true);
-		pool.shutdownNow();
-		originalCache.synchronous().cleanUp();
-		mapCacheAsync.clear();
+		cache.close();
 	}
 	
 }
