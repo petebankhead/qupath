@@ -52,6 +52,7 @@ import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
 import qupath.lib.color.ColorToolsAwt;
 import qupath.lib.common.GeneralTools;
+import qupath.lib.common.Timeit;
 import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.DirectServerChannelInfo;
 import qupath.lib.display.ImageDisplay;
@@ -318,6 +319,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 
 	private void repaintAfterAffineUpdate() {
 		imageUpdated = true;
+		overlayUpdated = true;
 		updateAffineTransform();
 		repaint();
 	}
@@ -1298,6 +1300,9 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 				return;
 		}
 
+//		var timer = new Timeit();
+//		timer.start("Pulse");
+
 		// Avoid repaints if there's no reason for them
 		boolean somethingUpdated = false;
 
@@ -1339,12 +1344,14 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		imageUpdated = imageUpdated || shapeChanged;
 
 		if (imageUpdated) {
+//			timer.checkpoint("Image update");
 			// Only change status if the image update could be made fully,
 			// otherwise continue on next pulse
 			imageUpdated = !updateImageBuffer(buffers.getImageBuffer(), shapeRegion);
 			somethingUpdated = true;
 		}
 		if (overlayUpdated) {
+//			timer.checkpoint("Overlay update");
 			// Only change status if the overlay update could be made fully,
 			// otherwise continue on next pulse
 			overlayUpdated = !updateOverlayBuffer(buffers.getOverlayBuffer(), downsample, shapeRegion);
@@ -1352,6 +1359,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		}
 
 		if (somethingUpdated) {
+//			timer.checkpoint("Composite update");
 			updateCompositeBuffer();
 			pane.drawImage(buffers.getCompositeBuffer());
 			updateRepaintTimestamp();
@@ -1360,8 +1368,15 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		imageDataChanging.set(false);
 
 		// Notify any listeners of shape changes
-		if (shapeChanged)
+		if (shapeChanged) {
+//			timer.checkpoint("Shape update");
 			fireVisibleRegionChangedEvent(lastVisibleShape);
+		}
+//		timer.stop();
+//		if (hasServer() && timer.getCheckpoints().size() > 2 && false) {
+//			timer.milliseconds();
+//			System.err.println(timer.toString());
+//		}
 	}
 
 	private boolean updateImageBuffer(BufferedImage img, Shape shapeRegion) {
@@ -2017,6 +2032,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		this.yCenter = y;
 		updateAffineTransform();
 		this.imageUpdated = true;
+		this.overlayUpdated = true;
 	}
 
 	
@@ -2054,6 +2070,9 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		} catch (NoninvertibleTransformException e) {
 			logger.warn("Transform not invertible!", e);
 		}
+
+		imageUpdated = true;
+		overlayUpdated = true;
 	}
 
 	/**

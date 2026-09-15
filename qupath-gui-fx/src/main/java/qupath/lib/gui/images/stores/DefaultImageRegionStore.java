@@ -26,7 +26,7 @@ package qupath.lib.gui.images.stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
-import qupath.lib.display.ImageDisplay;
+import qupath.lib.common.ThreadTools;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.images.servers.PixelType;
@@ -43,9 +43,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -61,14 +63,35 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 	
 	private static boolean DEBUG_TILES = !Objects.equals(System.getProperty("qupath.debug.tiles", "false"), "false");
 
+	// Submitting tile requests is expensive enough to cause noticeable lagging in the viewer,
+	// so for tiles not needed immediately we delegate this task to a background thread and
+	// accumulate the requests in a queue.
+	private final BlockingDeque<Request> requestQueue = new LinkedBlockingDeque<>();
+
 	DefaultImageRegionStore(int thumbnailWidth, long tileCacheSize) {
 		super(new BufferedImageSizeEstimator(), thumbnailWidth, tileCacheSize);
+		Thread.ofVirtual().name("tile-requestor").start(this::processRequests);
+//		ThreadTools.createThreadFactory("tile-requestor", true).newThread(this::processRequests).start();
 	}
 
 	DefaultImageRegionStore(long tileCacheSize) {
 		this(DEFAULT_THUMBNAIL_WIDTH, tileCacheSize);
 	}
-	
+
+	private record Request(ImageServer<BufferedImage> server, RegionRequest request) {}
+
+	private void processRequests() {
+		try {
+			while (true) {
+				// We expect slightly better viewer performance when rapidly zooming/panning
+				// if we prioritize the most recent requests.
+				var next = requestQueue.takeLast();
+				requestImageTile(next.server(), next.request());
+			}
+		} catch (InterruptedException e) {
+			logger.warn("Request submission interrupted", e);
+		}
+	}
 
 	/**
 	 * Similar to paintRegion, but wait until all the tiles have arrived (or abort if it is taking too long)
@@ -93,11 +116,18 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 
 		for (RegionRequest request : ImageRegionStoreHelpers.getTilesToRequest(server, clipShapeVisible, downsampleFactor, zPosition, tPosition, null)) {
 
+			if (server.isEmptyRegion(request)) {
+				continue;
+			}
+
 			Future<BufferedImage> future = requestImageTile(server, request);
 
 			// If we have an image, paint it & record coordinates
-			if (future.isDone() && future.resultNow() instanceof BufferedImage img) {
-				if (imageDisplay != null) {
+			if (future.isDone()) {
+				BufferedImage img = future.resultNow();
+				if (img == null)
+					continue;
+				else if (imageDisplay != null) {
 					imgTemp = imageDisplay.applyTransforms(img, imgTemp);
 					g.drawImage(imgTemp, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
 				} else
@@ -118,7 +148,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				logger.debug("Repaint skipped...");
 				continue;
 			} catch (InterruptedException e) {
-				logger.debug("Tile request interrupted in 'paintRegionCompletely': {}", e.getLocalizedMessage());
+				logger.debug("Tile request interrupted in 'paintRegionCompletely': {}", e.getMessage());
 				return;
 			} catch (ExecutionException e) {
 				logger.error("Execution exception in 'paintRegionCompletely'", e);
@@ -144,11 +174,6 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 
 	@Override
 	public boolean paintRegion(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer imageDisplay) {
-		return paintRegionInternal(server, g, clipShapeVisible, zPosition, tPosition, downsampleFactor, imgThumbnail, observer, imageDisplay);
-	}
-
-
-	private boolean paintRegionInternal(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer imageDisplay) {
 
 		boolean isComplete = true;
 
@@ -162,7 +187,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			Rectangle missingBounds = null;
 			for (RegionRequest request : requests) {
 				// Load the image
-				BufferedImage img = requestTile(server, request);
+				BufferedImage img = getIfPresent(request);
 				if (img == null) {// && !mapCache.containsKey(request)) {
 					if (missingBounds == null)
 						missingBounds = AwtTools.getBounds(request);
@@ -184,8 +209,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				}
 				// Get the next downsample level if we can
 				if (nextDownsample > 0)
-//					paintRegion(server, g, clipShapeVisible, zPosition, tPosition, nextDownsample, imgThumbnail, observer, imageDisplay);
-					paintRegionInternal(server, g, missingBounds, zPosition, tPosition, nextDownsample, imgThumbnail, observer, imageDisplay);
+					paintRegion(server, g, missingBounds, zPosition, tPosition, nextDownsample, imgThumbnail, observer, imageDisplay);
 				else {
 					// The best we can do is paint the thumbnail
 					if (imageDisplay != null) {
@@ -197,7 +221,6 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 		}
 
 		// If we're compositing channels, it's worthwhile to cache RGB tiles for so long as the ImageDisplay remains constant
-//		boolean useDisplayCache = imageDisplay != null && !server.isRGB() && server.nChannels() > 1;
 		boolean useDisplayCache = server != null && !server.isRGB() && server.getMetadata().getChannelType() != ChannelType.CLASSIFICATION && (server.nChannels() > 1 || server.getPixelType() != PixelType.UINT8);
 		long displayTimestamp = imageDisplay == null ? 0L : imageDisplay.getLastChangeTimestamp();
 		String displayCachePath = null;
@@ -217,7 +240,11 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			// If there is no image tile, try to get a lower-resolution version to draw -
 			// this can actually paint over previously-available regions, but they will be repainted again when this region's request comes through
 			if (img == null) {
-				isComplete = false;
+				// Check the tile isn't just empty
+				if (!getCache().containsKey(request)) {
+					requestQueue.add(new Request(server, request));
+					isComplete = false;
+				}
 				continue;
 			}
 

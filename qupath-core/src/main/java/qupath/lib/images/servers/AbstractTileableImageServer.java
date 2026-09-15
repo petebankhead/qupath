@@ -172,7 +172,7 @@ public abstract class AbstractTileableImageServer extends AbstractImageServer<Bu
 //			}
 		}
 		var img = readTile(tileRequest);
-		if (isEmptyTile(img)) {
+		if (img != null && isEmptyTile(img)) {
 			emptyTiles.add(tileRequest);
 			return getEmptyTile(img.getWidth(), img.getHeight(), true);
 		}
