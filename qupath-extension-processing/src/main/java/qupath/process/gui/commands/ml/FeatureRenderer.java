@@ -78,7 +78,7 @@ class FeatureRenderer extends AbstractImageRenderer {
 		if (selectedChannel == null)
 			return;
 		var imageData = currentData.get();
-		Map<RegionRequest, BufferedImage> tiles = cache == null || imageData == null ? Collections.emptyMap() : cache.getCachedTilesForServer(imageData.getServer());
+		Map<RegionRequest, BufferedImage> tiles = cache == null || imageData == null ? Collections.emptyMap() : cache.getCachedTilesForServer(imageData.getServer().getPath());
 
 		float maxVal = Float.NEGATIVE_INFINITY;
 		float minVal = Float.POSITIVE_INFINITY;
