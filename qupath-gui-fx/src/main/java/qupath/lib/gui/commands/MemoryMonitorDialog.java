@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -41,6 +41,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
 import javafx.stage.Stage;
+import javafx.stage.Window;
 import javafx.util.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,32 +70,30 @@ import java.text.MessageFormat;
  * <p>
  * If QuPath crashes when running memory-hungry commands like cell detection
  * across a large image or TMA, try reducing the number of parallel threads.
- *
- * @author Pete Bankhead
  */
 class MemoryMonitorDialog {
 
 	private static final Logger logger = LoggerFactory.getLogger(MemoryMonitorDialog.class);
 
-	private QuPathGUI qupath;
+	private final QuPathGUI qupath;
 
-	private Stage stage;
+	private final Stage stage;
 
-	private XYChart.Series<Number, Number> seriesTotal = new XYChart.Series<>();
-	private XYChart.Series<Number, Number> seriesUsed = new XYChart.Series<>();
+	private final XYChart.Series<Number, Number> seriesTotal = new XYChart.Series<>();
+	private final XYChart.Series<Number, Number> seriesUsed = new XYChart.Series<>();
 
 	// Store time
 	private long startTimeMillis;
-	private LongProperty timeMillis = new SimpleLongProperty();
+	private final LongProperty timeMillis = new SimpleLongProperty();
 
 	// Observable properties to store memory values
-	private LongProperty maxMemory = new SimpleLongProperty();
-	private LongProperty totalMemory = new SimpleLongProperty();
-	private LongProperty usedMemory = new SimpleLongProperty();
+	private final LongProperty maxMemory = new SimpleLongProperty();
+	private final LongProperty totalMemory = new SimpleLongProperty();
+	private final LongProperty usedMemory = new SimpleLongProperty();
 
 	// Observable properties to store cache values
-	private LongProperty cachedTiles = new SimpleLongProperty();
-	private LongProperty undoRedoSizeBytes = new SimpleLongProperty();
+	private final LongProperty cachedTiles = new SimpleLongProperty();
+	private final LongProperty undoRedoSizeBytes = new SimpleLongProperty();
 
 	// Let's sometimes scale to MB, sometimes to GB
 	private static final double scaleMB = 1.0/1024.0/1024.0;
@@ -116,8 +115,23 @@ class MemoryMonitorDialog {
 		yAxis.setTickUnit(1.0);
 		yAxis.setUpperBound(Math.ceil(Runtime.getRuntime().maxMemory() * scaleGB));
 		xAxis.setAutoRanging(false);
-		xAxis.upperBoundProperty().bind(Bindings.createLongBinding(() -> {
-			return Math.max(10L, (timeMillis.get() - startTimeMillis) / 1000);
+		xAxis.tickUnitProperty().bind(Bindings.createLongBinding(() -> {
+			var seconds = (timeMillis.get() - startTimeMillis) / 1000;
+			if (seconds <= 60)
+				return 5L;
+			if (seconds <= 120)
+				return 10L;
+			if (seconds <= 300)
+				return 30L;
+			if (seconds <= 600)
+				return 60L;
+			if (seconds <= 1200)
+				return 120L;
+			return 1000L;
+		}, timeMillis));
+		xAxis.upperBoundProperty().bind(Bindings.createDoubleBinding(() -> {
+			var seconds = (timeMillis.get() - startTimeMillis) / 1000;
+			return Math.max(10.0, seconds);
 		}, timeMillis));
 		// Bind the series names to the latest values, in MB
 		seriesTotal.nameProperty().bind(Bindings.createStringBinding(
@@ -267,7 +281,6 @@ class MemoryMonitorDialog {
 		paneRight.add(btnToggleMonitoring, col, row++, 2, 1);
 		paneRight.add(btnReset, col, row++, 2, 1);
 
-//		GridPane.setMargin(btnToggleMonitoring, new Insets(10, 0, 0, 0));
 		paneRight.setPadding(new Insets(10));
 		paneRight.setVgap(5);
 		var pane = new BorderPane(chart);
@@ -284,8 +297,8 @@ class MemoryMonitorDialog {
 			maxMemory.set(n.maxMemory);
 			totalMemory.set(n.totalMemory);
 			usedMemory.set(n.usedMemory);
-			undoRedoSizeBytes.set(n.undoRedoSizeBytes);
-			cachedTiles.set(n.cachedTiles);
+			undoRedoSizeBytes.set(n.undoRedoSize());
+			cachedTiles.set(n.numCachedTiles());
 			
 			long time = (timeMillis.get() - startTimeMillis) / 1000;
 			seriesUsed.getData().add(new XYChart.Data<>(time, usedMemory.get() * scaleGB));
@@ -297,7 +310,7 @@ class MemoryMonitorDialog {
 		stage.initOwner(qupath.getStage());
 		stage.setScene(new Scene(pane));
 		stage.setTitle(QuPathResources.getString("Commands.MemoryMonitor.title"));
-		FXUtils.addCloseWindowShortcuts(stage);
+		FXUtils.addCloseWindowShortcuts((Window) stage);
 
 		stage.setOnShowing(e -> {
 			btnToggleMonitoring.setSelected(true);
@@ -324,39 +337,53 @@ class MemoryMonitorDialog {
 	}
 	
 	
-	class MemoryService extends ScheduledService<MemorySnapshot> {
+	private class MemoryService extends ScheduledService<MemorySnapshot> {
 
 		@Override
 		protected Task<MemorySnapshot> createTask() {
-			return new Task<>() {
-                @Override
-                protected MemorySnapshot call() {
-                    return new MemorySnapshot(qupath, Runtime.getRuntime());
-                }
-            };
+			return new MemorySnapshotTask();
 		}
 		
 	}
-	
-	
-	static class MemorySnapshot {
-		
-		private long timeMillis;
-		private long totalMemory;
-		private long maxMemory;
-		private long usedMemory;
-		private long undoRedoSizeBytes;
-		private long cachedTiles;
-		
-		MemorySnapshot(QuPathGUI qupath, Runtime runtime) {
-			this.timeMillis = System.currentTimeMillis();
-			this.totalMemory = runtime.totalMemory();
-			this.maxMemory = runtime.maxMemory();
-			this.usedMemory = totalMemory - runtime.freeMemory();
-			this.undoRedoSizeBytes = qupath.getUndoRedoManager().totalBytes();
-			this.cachedTiles = qupath.getViewer().getImageRegionStore().getCacheSize();
+
+
+	private final class MemorySnapshotTask extends Task<MemorySnapshot> {
+
+		@Override
+		protected MemorySnapshot call() {
+			var runtime = Runtime.getRuntime();
+			long totalMemory = runtime.totalMemory();
+			long maxMemory = runtime.maxMemory();
+			long usedMemory = totalMemory - runtime.freeMemory();
+			long undoRedoSizeBytes = qupath.getUndoRedoManager().totalBytes();
+			long cachedTiles = qupath.getViewer().getImageRegionStore().getCache().size();
+			return new MemorySnapshot(
+					System.currentTimeMillis(),
+					totalMemory,
+					maxMemory,
+					usedMemory,
+					undoRedoSizeBytes,
+					cachedTiles
+			);
+
 		}
-		
+
+	}
+	
+	
+	record MemorySnapshot(
+			long timeMillis,
+			long totalMemory,
+			long maxMemory,
+			long usedMemory,
+			long undoRedoSize,
+			long numCachedTiles
+	) {
+
+		double usedRatio() {
+			return (double) usedMemory / (double) totalMemory;
+		}
+
 	}
 
 
