@@ -25,6 +25,8 @@ package qupath.lib.gui.images.stores;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import qupath.lib.images.cache.ImageCache;
+import qupath.lib.images.cache.SizeEstimator;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.regions.RegionRequest;
 
@@ -60,7 +62,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 
 	protected AbstractImageRegionStore(final SizeEstimator<T> sizeEstimator, final int thumbnailSize, final long tileCacheSizeBytes) {
 		this.maxThumbnailSize = thumbnailSize;
-		this.cache = new ImageCache<>(sizeEstimator, tileCacheSizeBytes);
+		this.cache = ImageCache.create(sizeEstimator, tileCacheSizeBytes);
 	}
 
 

@@ -26,7 +26,7 @@ package qupath.lib.gui.images.stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
-import qupath.lib.common.ThreadTools;
+import qupath.lib.images.cache.BufferedImageSizeEstimator;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.images.servers.PixelType;

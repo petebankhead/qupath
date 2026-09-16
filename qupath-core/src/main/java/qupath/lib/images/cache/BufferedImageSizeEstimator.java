@@ -21,29 +21,25 @@
  * #L%
  */
 
-package qupath.lib.gui.images.stores;
+package qupath.lib.images.cache;
 
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBuffer;
 
 /**
  * Helper class to estimate if the size in bytes for a BufferedImage.
- * 
- * This isn't particularly exact (and doesn't try to deal with anything beyond pixels, 
+ * <p>
+ * This isn't particularly exact (and doesn't try to incorporate any overhead beyond pixels,
  * but gives a good enough guide to help with caching.
- * 
- * @author Pete Bankhead
- *
  */
-class BufferedImageSizeEstimator implements SizeEstimator<BufferedImage> {
+public class BufferedImageSizeEstimator implements SizeEstimator<BufferedImage> {
 	
 	@Override
 	public long getApproxImageSize(BufferedImage img) {
 		if (img == null)
 			return 0;
 		DataBuffer data = img.getRaster().getDataBuffer();
-		long size = (long)data.getSize() * (long)(DataBuffer.getDataTypeSize(data.getDataType())/8) * data.getNumBanks();
-		return size;
+		return (long)data.getSize() * (long)(DataBuffer.getDataTypeSize(data.getDataType())/8) * data.getNumBanks();
 	}
 	
 }

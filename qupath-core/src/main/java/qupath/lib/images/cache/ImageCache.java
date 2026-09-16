@@ -1,4 +1,4 @@
-package qupath.lib.gui.images.stores;
+package qupath.lib.images.cache;
 
 import com.github.benmanes.caffeine.cache.AsyncCache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -23,7 +23,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
-class ImageCache<T> {
+public class ImageCache<T> {
 
     private static final Logger logger = LoggerFactory.getLogger(ImageCache.class);
 
@@ -138,7 +138,7 @@ class ImageCache<T> {
         return cache.synchronous().estimatedSize();
     }
 
-    Set<RegionRequest> getKeys() {
+    public Set<RegionRequest> getKeys() {
         return cache.synchronous().asMap().keySet();
     }
 
@@ -170,7 +170,7 @@ class ImageCache<T> {
      * @param request
      * @return
      */
-    protected Future<T> requestImageTile(final ImageServer<T> server, final RegionRequest request) {
+    public Future<T> requestImageTile(final ImageServer<T> server, final RegionRequest request) {
         return isClosed ? cache.getIfPresent(request) : cache.get(request, r -> readTile(server, r));
     }
 

@@ -21,7 +21,7 @@
  * #L%
  */
 
-package qupath.lib.gui.images.stores;
+package qupath.lib.images.cache;
 
 /**
  * Implementing classes are able to estimate the size given an object of some type -
@@ -31,7 +31,7 @@ package qupath.lib.gui.images.stores;
  * @param <T> generic type for the image
  */
 @FunctionalInterface
-interface SizeEstimator<T> {
+public interface SizeEstimator<T> {
 
 	/**
 	 * Get the approximate image size, in bytes.
