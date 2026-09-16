@@ -26,41 +26,51 @@ package qupath.lib.gui.images.stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.gui.prefs.PathPrefs;
+import qupath.lib.images.cache.ImageCache;
+import qupath.lib.images.servers.ImageServerProvider;
+
+import java.awt.image.BufferedImage;
 
 /**
- * Factory for creating an ImageRegionStore.
- * 
- * @author Pete Bankhead
- *
+ * Factory for creating an ImageRegionStore, or accessing the shared store.
  */
 public class ImageRegionStoreFactory {
 	
 	private static final Logger logger = LoggerFactory.getLogger(ImageRegionStoreFactory.class);
-	
+
+	private static final DefaultImageRegionStore SHARED_INSTANCE = new DefaultImageRegionStore(ImageCache.getSharedInstance());
+
+	static {
+		initTileCacheSizeBytes(ImageCache.getSharedInstance());
+		ImageServerProvider.setCache(ImageCache.getSharedInstance().getCache(), BufferedImage.class);
+	}
+
+	/**
+	 * Get the shared region store instance.
+	 * This is usually the only instance required throughout the whole QuPath application.
+	 * @return the shared region store
+	 * @since v0.8.0
+	 */
+	public static DefaultImageRegionStore getSharedInstance() {
+		return SHARED_INSTANCE;
+	}
+
 	/**
 	 * Create an {@link ImageRegionStore} with a specified tile cache size, in bytes.
-	 * @param tileCacheSizeBytes 
+	 * <p>
+	 * Since v0.8.0, this usually isn't required; use instead {@link #getSharedInstance()}.
+	 * @param tileCacheSizeBytes maximum number of bytes for storing pixel values
 	 * @return
 	 */
 	public static DefaultImageRegionStore createImageRegionStore(final long tileCacheSizeBytes) {
-		return new DefaultImageRegionStore(tileCacheSizeBytes);
-	}
-	
-	
-	/**
-	 * Create an {@link ImageRegionStore} using a default tile cache size, based upon the available memory and user preferences.
-	 * @return
-	 */
-	public static DefaultImageRegionStore createImageRegionStore() {
-		return createImageRegionStore(getTileCacheSizeBytes());
+		return new DefaultImageRegionStore(ImageCache.create(tileCacheSizeBytes));
 	}
 	
 	
 	/**
 	 * Calculate the appropriate tile cache size based upon the user preferences.
-	 * @return tile cache size in bytes
 	 */
-	private static long getTileCacheSizeBytes() {
+	private static void initTileCacheSizeBytes(ImageCache cache) {
 		// Try to compute a sensible value...
 		Runtime rt = Runtime.getRuntime();
 		long maxAvailable = rt.maxMemory(); // Max available memory
@@ -78,7 +88,7 @@ public class ImageRegionStoreFactory {
 		}
 		long tileCacheSize = Math.round(maxAvailable * (percentage / 100.0));
 		logger.info(String.format("Setting tile cache size to %.2f MB (%.1f%% max memory)", tileCacheSize/(1024.*1024.), percentage));
-		return tileCacheSize;
+		cache.setMaxSize(tileCacheSize);
 	}
 	
 }

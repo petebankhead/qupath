@@ -27,6 +27,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
 import qupath.lib.images.cache.BufferedImageSizeEstimator;
+import qupath.lib.images.cache.GenericImageCache;
+import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.images.servers.PixelType;
@@ -68,14 +70,14 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 	// accumulate the requests in a queue.
 	private final BlockingDeque<Request> requestQueue = new LinkedBlockingDeque<>();
 
-	DefaultImageRegionStore(int thumbnailWidth, long tileCacheSize) {
-		super(new BufferedImageSizeEstimator(), thumbnailWidth, tileCacheSize);
+	private DefaultImageRegionStore(GenericImageCache<BufferedImage> cache, int thumbnailWidth) {
+		super(cache, thumbnailWidth);
 		Thread.ofVirtual().name("tile-requestor").start(this::processRequests);
 //		ThreadTools.createThreadFactory("tile-requestor", true).newThread(this::processRequests).start();
 	}
 
-	DefaultImageRegionStore(long tileCacheSize) {
-		this(DEFAULT_THUMBNAIL_WIDTH, tileCacheSize);
+	DefaultImageRegionStore(GenericImageCache<BufferedImage> cache) {
+		this(cache, DEFAULT_THUMBNAIL_WIDTH);
 	}
 
 	private record Request(ImageServer<BufferedImage> server, RegionRequest request) {}

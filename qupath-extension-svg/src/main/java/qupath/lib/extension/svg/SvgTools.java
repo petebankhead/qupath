@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2020 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -80,11 +80,6 @@ public class SvgTools {
 	 * @throws IOException
 	 */
 	public static void writeViewerSnapshot(QuPathViewer viewer, File fileSVG) throws IOException {
-//		if (!GeneralTools.checkExtensions(fileSVG.getAbsolutePath(), ".svg")) {
-//			String currentName = fileSVG.getName();
-//			fileSVG = new File(fileSVG.getParent(), GeneralTools.getNameWithoutExtension(fileSVG) + ".svg");
-//			logger.warn("Export file should have SVG extension - updating {} to {}", currentName, fileSVG);
-//		}
 		new SvgBuilder(viewer).writeSVG(fileSVG);
 	}
 	
@@ -117,16 +112,12 @@ public class SvgTools {
 			
 			@Override
 			public String toString() {
-				switch(this) {
-				case EMBED:
-					return "Embed raster";
-				case LINK:
-					return "Linked raster";
-				case NONE:
-					return "SVG vectors only";
-				default:
-					throw new IllegalArgumentException("Unknown type " + this);
-				}
+                return switch (this) {
+                    case EMBED -> "Embed raster";
+                    case LINK -> "Linked raster";
+                    case NONE -> "SVG vectors only";
+                    default -> throw new IllegalArgumentException("Unknown type " + this);
+                };
 			}
 			
 		}
@@ -497,7 +488,7 @@ public class SvgTools {
 					ImageDisplay display = null;
 					try {
 						if (viewer == null) {
-							store = ImageRegionStoreFactory.createImageRegionStore(1024 * 1024L * 16);
+							store = ImageRegionStoreFactory.getSharedInstance();
 							display = ImageDisplay.create(imageData);
 						} else {
 							store = viewer.getImageRegionStore();
@@ -509,7 +500,7 @@ public class SvgTools {
 					} catch (IOException e) {
 						logger.warn("Unable to create image display, may not be able to include images", e);
 						if (store == null)
-							store = ImageRegionStoreFactory.createImageRegionStore(1024 * 1024L * 16);
+							store = ImageRegionStoreFactory.getSharedInstance();
 					}
 					
 					if (imageInclude == ImageIncludeType.LINK) {

@@ -284,7 +284,7 @@ public class QuPathGUI {
 		// Note that the order is sometimes important.
 		toolManager = ToolManager.create();
 		threadPoolManager = SharedThreadPoolManager.create();
-		imageRegionStore = ImageRegionStoreFactory.createImageRegionStore();
+		imageRegionStore = ImageRegionStoreFactory.getSharedInstance();
 		prefsPane = new PreferencePane();
 		viewerManager = ViewerManager.create(this);
 		pathClassManager = PathClassManager.create();

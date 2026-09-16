@@ -105,7 +105,7 @@ public class ZProjectOverlay extends AbstractImageOverlay {
 
     private DefaultImageRegionStore getStore() {
         if (store == null) {
-            store = ImageRegionStoreFactory.createImageRegionStore();
+            store = ImageRegionStoreFactory.getSharedInstance();
         }
         return store;
     }
