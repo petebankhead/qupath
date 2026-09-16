@@ -48,9 +48,6 @@ import java.util.Set;
  * The actual request is then handled by assembling the tiles, resizing as required.
  * This makes it possible to cache tiles and reuse them more efficiently, and often requires less effort 
  * to implement a new {@link ImageServer}.
- * 
- * @author Pete Bankhead
- *
  */
 public abstract class AbstractTileableImageServer extends AbstractImageServer<BufferedImage> {
 	

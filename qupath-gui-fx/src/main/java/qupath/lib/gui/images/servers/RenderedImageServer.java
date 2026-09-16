@@ -86,7 +86,7 @@ public class RenderedImageServer extends AbstractTileableImageServer implements 
 		super();
 
 		if (store == null) {
-			this.store = ImageRegionStoreFactory.getSharedInstance();
+			this.store = ImageRegionStoreFactory.createImageRegionStore(1024*1024*512L);
 			this.dedicatedStore = true;
 		} else {
 			this.store = store;

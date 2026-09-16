@@ -26,7 +26,6 @@ package qupath.lib.gui.images.stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.images.cache.GenericImageCache;
-import qupath.lib.images.cache.SizeEstimator;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.regions.RegionRequest;
 
@@ -158,11 +157,6 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 
 	public long getCacheSize() {
 		return cache.getCacheSize();
-	}
-
-	protected T requestTile(ImageServer<T> server, RegionRequest request) {
-		var future = cache.requestImageTile(server, request);
-		return future.isDone() ? future.resultNow() : null;
 	}
 
 
