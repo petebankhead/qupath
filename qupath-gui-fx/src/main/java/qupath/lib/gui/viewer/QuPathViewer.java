@@ -31,6 +31,8 @@ import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.IntegerProperty;
 import javafx.beans.property.LongProperty;
 import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.ReadOnlyBooleanProperty;
+import javafx.beans.property.ReadOnlyBooleanWrapper;
 import javafx.beans.property.ReadOnlyLongProperty;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -52,7 +54,6 @@ import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
 import qupath.lib.color.ColorToolsAwt;
 import qupath.lib.common.GeneralTools;
-import qupath.lib.common.Timeit;
 import qupath.lib.display.ChannelDisplayInfo;
 import qupath.lib.display.DirectServerChannelInfo;
 import qupath.lib.display.ImageDisplay;
@@ -161,6 +162,13 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	 * If imageUpdated is false, then the image itself need not be updated.
 	 */
 	protected boolean overlayUpdated = false;
+
+	/**
+	 * Flag to indicate that the viewer content is still loading,
+	 * and the last repaint pulse did not completely paint the visible image region and all overlays.
+	 * Subsequent repaints will automatically be called.
+	 */
+	private final ReadOnlyBooleanWrapper isLoading = new ReadOnlyBooleanWrapper(false);
 
 
 	// Flag that is temporarily set to true while the ImageData is being set
@@ -361,6 +369,13 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		return regionStore;
 	}
 
+	public ReadOnlyBooleanProperty isLoadingProperty() {
+		return isLoading.getReadOnlyProperty();
+	}
+
+	public boolean isLoading() {
+		return isLoadingProperty().get();
+	}
 
 	private ViewerPane createPane() {
 		var pane = new ViewerPane();
@@ -1072,6 +1087,8 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		if (this.imageDataProperty.get() == imageDataNew)
 			return;
 
+		isLoading.set(true);
+
 		// We want to stop caching the hierarchy
 		overlays.getHierarchyOverlay().resetImageData();
 
@@ -1291,6 +1308,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		if (empty) {
 			imageUpdated = false;
 			overlayUpdated = false;
+			isLoading.set(false);
 			return;
 		}
 
@@ -1373,6 +1391,10 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 //			timer.checkpoint("Shape update");
 			fireVisibleRegionChangedEvent(lastVisibleShape);
 		}
+
+		isLoading.set(imageUpdated || overlayUpdated || sliceUpdated);
+
+
 //		timer.stop();
 //		if (hasServer() && timer.getCheckpoints().size() > 2 && false) {
 //			timer.milliseconds();

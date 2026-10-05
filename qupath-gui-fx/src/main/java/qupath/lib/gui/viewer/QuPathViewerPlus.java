@@ -4,7 +4,7 @@
  * %%
  * Copyright (C) 2014 - 2016 The Queen's University of Belfast, Northern Ireland
  * Contact: IP Management (ipmanagement@qub.ac.uk)
- * Copyright (C) 2018 - 2025 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -29,16 +29,20 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.StackPane;
 import javafx.scene.text.TextAlignment;
 import qupath.lib.gui.images.stores.DefaultImageRegionStore;
+import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.gui.tools.ColorToolsFX;
-import qupath.lib.gui.tools.CommandFinderTools;
 import qupath.lib.images.servers.ImageServer;
 
 import java.awt.geom.Rectangle2D;
@@ -67,6 +71,8 @@ public class QuPathViewerPlus extends QuPathViewer {
 	private final BorderPane panelLocation = new BorderPane();
 	private final Label labelLocation = new Label(" ");
 	private final BooleanProperty useCalibratedLocationString = PathPrefs.useCalibratedLocationStringProperty();
+
+	private final Label labelLoading = createLoadingLabel();
 
 	private final int padding = 10;
 
@@ -118,11 +124,15 @@ public class QuPathViewerPlus extends QuPathViewer {
 		AnchorPane.setRightAnchor(panelLocation, (double)padding);
 		
 		// Add the scalebar label
-//		Node scalebarNode = PanelToolsFX.createSwingNode(scalebar);
 		Node scalebarNode = scalebar.getNode();
 		basePane.getChildren().add(scalebarNode);
 		AnchorPane.setBottomAnchor(scalebarNode, (double)padding);
 		AnchorPane.setLeftAnchor(scalebarNode, (double)padding);
+
+		// Loading label
+		getView().getChildren().add(labelLoading);
+		StackPane.setAlignment(labelLoading, Pos.BOTTOM_CENTER);
+		StackPane.setMargin(labelLoading, new Insets(0, 0, padding, 0));
 
 		basePane.getChildren().addAll(dimensionControls.getPane());
 
@@ -142,6 +152,18 @@ public class QuPathViewerPlus extends QuPathViewer {
 		viewerDisplayOptions.showScalebarProperty().addListener(scalebarListener);
 
 		zProjectOverlayControls = new ZProjectOverlayControls(this, viewerDisplayOptions.showZProjectControlsProperty());
+	}
+
+	private Label createLoadingLabel() {
+		var labelLoading = new Label(QuPathResources.getLocalizedResourceManager().getString("Viewer.loading"));
+		labelLoading.getStyleClass().add("viewer-loading");
+		var tooltip = new Tooltip(QuPathResources.getLocalizedResourceManager().getString("Viewer.loading.description"));
+		labelLoading.setTooltip(tooltip);
+		labelLoading.visibleProperty().bind(isLoadingProperty());
+		var progress = new ProgressIndicator();
+		progress.setProgress(ProgressIndicator.INDETERMINATE_PROGRESS);
+		labelLoading.setGraphic(progress);
+		return labelLoading;
 	}
 
 	private void updateSpinners() {
