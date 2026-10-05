@@ -1164,8 +1164,8 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		setSelectedObject(null);
 		
 		// TODO: Consider shifting, fixing magnification, repainting etc.
-		if (isShowing())
-			repaint();
+		repaintEntireImage();
+		forceOverlayUpdate();
 
 		if (imageDataNew == null)
 			logger.info("Image data reset");
@@ -1397,14 +1397,14 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	}
 
 	private boolean updateOverlayBuffer(BufferedImage imgOverlay, double downsample, Shape shapeRegion) {
-		if (!hasServer())
-			return true;
 
 		// The buffer for the overlay
 		Graphics2D gOverlay = imgOverlay.createGraphics();
 		try {
 			gOverlay.setBackground(new java.awt.Color(0, true));
 			gOverlay.clearRect(0, 0, imgOverlay.getWidth(), imgOverlay.getHeight());
+			if (!hasServer())
+				return true;
 			gOverlay.setClip(0, 0, imgOverlay.getWidth(), imgOverlay.getHeight());
 			gOverlay.transform(transform);
 
