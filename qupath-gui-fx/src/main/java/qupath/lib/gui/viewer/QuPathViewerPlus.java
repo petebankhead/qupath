@@ -24,6 +24,7 @@
 package qupath.lib.gui.viewer;
 
 
+import javafx.animation.FadeTransition;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.value.ChangeListener;
@@ -39,6 +40,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.TextAlignment;
+import javafx.util.Duration;
 import qupath.lib.gui.images.stores.DefaultImageRegionStore;
 import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.prefs.PathPrefs;
@@ -156,10 +158,24 @@ public class QuPathViewerPlus extends QuPathViewer {
 
 	private Label createLoadingLabel() {
 		var labelLoading = new Label(QuPathResources.getLocalizedResourceManager().getString("Viewer.loading"));
+		labelLoading.setVisible(isLoading());
 		labelLoading.getStyleClass().add("viewer-loading");
 		var tooltip = new Tooltip(QuPathResources.getLocalizedResourceManager().getString("Viewer.loading.description"));
 		labelLoading.setTooltip(tooltip);
-		labelLoading.visibleProperty().bind(isLoadingProperty());
+		var fade = new FadeTransition();
+		fade.setFromValue(1.0);
+		fade.setToValue(0.0);
+		fade.setOnFinished(e -> fade.getNode().setVisible(false));
+		fade.setNode(labelLoading);
+		fade.setDuration(Duration.millis(250));
+		isLoadingProperty().subscribe(n -> {
+			if (n) {
+				labelLoading.setOpacity(1.0);
+				labelLoading.setVisible(true);
+			} else {
+				fade.playFromStart();
+			}
+		});
 		var progress = new ProgressIndicator();
 		progress.setProgress(ProgressIndicator.INDETERMINATE_PROGRESS);
 		labelLoading.setGraphic(progress);
