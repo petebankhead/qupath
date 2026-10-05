@@ -151,10 +151,7 @@ public class QuPathViewerPlus extends QuPathViewer {
 		ImageServer<?> server = getServer();
 		if (server != null) {
 			dimensionControls.zMaxProperty().set(server.nZSlices());
-			dimensionControls.zPositionProperty().set(server.nZSlices() / 2);
-
 			dimensionControls.tMaxProperty().set(server.nTimepoints());
-			dimensionControls.tPositionProperty().set(server.nTimepoints() / 2);
 		} else {
 			dimensionControls.zMaxProperty().set(0);
 			dimensionControls.tMaxProperty().set(0);
@@ -164,8 +161,8 @@ public class QuPathViewerPlus extends QuPathViewer {
 	
 	@Override
 	public void initializeForServer(ImageServer<BufferedImage> server) {
-		super.initializeForServer(server);
 		updateSpinners();
+		super.initializeForServer(server);
 	}
 
 

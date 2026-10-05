@@ -629,13 +629,13 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		imageUpdated = true;
 
 		if (server == null) {
-			zPosition.set(0);
-			tPosition.set(0);
+			setZPosition(0);
+			setTPosition(0);
 			return;
 		}
-		
-		zPosition.set(server.nZSlices() / 2);
-		tPosition.set(0);
+
+		setZPosition(server.nZSlices() / 2);
+		setTPosition(0);
 		updateThumbnail();
 
 		// Reset the suggested color for the scalebar & grid
