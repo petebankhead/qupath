@@ -108,7 +108,7 @@ class ViewerDimensionControls {
 
     private void updateFromProgress(ProgressBar progress, double x, IntegerProperty prop, IntegerProperty max) {
         int val = (int)Math.round(x / progress.getWidth() * max.doubleValue());
-        prop.setValue(GeneralTools.clipValue(val, 0, max.get()));
+        prop.setValue(GeneralTools.clipValue(val, 0, max.get()-1));
     }
 
     private Spinner<Integer> createSpinner(ObjectProperty<Integer> property, IntegerProperty maxProperty,

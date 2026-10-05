@@ -1897,7 +1897,7 @@ public class QuPathGUI {
 				List<ProjectImageEntry<BufferedImage>> entries = ProjectCommands.promptToImportImages(this, pathNew);
 				if (entries.isEmpty())
 					return false;
-				return openImageEntry(entries.get(0));
+				return openImageEntry(entries.getFirst());
 			}
 			ImageServer<BufferedImage> serverNew = null;
 

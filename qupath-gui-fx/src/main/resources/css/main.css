@@ -252,12 +252,12 @@
 .viewer-loading {
   -fx-background-color: rgba(0, 0, 0, 0.5);
   -fx-text-fill: white;
-  -fx-font-scale: 150%;
+  -fx-font-size: 125%;
   -fx-font-weight: bold;
   -fx-padding: 5px;
 }
 
 .viewer-loading > .progress-indicator {
-  -fx-pref-width: 20px;
-  -fx-pref-height: 20px;
+  -fx-pref-width: 25px;
+  -fx-pref-height: 25px;
 }
