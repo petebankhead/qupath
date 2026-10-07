@@ -906,6 +906,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 			int t = GeneralTools.clipValue(getTPosition(), 0, server.nTimepoints()-1);
 			BufferedImage imgThumbnail = regionStore.getOrRequestThumbnail(server, z, t);
 			if (imgThumbnail == null) {
+				imgThumbnailRGB = null;
 				return false;
 			}
 			imgThumbnailRGB = createThumbnailRGB(imgThumbnail);
@@ -1569,14 +1570,9 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		int z = getZPosition();
 		int t = getTPosition();
 		BufferedImage imgThumbnail = regionStore.getOrRequestThumbnail(server, z, t);
-		boolean repaintSuccess = imgThumbnail != null;
-		boolean requiresTiling = !thumbnailIsFullImage;
-		if (imgThumbnail == null) {
+		boolean thumbnailMissing = imgThumbnail == null;
+		if (thumbnailMissing) {
 			imgThumbnail = regionStore.getClosestCachedThumbnail(server, z, t);
-		}
-		if (imgThumbnail != null) {
-			double lowResolutionDownsample = 0.5 * ((double)serverWidth / imgThumbnail.getWidth() + (double)serverHeight / imgThumbnail.getHeight());
-			requiresTiling = !thumbnailIsFullImage && lowResolutionDownsample > Math.max(downsampleFactor.get(), 1);
 		}
 
 		// Check if we will be painting some background beyond the image edge
@@ -1589,30 +1585,22 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		else
 			gBuffered.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
 
-		if (requiresTiling) {
+		double downsample = getDownsampleFactor();
 
-			double downsample = getDownsampleFactor();
-
-			// Try to repaint higher resolution tiles for only the requested region
-			// A small optimization (that can make a difference in repaint speed...) is that for an RGB image we don't need to transform
-			// the image as we go along (tile by tile), but we can apply a single in-place transform afterwards.
-			// *However* this shouldn't be applied if the region we are viewing extends beyond the image boundary, as it means we would be color-transforming the background color.
-			// For a non-RGB image, or if the viewed region is over the image boundary, the transform should be applied in advance to the thumbnail, and then tile-by-tile during painting.
-			if (server.isRGB() && !overBoundary) {
-				repaintSuccess = repaintSuccess & regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, null);
-				gBuffered.dispose();
-				if (imageDisplay != null) {
-					getRenderer().applyTransforms(imgBuffer, imgBuffer);
-				}
-			} else {
-				repaintSuccess = repaintSuccess & regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, getRenderer());
+		// Try to repaint higher resolution tiles for only the requested region
+		// A small optimization (that can make a difference in repaint speed...) is that for an RGB image we don't need to transform
+		// the image as we go along (tile by tile), but we can apply a single in-place transform afterwards.
+		// *However* this shouldn't be applied if the region we are viewing extends beyond the image boundary, as it means we would be color-transforming the background color.
+		// For a non-RGB image, or if the viewed region is over the image boundary, the transform should be applied in advance to the thumbnail, and then tile-by-tile during painting.
+		boolean repaintSuccess;
+		if (server.isRGB() && !overBoundary) {
+			repaintSuccess = regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, null);
+			gBuffered.dispose();
+			if (imageDisplay != null) {
+				imageDisplay.applyTransforms(imgBuffer, imgBuffer);
 			}
 		} else {
-			// Just paint the 'thumbnail' version, which has already (potentially) been color-transformed
-			if (imgThumbnailRGB != null)
-				gBuffered.drawImage(imgThumbnailRGB, 0, 0, serverWidth, serverHeight, null);
-			else
-				return false;
+			repaintSuccess = regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, getRenderer());
 		}
 
 		gBuffered.dispose();
@@ -1621,7 +1609,17 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		if (gammaOp != null) {
 			gammaOp.filter(imgBuffer.getRaster(), imgBuffer.getRaster());
 		}
-		return repaintSuccess;
+
+		// TODO: Consider indicating that the image is incomplete
+//		if (thumbnailMissing) {
+//			int n = 9;
+//			float[] kernel = new float[n];
+//			Arrays.fill(kernel, 1f/n);
+//			var imgTemp = new ConvolveOp(new Kernel(n, 1, kernel)).filter(imgBuffer, null);
+//			new ConvolveOp(new Kernel(1, n, kernel)).filter(imgTemp, imgBuffer);
+//		}
+
+		return repaintSuccess && !thumbnailMissing;
 	}
 
 

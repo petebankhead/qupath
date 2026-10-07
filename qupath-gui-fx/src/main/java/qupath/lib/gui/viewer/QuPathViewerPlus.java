@@ -170,6 +170,7 @@ public class QuPathViewerPlus extends QuPathViewer {
 		fade.setDuration(Duration.millis(250));
 		isLoadingProperty().subscribe(n -> {
 			if (n) {
+				fade.stop();
 				labelLoading.setOpacity(1.0);
 				labelLoading.setVisible(true);
 			} else {

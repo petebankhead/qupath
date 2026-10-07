@@ -7,6 +7,7 @@ import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.Weigher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import qupath.lib.common.ThreadTools;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.regions.RegionRequest;
 
@@ -33,12 +34,8 @@ public class GenericImageCache<T> {
 
     private boolean isClosed = false;
 
-    private final ExecutorService pool = Executors.newThreadPerTaskExecutor(
-            Thread.ofVirtual()
-                    .name("tile-cache", 1)
-                    .factory()
-    );
-
+    private final ExecutorService pool = Executors.newFixedThreadPool(Math.max(4, ThreadTools.getParallelism() * 2),
+            ThreadTools.createThreadFactory("tile-cache", true));
 
     GenericImageCache(final SizeEstimator<T> sizeEstimator, final long maxSizeBytes) {
         // Because Caffeine uses integer weights, and we sometimes have *very* large images, we convert our size estimates KB
@@ -47,22 +44,22 @@ public class GenericImageCache<T> {
         this.cache = Caffeine.newBuilder()
                 .weigher(weigher)
                 .maximumWeight(maxWeight)
-//				.softValues() // Not possible for an async cache
                 .recordStats()
                 // Use evictionListener because it is notified as part of an atomic removal;
                 // using a removalListener can result in exceptions during shutdown
-                .evictionListener((k, v, cause) -> {
-                    if (cause == RemovalCause.COLLECTED) {
-                        logger.debug("Cached tile collected: {}", k);
-                    } else {
-                        logger.trace("Cached tile removed due to {}: {}", cause, k);
-                    }
-                })
+                .evictionListener(this::handleEviction)
                 .executor(pool)
                 .initialCapacity(1024)
                 .buildAsync();
-
         Runtime.getRuntime().addShutdownHook(new Thread(this::close));
+    }
+
+    private void handleEviction(RegionRequest key, T value, RemovalCause cause) {
+        if (cause == RemovalCause.COLLECTED) {
+            logger.debug("Cached tile collected: {}", key);
+        } else {
+            logger.trace("Cached tile removed due to {}: {}", cause, key);
+        }
     }
 
     public void setMaxSize(long newMaxSizeBytes) {
@@ -76,11 +73,20 @@ public class GenericImageCache<T> {
         cache.synchronous().policy().eviction().ifPresent(evictionPolicy -> evictionPolicy.setMaximum(bytesToKB(size)));
     }
 
+    public double estimateLoad() {
+        var eviction = this.cache.synchronous().policy().eviction().orElse(null);
+        if (eviction == null || eviction.weightedSize().isEmpty())
+            return Double.NaN;
+        return (double)eviction.weightedSize().getAsLong() / eviction.getMaximum();
+    }
+
+
     // It's more intuitive to define image sizes in bytes,
     // but internally we use KB weights because some of our images are huge and we're limited to integer weights.
-    // We treat 0 as a special value (indicating an empty image), so a very small non-empty image must have a weight of 1.
+    // We don't permit a size of 0, since this would mean a tile can't be ejected when the cache becomes full.
+    // 0 indicates an empty (or null) tile, but we don't want lots of meaningless map entries to accumulate.
     private static long bytesToKB(long bytes) {
-        return bytes == 0L ? 0L : Long.max(1, Math.round(bytes / 1024.0));
+        return Long.max(1, Math.round(bytes / 1024.0));
     }
 
 
