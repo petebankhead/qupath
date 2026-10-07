@@ -23,10 +23,13 @@
 
 package qupath.lib.gui.images.stores;
 
+import java.util.Arrays;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import qupath.lib.common.GeneralTools;
 import qupath.lib.images.cache.GenericImageCache;
 import qupath.lib.images.servers.ImageServer;
+import qupath.lib.images.servers.ServerTools;
 import qupath.lib.regions.RegionRequest;
 
 import java.util.Comparator;
@@ -77,31 +80,41 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	
 	/**
 	 * Calculate the downsample value to use when generating a thumbnail image.
-	 * @param width
-	 * @param height
 	 * @return
 	 */
-	double calculateThumbnailDownsample(int width, int height) {
+	private double calculateThumbnailDownsample(ImageServer<?> server) {
 		// We'll have trouble if we try to downsample until we have very few pixels in any dimension
+		double fullResolutionDownsample = server.getDownsampleForResolution(0);
+		double targetDownsample = fullResolutionDownsample;
+		if (server.nResolutions() == 1)
+			return targetDownsample;
+		int width = server.getWidth();
+		int height = server.getHeight();
 		double maxDim = Math.max(width, height);
 		double minDim = Math.min(width, height);
 		if (minDim > minThumbnailSize) {
+			// Try to use a downsample that corresponds to an actual pyramid level, to avoid unnecessary
+			// requests and caching
 			double maxDownsample = minDim / minThumbnailSize;
-			return Math.max(1, Math.min(maxDim / maxThumbnailSize, maxDownsample));
+			double target = Math.min(maxDim / maxThumbnailSize, maxDownsample);
+			targetDownsample = Arrays.stream(server.getPreferredDownsamples())
+					.filter(d -> d <= maxDownsample && GeneralTools.almostTheSame(target, d, 0.25))
+					.sorted()
+					.findFirst()
+					.orElse(target);
 		}
-		return 1.0;
+		targetDownsample = Math.max(targetDownsample, fullResolutionDownsample);
+		logger.trace("Thumbnail downsample: {}, ({} x {})",
+				targetDownsample, Math.round(width/targetDownsample), Math.round(height/targetDownsample));
+		return targetDownsample;
 	}
 	
 
 	RegionRequest getThumbnailRequest(final ImageServer<T> server, final int zPosition, final int tPosition) {
-		// Determine thumbnail size
-		double downsample = 1;
-		if (isPyramidalImageServer(server)) {
-			downsample = calculateThumbnailDownsample(server.getWidth(), server.getHeight());
-		}
-		// Ensure we aren't accidentally upsampling (shouldn't actually happen)
-		downsample = Math.max(downsample, 1);
-		return RegionRequest.createInstance(server.getPath(), downsample, 0, 0, server.getWidth(), server.getHeight(), zPosition, tPosition);
+		return RegionRequest.createInstance(
+				server.getPath(),
+				calculateThumbnailDownsample(server),
+				0, 0, server.getWidth(), server.getHeight(), zPosition, tPosition);
 	}
 
 	protected T getIfPresent(final RegionRequest request) {
