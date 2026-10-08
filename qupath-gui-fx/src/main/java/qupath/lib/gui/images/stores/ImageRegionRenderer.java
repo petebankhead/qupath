@@ -44,8 +44,9 @@ public interface ImageRegionRenderer {
 	 * @param downsampleFactor the downsample factor
 	 * @param renderer an {@link ImageRenderer} to convert images to RGB
 	 * @param timeoutMilliseconds Timeout after which a request is made from the PathImageServer directly, rather than waiting for tile requests.
+	 * @return true if the region is painted completely, false if tiles are missing
 	 */
-	void paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageRenderer renderer, long timeoutMilliseconds);
+	boolean paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageRenderer renderer, long timeoutMilliseconds);
 	
 	/**
 	 * Paint an image region.

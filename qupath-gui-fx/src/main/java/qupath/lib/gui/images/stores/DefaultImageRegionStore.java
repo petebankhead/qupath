@@ -106,7 +106,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 	 */
 	@Override
 	@SuppressWarnings("unchecked")
-	public void paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageRenderer imageDisplay, long timeoutMilliseconds) {
+	public boolean paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageRenderer imageDisplay, long timeoutMilliseconds) {
 
 		// Loop through and create the image
 		List<RequestedTile> workers = new ArrayList<>();
@@ -138,19 +138,21 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 		}
 
 		// Loop through any workers now, drawing their tiles too
+		boolean success = true;
 		for (var worker : workers) {
 			BufferedImage imgTile = null;
 			try {
 				imgTile = worker.future().get(timeoutMilliseconds, TimeUnit.MILLISECONDS);
 			} catch (CancellationException e) {
-				logger.debug("Repaint skipped...");
+				logger.debug("Repaint skipped because of cancellation...");
+				success = false;
 				continue;
 			} catch (InterruptedException e) {
 				logger.debug("Tile request interrupted in 'paintRegionCompletely': {}", e.getMessage());
-				return;
+				return false;
 			} catch (ExecutionException e) {
 				logger.error("Execution exception in 'paintRegionCompletely'", e);
-				return;
+				return false;
 			} catch (TimeoutException e) {
 				// If we timed out, try reading directly
 				logger.warn("Timed out requesting region ({} ms)... {}", timeoutMilliseconds, worker.request());
@@ -164,7 +166,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			} else
 				g.drawImage(imgTile, request.getX(), request.getY(), request.getWidth(), request.getHeight(), null);
 		}
-
+		return success;
 	}
 
 	private record RequestedTile(RegionRequest request, Future<BufferedImage> future) {}
