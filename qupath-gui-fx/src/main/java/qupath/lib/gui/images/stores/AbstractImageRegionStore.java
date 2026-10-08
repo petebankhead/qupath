@@ -29,7 +29,6 @@ import org.slf4j.LoggerFactory;
 import qupath.lib.common.GeneralTools;
 import qupath.lib.images.cache.GenericImageCache;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.servers.ServerTools;
 import qupath.lib.regions.RegionRequest;
 
 import java.util.Comparator;
@@ -42,7 +41,6 @@ import java.util.concurrent.Future;
 /**
  * A generic ImageRegionStore.
  *
- * @author Pete Bankhead
  * @param <T> the generic parameter for an image (most likely BufferedImage)
  */
 abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
@@ -222,7 +220,6 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
 		var future = requestImageTile(server, request);
 		try {
-			// TODO: FIGURE OUT WHY THIS GETS STUCK FOR Z-STACKS!
 			return future.get();
 		} catch (Exception e) {
 			logger.error("Error reading image region: {} ({})", e.getMessage(), request);

@@ -377,7 +377,7 @@ public class RenderedImageServer extends AbstractTileableImageServer implements 
 		store.paintRegionCompletely(
 				imageData.getServer(), g2d, g2d.getClip(),
 				tileRequest.getZ(), tileRequest.getT(),
-				downsample, null, renderer,
+				downsample, renderer,
 				Integer.MAX_VALUE);
 
 		if (gammaOp != null) {

@@ -26,7 +26,6 @@ import qupath.lib.images.servers.ImageServer;
 import java.awt.Graphics;
 import java.awt.Shape;
 import java.awt.image.BufferedImage;
-import java.awt.image.ImageObserver;
 
 /**
  * Interface for painting regions of an {@link ImageServer} onto a {@link Graphics} object.
@@ -34,7 +33,7 @@ import java.awt.image.ImageObserver;
 public interface ImageRegionRenderer {
 	
 	/**
-	 * Similar to {@link #paintRegion(ImageServer, Graphics, Shape, int, int, double, BufferedImage, ImageObserver, ImageRenderer)}, 
+	 * Similar to {@link #paintRegion(ImageServer, Graphics, Shape, int, int, double, BufferedImage, ImageRenderer)},
 	 * but wait until all the tiles have arrived (or abort if it is taking too long).
 	 *
 	 * @param server the server representing the image that shown be painted
@@ -43,11 +42,10 @@ public interface ImageRegionRenderer {
 	 * @param zPosition the z-stack position
 	 * @param tPosition the timepoint position
 	 * @param downsampleFactor the downsample factor
-	 * @param observer an {@link ImageObserver} (often ignored)
 	 * @param renderer an {@link ImageRenderer} to convert images to RGB
 	 * @param timeoutMilliseconds Timeout after which a request is made from the PathImageServer directly, rather than waiting for tile requests.
 	 */
-	void paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageObserver observer, ImageRenderer renderer, long timeoutMilliseconds);
+	void paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageRenderer renderer, long timeoutMilliseconds);
 	
 	/**
 	 * Paint an image region.
@@ -59,10 +57,9 @@ public interface ImageRegionRenderer {
 	 * @param tPosition the timepoint position
 	 * @param downsampleFactor the downsample factor
 	 * @param imgThumbnail a thumbnail image; if not null, this will be used to 'fill the gaps'
-	 * @param observer an {@link ImageObserver} (often ignored)
 	 * @param renderer an {@link ImageRenderer} to convert images to RGB
 	 * @return true if the region is painted completely, false if tiles are missing
 	 */
-	boolean paintRegion(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer renderer);
+	boolean paintRegion(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageRenderer renderer);
 
 }

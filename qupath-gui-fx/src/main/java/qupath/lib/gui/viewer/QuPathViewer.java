@@ -1594,13 +1594,13 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		// For a non-RGB image, or if the viewed region is over the image boundary, the transform should be applied in advance to the thumbnail, and then tile-by-tile during painting.
 		boolean repaintSuccess;
 		if (server.isRGB() && !overBoundary) {
-			repaintSuccess = regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, null);
+			repaintSuccess = regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null);
 			gBuffered.dispose();
 			if (imageDisplay != null) {
 				imageDisplay.applyTransforms(imgBuffer, imgBuffer);
 			}
 		} else {
-			repaintSuccess = regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, null, getRenderer());
+			repaintSuccess = regionStore.paintRegion(server, gBuffered, shapeRegion, getZPosition(), getTPosition(), downsample, imgThumbnail, getRenderer());
 		}
 
 		gBuffered.dispose();

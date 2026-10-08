@@ -138,12 +138,11 @@ public class ZProjectOverlay extends AbstractImageOverlay {
         var store = getStore();
         if (paintCompletelyTimeout > 0) {
             store.paintRegionCompletely(
-                zProjServer, g2d, g2d.getClip(), z, imageRegion.getT(), downsampleFactor,
-                null, renderer.get(), paintCompletelyTimeout);
+                zProjServer, g2d, g2d.getClip(), z, imageRegion.getT(), downsampleFactor, renderer.get(), paintCompletelyTimeout);
         } else {
             store.paintRegion(
                 zProjServer, g2d, g2d.getClip(), z, imageRegion.getT(), downsampleFactor,
-                null, null, renderer.get());
+                null, renderer.get());
         }
     }
 

@@ -269,10 +269,10 @@ public class HierarchyOverlay extends AbstractOverlay {
 				// If the image hasn't been updated, then we are viewing the stationary image - we want to wait for a full repaint then to avoid flickering;
 				// On the other hand, if a large image has been updated then we may be browsing quickly - better to repaint quickly while tiles may still be loading
 				if (paintCompletely) {
-					regionStore.paintRegionCompletely(overlayServer, g2d, shapeRegion, z, t, downsampleFactor, null, null, 5000);
+					regionStore.paintRegionCompletely(overlayServer, g2d, shapeRegion, z, t, downsampleFactor, null, 5000);
 				}
 				else {
-					regionStore.paintRegion(overlayServer, g2d, shapeRegion, z, t, downsampleFactor, null, null, null);
+					regionStore.paintRegion(overlayServer, g2d, shapeRegion, z, t, downsampleFactor, null, null);
 				}
 			}
 		}

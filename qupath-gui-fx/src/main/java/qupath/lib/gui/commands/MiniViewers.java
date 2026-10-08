@@ -835,8 +835,6 @@ public class MiniViewers {
 						mainViewer.getTPosition(),
 						downsample,
 						mainViewer.getThumbnail(),
-//						imgRGB,
-						null,
 						renderer);
 				
 				var gammaOp = mainViewer.getGammaOp();

@@ -517,7 +517,7 @@ public class SvgTools {
 					g.setTransform(transform);
 					store.paintRegionCompletely(
 							imageData.getServer(), g, boundsDisplayed,
-							region.getZ(), region.getT(), downsample, null, display, 10000L);
+							region.getZ(), region.getT(), downsample, display, 10000L);
 					g.dispose();
 					g2d.drawImage(imgTemp, transformInverse, null);
 				} else {

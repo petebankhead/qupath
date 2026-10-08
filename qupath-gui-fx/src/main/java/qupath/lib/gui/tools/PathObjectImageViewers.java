@@ -426,7 +426,7 @@ public class PathObjectImageViewers {
 					double y = roi.getCentroidY() - img.getHeight() / 2.0 * downsample;
 					g2d.translate(-x, -y);
 
-					store.paintRegionCompletely(server, g2d, g2d.getClipBounds(), roi.getZ(), roi.getT(), downsample, null, renderer, 500L);
+					store.paintRegionCompletely(server, g2d, g2d.getClipBounds(), roi.getZ(), roi.getT(), downsample, renderer, 500L);
 					if (paintObject && options != null) {
 						PathObjectPainter.paintObject(pathObject, g2d, options, null, downsample);
 					}

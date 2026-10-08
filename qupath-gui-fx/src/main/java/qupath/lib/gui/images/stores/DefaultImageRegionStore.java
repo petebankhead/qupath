@@ -26,9 +26,7 @@ package qupath.lib.gui.images.stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
-import qupath.lib.images.cache.BufferedImageSizeEstimator;
 import qupath.lib.images.cache.GenericImageCache;
-import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.images.servers.PixelType;
@@ -40,7 +38,6 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.image.BufferedImage;
-import java.awt.image.ImageObserver;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -104,13 +101,12 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 	 * @param zPosition
 	 * @param tPosition
 	 * @param downsampleFactor
-	 * @param observer
 	 * @param imageDisplay
 	 * @param timeoutMilliseconds Timeout after which a request is made from the PathImageServer directly, rather than waiting for tile requests.
 	 */
 	@Override
 	@SuppressWarnings("unchecked")
-	public void paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageObserver observer, ImageRenderer imageDisplay, long timeoutMilliseconds) {
+	public void paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageRenderer imageDisplay, long timeoutMilliseconds) {
 
 		// Loop through and create the image
 		List<RequestedTile> workers = new ArrayList<>();
@@ -131,9 +127,9 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 					continue;
 				else if (imageDisplay != null) {
 					imgTemp = imageDisplay.applyTransforms(img, imgTemp);
-					g.drawImage(imgTemp, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
+					g.drawImage(imgTemp, request.getX(), request.getY(), request.getWidth(), request.getHeight(), null);
 				} else
-					g.drawImage(img, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
+					g.drawImage(img, request.getX(), request.getY(), request.getWidth(), request.getHeight(), null);
 			} else {
 				// If we've a tile worker, prepare for requesting its results soon...
 				workers.add(new RequestedTile(request, future));
@@ -164,9 +160,9 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			RegionRequest request = worker.request();
 			if (imageDisplay != null) {
 				imgTemp = imageDisplay.applyTransforms(imgTile, imgTemp);
-				g.drawImage(imgTemp, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
+				g.drawImage(imgTemp, request.getX(), request.getY(), request.getWidth(), request.getHeight(), null);
 			} else
-				g.drawImage(imgTile, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
+				g.drawImage(imgTile, request.getX(), request.getY(), request.getWidth(), request.getHeight(), null);
 		}
 
 	}
@@ -175,20 +171,19 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 
 
 	@Override
-	public boolean paintRegion(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageObserver observer, ImageRenderer imageDisplay) {
+	public boolean paintRegion(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, BufferedImage imgThumbnail, ImageRenderer imageDisplay) {
 
 		boolean isComplete = true;
 
 		// Check if we have all the regions required for this request
 		List<RegionRequest> requests = ImageRegionStoreHelpers.getTilesToRequest(server, clipShapeVisible, downsampleFactor, zPosition, tPosition, null);
-//		requests.forEach(r -> requestImageTile(server, r));
-//		requestAllTiles(server, requests);
 
 		// If we should be painting recursively, ending up with the thumbnail, do so
 		if (imgThumbnail != null) {
+			// Check if there are any pixels not currently cached.
+			// If so, create a rectangle that surrounds all of them.
 			Rectangle missingBounds = null;
 			for (RegionRequest request : requests) {
-				// Load the image
 				BufferedImage img = getIfPresent(request);
 				if (img == null) {// && !mapCache.containsKey(request)) {
 					if (missingBounds == null)
@@ -211,13 +206,13 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				}
 				// Get the next downsample level if we can
 				if (nextDownsample > 0)
-					paintRegion(server, g, missingBounds, zPosition, tPosition, nextDownsample, imgThumbnail, observer, imageDisplay);
+					paintRegion(server, g, missingBounds, zPosition, tPosition, nextDownsample, imgThumbnail, imageDisplay);
 				else {
 					// The best we can do is paint the thumbnail
 					if (imageDisplay != null) {
                         imgThumbnail = imageDisplay.applyTransforms(imgThumbnail, null);
 					}
-					g.drawImage(imgThumbnail, 0, 0, server.getWidth(), server.getHeight(), observer);
+					g.drawImage(imgThumbnail, 0, 0, server.getWidth(), server.getHeight(), null);
 				}
 			}
 		}
@@ -271,7 +266,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				}
 				img = imgTemp;
 			}
-			g.drawImage(img, request.getX(), request.getY(), request.getWidth(), request.getHeight(), observer);
+			g.drawImage(img, request.getX(), request.getY(), request.getWidth(), request.getHeight(), null);
 			if (DEBUG_TILES) {
 				g.setColor(Color.RED);
 				g.drawRect(request.getX(), request.getY(), request.getWidth(), request.getHeight());				
