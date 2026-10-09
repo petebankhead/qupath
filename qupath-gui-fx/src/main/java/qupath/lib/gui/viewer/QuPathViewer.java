@@ -35,6 +35,7 @@ import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanWrapper;
 import javafx.beans.property.ReadOnlyLongProperty;
 import javafx.beans.property.ReadOnlyObjectProperty;
+import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleIntegerProperty;
@@ -143,19 +144,14 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	private ViewerBuffers buffers = ViewerBuffers.createEmpty();
 
 	// Keep a reference to a thumbnail image here, and apply color transforms to it
-	//	private BufferedImage imgThumbnail;
-	private BufferedImage imgThumbnailRGB; // An RGB thumbnail, which may have been transformed (or null if imgThumbnail is already RGB)
-	private boolean thumbnailIsFullImage = false;
+	private final ObjectProperty<BufferedImage> imgThumbnail = new SimpleObjectProperty<>();
+	private final ReadOnlyObjectWrapper<BufferedImage> imgThumbnailRGB = new ReadOnlyObjectWrapper<>(); // An RGB thumbnail, which may have been transformed (or null if imgThumbnail is already RGB)
+	private final BooleanProperty thumbnailIsFullImage = new SimpleBooleanProperty();
 
 	/**
 	 * Flag used to indicate that the image was updated and a full repaint is required.
 	 */
 	protected boolean imageUpdated = false;
-
-	/**
-	 * Flag used to indicate that the image slice has been updated, so that a new thumbnail is required.
-	 */
-	protected boolean sliceUpdated = false;
 
 	/**
 	 * Flag to indicate that one or more overlays should be repainted.
@@ -194,7 +190,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	private boolean spaceDown = false;
 
 	// Suggested overlay color, based upon the local background
-	private java.awt.Color colorOverlaySuggested = null;
+	private final ObjectProperty<java.awt.Color> colorOverlaySuggested = new SimpleObjectProperty<>(calculateOverlayColor());
 	
 	// Requested cursor - but this may be overridden temporarily
 	private Cursor requestedCursor = Cursor.DEFAULT;
@@ -217,7 +213,6 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	private final LongProperty lastRepaintTimestamp = new SimpleLongProperty(0L); // Used for debugging repaint times
 	private long lastPaint = 0;
 	private long minimumRepaintSpacingMillis = -1; // This can be used (temporarily) to prevent repaints happening too frequently
-    private boolean updateOverlayColor;
 
     /**
 	 * Get the main JavaFX component representing this viewer.
@@ -286,7 +281,8 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 						this::updateOverlaysAndRepaint,
 						PathPrefs.colorDefaultObjectsProperty(),
 						// We need to repaint everything if detection line thickness changes - including any cached regions
-						PathPrefs.detectionStrokeThicknessProperty()
+						PathPrefs.detectionStrokeThicknessProperty(),
+						colorOverlaySuggested
 				)
 		).and(
 				QuPathViewerUtils.subscribeObservables(
@@ -321,8 +317,40 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		this.overlays = ViewerOverlays.create(overlayOptions, regionStore);
 		this.overlays.getAllOverlayLayers().addListener((Change<? extends PathOverlay> _) -> repaint());
 
+		initThumbnails();
+
 		imageUpdated = true;
 		timer.start();
+	}
+
+	private void initThumbnails() {
+		// Create RGB thumbnail binding
+		if (imageDisplay == null) {
+			imgThumbnailRGB.bind(Bindings.createObjectBinding(this::createThumbnailRGB,
+					imgThumbnail, imageDataChanging));
+		} else {
+			imgThumbnailRGB.bind(Bindings.createObjectBinding(this::createThumbnailRGB,
+					imgThumbnail, imageDataChanging, imageDisplay.eventCountProperty()));
+		}
+		colorOverlaySuggested.bind(Bindings.createObjectBinding(this::calculateOverlayColor, this.imgThumbnailRGB));
+		thumbnailIsFullImage.bind(Bindings.createBooleanBinding(() -> {
+				var img = imgThumbnail.get();
+				var server = getServer();
+				return img != null && server != null && img.getWidth() == server.getWidth() && img.getHeight() == server.getHeight();
+				}, imgThumbnail, imageDataProperty));
+	}
+
+	private BufferedImage createThumbnailRGB() {
+		// Don't show anything when the image data is changing:
+		// the image display and thumbnail image might be temporarily out of sync
+		if (imageDataChanging.get())
+			return null;
+		var img = imgThumbnail.get();
+		ImageRenderer renderer = getRenderer();
+		if (img != null && renderer != null)
+			return renderer.applyTransforms(img, null);
+		else
+			return img;
 	}
 
 	private void repaintAfterAffineUpdate() {
@@ -333,7 +361,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	}
 
 	private void repaintAfterPlaneUpdate() {
-		sliceUpdated = true;
+		imageUpdated = true;
 		lastVisibleShape = null; // This ensures an update to the visible region is fired on the next pulse
 	}
 
@@ -408,7 +436,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	 * When finished, it's necessary to call resetMinimumRepaintSpacingMillis() to make sure that
 	 * normal service is resumed.
 	 *
-	 * @param repaintSpacingMillis
+	 * @param repaintSpacingMillis the new minimum time delay between repaints
 	 *
 	 * @see #resetMinimumRepaintSpacingMillis
 	 */
@@ -424,16 +452,6 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	public void resetMinimumRepaintSpacingMillis() {
 		this.minimumRepaintSpacingMillis = -1;
 		imageUpdated = true;
-	}
-
-	private boolean requireThumbnailUpdate() {
-		if (sliceUpdated)
-			return true;
-		if (imageDisplay != null) {
-			return lastDisplayChangeTimestamp != imageDisplay.getLastChangeTimestamp();
-		} else {
-			return false;
-		}
 	}
 
 
@@ -646,15 +664,12 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		if (server == null) {
 			setZPosition(0);
 			setTPosition(0);
+			imgThumbnail.set(null);
 			return;
 		}
 
 		setZPosition(server.nZSlices() / 2);
 		setTPosition(0);
-		updateThumbnail();
-
-		// Reset the suggested color for the scalebar & grid
-		colorOverlaySuggested = null;
 	}
 
 
@@ -700,18 +715,17 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	/**
 	 * Update colorOverlaySuggested from the entire (RGB, i.e. color-transformed) image thumbnail
 	 */
-	private void updateSuggestedOverlayColorFromThumbnail() {
-		if (imgThumbnailRGB == null || QuPathViewerUtils.getMeanBrightnessRGB(imgThumbnailRGB, 0, 0, imgThumbnailRGB.getWidth(), imgThumbnailRGB.getHeight()) > 127)
-			colorOverlaySuggested = ColorToolsAwt.TRANSLUCENT_BLACK;
+	private java.awt.Color calculateOverlayColor() {
+		var img = getRGBThumbnail();
+		if (img == null || QuPathViewerUtils.getMeanBrightnessRGB(img, 0, 0, img.getWidth(), img.getHeight()) > 127)
+			return ColorToolsAwt.TRANSLUCENT_BLACK;
 		else
-			colorOverlaySuggested = ColorToolsAwt.TRANSLUCENT_WHITE;
+			return ColorToolsAwt.TRANSLUCENT_WHITE;
 	}
 
 
 	private java.awt.Color getSuggestedOverlayColor() {
-		if (colorOverlaySuggested == null)
-			updateSuggestedOverlayColorFromThumbnail();
-		return colorOverlaySuggested;
+		return colorOverlaySuggested.getValue();
 	}
 
 	protected Color getSuggestedOverlayColorFX() {
@@ -833,8 +847,8 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		
 		var imageData = getImageData();
 		if (imageData != null) {
-			if (pathOverlay instanceof PixelClassificationOverlay) {
-				var server = ((PixelClassificationOverlay) pathOverlay).getPixelClassificationServer(imageData);
+			if (pathOverlay instanceof PixelClassificationOverlay classificationOverlay) {
+				var server = classificationOverlay.getPixelClassificationServer(imageData);
 				ObservableMeasurementTableData.setPixelLayer(imageData, server);
 			} else
 				ObservableMeasurementTableData.setPixelLayer(imageData, null);
@@ -889,56 +903,6 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 			return;
 		hierarchy.getSelectionModel().setSelectedObject(pathObject, addToSelected);
 	}
-
-	private boolean updateThumbnail() {
-		return updateThumbnail(true);
-	}
-
-	private boolean updateThumbnail(final boolean updateOverlayColor) {
-        this.updateOverlayColor = updateOverlayColor;
-        ImageServer<BufferedImage> server = getServer();
-		if (server == null)
-			return true;
-
-		// Read a thumbnail image
-		try {
-			int z = GeneralTools.clipValue(getZPosition(), 0, server.nZSlices()-1);
-			int t = GeneralTools.clipValue(getTPosition(), 0, server.nTimepoints()-1);
-			BufferedImage imgThumbnail = regionStore.getOrRequestThumbnail(server, z, t);
-			if (imgThumbnail == null) {
-				imgThumbnailRGB = null;
-				return false;
-			}
-			imgThumbnailRGB = createThumbnailRGB(imgThumbnail);
-			thumbnailIsFullImage = imgThumbnailRGB.getWidth() == server.getWidth() && imgThumbnailRGB.getHeight() == server.getHeight();
-			if (updateOverlayColor)
-				colorOverlaySuggested = null;
-			return true;
-		} catch (IOException e) {
-			imgThumbnailRGB = null;
-			colorOverlaySuggested = null;
-			logger.warn("Error requesting thumbnail {}", e.getMessage());
-			return false;
-		}
-	}
-
-	/**
-	 * Create an RGB thumbnail image using the current rendering settings.
-	 * <p>
-	 * Subclasses may choose to override this if a suitable image has been cached already.
-	 * @param imgThumbnail 
-	 * 
-	 * @return
-	 * @throws IOException 
-	 */
-	private BufferedImage createThumbnailRGB(BufferedImage imgThumbnail) throws IOException {
-		ImageRenderer renderer = getRenderer();
-		if (renderer != null)
-			return renderer.applyTransforms(imgThumbnail, null);
-		else
-			return imgThumbnail;
-	}
-	
 	
 	
 	/**
@@ -1241,7 +1205,6 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	 */
 	public void repaintEntireImage() {
 		imageUpdated = true;
-		sliceUpdated = true;
 	}
 
 	/**
@@ -1338,17 +1301,6 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 			updateAffineTransform();
 		}
 
-		// If we need to update the thumbnail, we also need to update the image.
-		// *However*, we want to permit painting as much as we can even if the thumbnail
-		// could not be returned (to avoid freezing the viewer).
-		if (requireThumbnailUpdate()) {
-			imageUpdated = true;
-			sliceUpdated = sliceUpdated & !updateThumbnail();
-			if (imageDisplay != null) {
-				lastDisplayChangeTimestamp = imageDisplay.getLastChangeTimestamp();
-			}
-		}
-
 		// Get region and downsample now (lest they change)
 		var shapeRegion = getDisplayedRegionShape();
 		double downsample = getDownsampleFactor();
@@ -1393,7 +1345,10 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 			fireVisibleRegionChangedEvent(lastVisibleShape);
 		}
 
-		isLoading.set(imageUpdated || overlayUpdated || sliceUpdated);
+		if (imageDisplay != null)
+			lastDisplayChangeTimestamp = imageDisplay.getLastChangeTimestamp();
+		lastPaint = System.currentTimeMillis();
+		isLoading.set(imageUpdated || overlayUpdated);
 
 
 //		timer.stop();
@@ -1433,7 +1388,7 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 
 			float opacity = overlayOptions.getOpacity();
 			Composite previousComposite = gOverlay.getComposite();
-			boolean paintCompletely = thumbnailIsFullImage || !doFasterRepaint;
+			boolean paintCompletely = thumbnailIsFullImage.get() || !doFasterRepaint;
 			if (opacity > 0 || PathPrefs.alwaysPaintSelectedObjectsProperty().get()) {
 				if (opacity < 1) {
 					AlphaComposite composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, opacity);
@@ -1572,7 +1527,16 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		BufferedImage imgThumbnail = regionStore.getOrRequestThumbnail(server, z, t);
 		boolean thumbnailMissing = imgThumbnail == null;
 		if (thumbnailMissing) {
-			imgThumbnail = regionStore.getClosestCachedThumbnail(server, z, t);
+			if (this.imgThumbnail.get() == null) {
+				// If we have *no* thumbnail, then we need to request one and wait
+				imgThumbnail = regionStore.getThumbnail(server, getZPosition(), getTPosition(), true);
+			} else {
+				imgThumbnail = regionStore.getClosestCachedThumbnail(server, z, t);
+			}
+		}
+		// Set the thumbnail to the best one we have (which enables the image overview to update)
+		if (imgThumbnail != null) {
+			this.imgThumbnail.set(imgThumbnail);
 		}
 
 		// Check if we will be painting some background beyond the image edge
@@ -1715,35 +1679,14 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 
 
 	/**
-	 * Get a thumbnail representing the image as displayed by this viewer.
-	 * 
+	 * Get a thumbnail representing the image as displayed by this viewer, if available.
+	 * Note that this may change as z-slices and time points and selected,
+	 * and it is not guaranteed that the thumbnail has yet been loaded.
 	 * @return
 	 */
 	public BufferedImage getThumbnail() {
-		ImageServer<BufferedImage> server = getServer();
-		return server == null ? null : regionStore.getThumbnail(server, getZPosition(), getTPosition(), true);
+		return imgThumbnail.get();
 	}
-
-	/**
-	 * Get thumbnails for all z-slices &amp; time points
-	 * @return
-	 */
-	public List<BufferedImage> getAllThumbnails() {
-		ImageServer<BufferedImage> server = getServer();
-		if (server == null)
-			return Collections.emptyList();
-		int nImages = server.nTimepoints() * server.nZSlices();
-		if (nImages == 1)
-			return Collections.singletonList(regionStore.getThumbnail(server, 0, 0, true));
-		List<BufferedImage> thumbnails = new ArrayList<>(nImages);
-		for (int t = 0; t < server.nTimepoints(); t++) {
-			for (int z = 0; z < server.nZSlices(); z++) {
-				thumbnails.add(regionStore.getThumbnail(server, getZPosition(), getTPosition(), true));
-			}
-		}
-		return thumbnails;
-	}
-
 
 
 	/**
@@ -1754,7 +1697,11 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 	 * @return
 	 */
 	public BufferedImage getRGBThumbnail() {
-		return imgThumbnailRGB;
+		return imgThumbnailRGB.getValue();
+	}
+
+	protected ReadOnlyObjectProperty<BufferedImage> rgbThumbnailProperty() {
+		return imgThumbnailRGB.getReadOnlyProperty();
 	}
 
 	/**
