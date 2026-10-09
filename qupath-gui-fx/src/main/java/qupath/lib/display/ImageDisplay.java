@@ -48,6 +48,7 @@ import qupath.lib.display.ChannelDisplayInfo.ModifiableChannelDisplayInfo;
 import qupath.lib.gui.images.stores.AbstractImageRenderer;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.images.ImageData;
+import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.ImageServerProvider;
@@ -793,10 +794,15 @@ public class ImageDisplay extends AbstractImageRenderer {
 		double downsample = server.getDownsampleForResolution(getPreferredHistogramPyramidLevel(server));
 		var request = RegionRequest.createInstance(server.getPath(), downsample, 0, 0, server.getWidth(), server.getHeight(),
 				server.nZSlices()/2, server.nTimepoints()/2);
-		map.put(request, server.readRegion(request));
-		// Before v0.6.0 we tried to read all z-slices and time points - but this could be much too expensive
-		// (and also require too much memory)
-		return map;
+		var cache = ImageCache.getSharedInstance();
+		try {
+			map.put(request, cache.requestImageTile(server, request).get());
+			// Before v0.6.0 we tried to read all z-slices and time points - but this could be much too expensive
+			// (and also require too much memory)
+			return map;
+		} catch (Exception e) {
+			throw new IOException(e);
+		}
 	}
 
     /**

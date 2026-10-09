@@ -1054,6 +1054,10 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 
 		isLoading.set(true);
 
+		// Important to reset thumbnail, so there are no attempts to render it
+		// before the ImageDisplay is updated
+		imgThumbnail.set(null);
+
 		// We want to stop caching the hierarchy
 		overlays.getHierarchyOverlay().resetImageData();
 
