@@ -26,6 +26,7 @@ package qupath.lib.gui.images.stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.AwtTools;
+import qupath.lib.common.ThreadTools;
 import qupath.lib.images.cache.GenericImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
@@ -92,18 +93,6 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 		}
 	}
 
-	/**
-	 * Similar to paintRegion, but wait until all the tiles have arrived (or abort if it is taking too long)
-	 *
-	 * @param server
-	 * @param g
-	 * @param clipShapeVisible
-	 * @param zPosition
-	 * @param tPosition
-	 * @param downsampleFactor
-	 * @param imageDisplay
-	 * @param timeoutMilliseconds Timeout after which a request is made from the PathImageServer directly, rather than waiting for tile requests.
-	 */
 	@Override
 	@SuppressWarnings("unchecked")
 	public boolean paintRegionCompletely(ImageServer<BufferedImage> server, Graphics g, Shape clipShapeVisible, int zPosition, int tPosition, double downsampleFactor, ImageRenderer imageDisplay, long timeoutMilliseconds) {
@@ -241,7 +230,13 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			if (img == null) {
 				// Check the tile isn't just empty
 				if (!getCache().containsKey(request)) {
-					requestQueue.add(new Request(server, request));
+					// Don't keep piling up new requests, because they might not all be needed
+					// (e.g. if the viewer is scrolling quickly through z-slices, requests might become irrelevant).
+					// Only add requests up to the desired parallelism, and rely upon future repaint pulses
+					// to eventually catch up if the viewer remains static.
+					if (requestQueue.size() < ThreadTools.getParallelism()) {
+						requestQueue.add(new Request(server, request));
+					}
 					isComplete = false;
 				}
 				continue;
@@ -261,10 +256,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				} else {
 					// Apply transforms, trying to reuse temp image
 					// Note: this assumes pixels can't be transparent
-					if (imgTemp != null && (imgTemp.getWidth() != img.getWidth() || imgTemp.getHeight() != img.getHeight()))
-						imgTemp = imageDisplay.applyTransforms(img, null);
-					else
-						imgTemp = imageDisplay.applyTransforms(img, imgTemp);
+					imgTemp = applyRenderer(img, imageDisplay, imgTemp);
 				}
 				img = imgTemp;
 			}
@@ -275,6 +267,13 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			}
 		}
 		return isComplete;
+	}
+
+	private static BufferedImage applyRenderer(BufferedImage img, ImageRenderer renderer, BufferedImage imgTemp) {
+		if (imgTemp == null || imgTemp.getWidth() != img.getWidth() || imgTemp.getHeight() != img.getHeight())
+			return renderer.applyTransforms(img, imgTemp);
+		else
+			return renderer.applyTransforms(img, null);
 	}
 
 	private static BufferedImage toRGB(BufferedImage img, ImageRenderer renderer) {
