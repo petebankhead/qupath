@@ -1528,10 +1528,24 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 		boolean thumbnailMissing = imgThumbnail == null;
 		if (thumbnailMissing) {
 			if (this.imgThumbnail.get() == null) {
-				// If we have *no* thumbnail, then we need to request one and wait
+				// If we have *no* thumbnail for any z-slice or time point, then we need to request one and wait
 				imgThumbnail = regionStore.getThumbnail(server, getZPosition(), getTPosition(), true);
 			} else {
-				imgThumbnail = regionStore.getClosestCachedThumbnail(server, z, t);
+				// If we have a thumbnail for another slice, use the closest one and return -
+				// we'll only try the full repaint once the thumbnail for the current slice is available.
+				// This helps avoid making requests for too many (non-thumbnail) tiles when we're quickly browsing
+				// through a stack.
+				var imgThumbnailClosest = regionStore.getClosestCachedThumbnail(server, z, t);
+				if (imageDisplay != null) {
+					imgThumbnailClosest = imageDisplay.applyTransforms(imgThumbnailClosest, null);
+				}
+				gBuffered.drawImage(imgThumbnailClosest, 0, 0, getServerWidth(), getServerHeight(), null);
+				gBuffered.dispose();
+				var gammaOp = getGammaOp();
+				if (gammaOp != null) {
+					gammaOp.filter(imgBuffer.getRaster(), imgBuffer.getRaster());
+				}
+				return false;
 			}
 		}
 		// Set the thumbnail to the best one we have (which enables the image overview to update)
