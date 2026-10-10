@@ -5,7 +5,6 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Policy;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.Weigher;
-import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.common.ThreadTools;
@@ -18,27 +17,41 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 
+/**
+ * A generic cache to store image regions (tiles).
+ * This also manages a thread pool that enables tiles to be requested asynchronously.
+ *
+ * @param <T> generic parameter for the image type
+ * @since v0.8.0
+ */
 public class GenericImageCache<T> {
 
     private static final Logger logger = LoggerFactory.getLogger(GenericImageCache.class);
 
+    private static final AtomicLong counter = new AtomicLong(0L);
     private static final long LOWEST_MAX_SIZE_BYTES = 1024*1024*16; // 16 MB
+
+    private final Thread shutdownHook;
+    private final String threadName;
     private final AsyncCache<RegionRequest, T> cache;
 
     private boolean isClosed = false;
 
-    private final ExecutorService pool = Executors.newFixedThreadPool(Math.max(4, ThreadTools.getParallelism() * 2),
-            ThreadTools.createThreadFactory("tile-cache", true));
+    private final ExecutorService pool;
 
-    GenericImageCache(final SizeEstimator<T> sizeEstimator, final long maxSizeBytes) {
+    protected GenericImageCache(final SizeEstimator<T> sizeEstimator, final long maxSizeBytes, final int parallelism) {
+        threadName = getThreadNames();
+        pool = Executors.newFixedThreadPool(Math.max(4, parallelism),
+                ThreadTools.createThreadFactory(threadName, true));
+
         // Because Caffeine uses integer weights, and we sometimes have *very* large images, we convert our size estimates KB
         Weigher<RegionRequest, T> weigher = (var r, var t) -> (int)Long.min(Integer.MAX_VALUE, bytesToKB(sizeEstimator.getApproxImageSize(t)));
         long maxWeight = bytesToKB(Long.max(LOWEST_MAX_SIZE_BYTES, maxSizeBytes));
@@ -52,7 +65,13 @@ public class GenericImageCache<T> {
                 .executor(pool)
                 .initialCapacity(1024)
                 .buildAsync();
-        Runtime.getRuntime().addShutdownHook(new Thread(this::close));
+
+        shutdownHook = new Thread(this::closeImpl);
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
+    }
+
+    private String getThreadNames() {
+        return "tile-cache-[" + counter.getAndIncrement() + "]";
     }
 
     private void handleEviction(RegionRequest key, T value, RemovalCause cause) {
@@ -61,24 +80,6 @@ public class GenericImageCache<T> {
         } else {
             logger.trace("Cached tile removed due to {}: {}", cause, key);
         }
-    }
-
-    public void setMaxSize(long newMaxSizeBytes) {
-        long size;
-        if (newMaxSizeBytes <= LOWEST_MAX_SIZE_BYTES) {
-            logger.warn("Invalid cache size {} bytes. This will be updated to {} bytes", newMaxSizeBytes, LOWEST_MAX_SIZE_BYTES);
-            size = LOWEST_MAX_SIZE_BYTES;
-        } else {
-            size = newMaxSizeBytes;
-        }
-        cache.synchronous().policy().eviction().ifPresent(evictionPolicy -> evictionPolicy.setMaximum(bytesToKB(size)));
-    }
-
-    public double estimateLoad() {
-        var eviction = this.cache.synchronous().policy().eviction().orElse(null);
-        if (eviction == null || eviction.weightedSize().isEmpty())
-            return Double.NaN;
-        return (double)eviction.weightedSize().getAsLong() / eviction.getMaximum();
     }
 
 
@@ -90,43 +91,131 @@ public class GenericImageCache<T> {
         return Long.max(1, Math.round(bytes / 1024.0));
     }
 
+    private static long kbToBytes(long bytes) {
+        return bytes * 1024;
+    }
 
     /**
      * Create a new image cache.
      * @param sizeEstimator an estimator that can calculate the size (in bytes) of
      * @param maxSizeBytes the maximum permitted size of the cache, in bytes.
-     * @return
-     * @param <T>
+     * @param parallelism the number of parallel threads to use for tile requests
+     * @return a new cache
+     * @param <T> generic image parameter
      */
-    public static <T> GenericImageCache<T> create(SizeEstimator<T> sizeEstimator, long maxSizeBytes) {
-        return new GenericImageCache<>(sizeEstimator, maxSizeBytes);
+    public static <T> GenericImageCache<T> create(SizeEstimator<T> sizeEstimator, long maxSizeBytes, int parallelism) {
+        return new GenericImageCache<>(sizeEstimator, maxSizeBytes, parallelism);
     }
 
 
     /**
      * Get the tile cache size, in bytes.
-     * Image tiles larger than this cannot be cached.
-     * @return
+     * <p>
+     * When tiles an attempt is made to cache new tiles that would result in the cache size being exceeded,
+     * older tiles will be discarded.
+     * @return the maximum number of bytes available to store image tiles
+     * @see #setMaxSizeBytes(long)
      */
     public long getMaxSizeBytes() {
-        return cache.synchronous().policy().eviction().map(Policy.Eviction::getMaximum).orElse(0L);
+        return kbToBytes(cache.synchronous().policy().eviction().map(Policy.Eviction::getMaximum).orElse(0L));
     }
 
+    /**
+     * Set the tile cache size, in bytes.
+     * <p>
+     * When tiles an attempt is made to cache new tiles that would result in the cache size being exceeded,
+     * older tiles will be discarded.
+     * <p>
+     * <b>Note:</b> This is not a strict limit that is enforced precisely.
+     * Rather, it is based upon an estimate of the size of each tile, calculated using a {@link SizeEstimator}.
+     * Internally, bytes are rescaled to kilobytes to avoid overflow errors arising from the cache implementation's use
+     * of integers.
+     * @return the maximum number of bytes available to store image tiles
+     * @see #getMaxSizeBytes()
+     */
+    public void setMaxSizeBytes(long newMaxSizeBytes) {
+        long size;
+        if (newMaxSizeBytes <= LOWEST_MAX_SIZE_BYTES) {
+            logger.warn("Invalid cache size {} bytes. This will be updated to {} bytes", newMaxSizeBytes, LOWEST_MAX_SIZE_BYTES);
+            size = LOWEST_MAX_SIZE_BYTES;
+        } else {
+            size = newMaxSizeBytes;
+        }
+        cache.synchronous().policy().eviction().ifPresent(evictionPolicy -> evictionPolicy.setMaximum(bytesToKB(size)));
+    }
+
+    /**
+     * Get a (snapshot) estimate of the current cache size, in terms of bytes.
+     * The cache will evict entries when necessary, in an effort to stop this exceeding {@link #getMaxSizeBytes()}.
+     * @return the current cache size, or -1 if the size could not be calculated.
+     * @see #getMaxSizeBytes()
+     * @see #getTileCount()
+     */
+    public long getCurrentSizeBytes() {
+        var eviction = this.cache.synchronous().policy().eviction().orElse(null);
+        if (eviction == null || eviction.weightedSize().isEmpty())
+            return -1L;
+        return kbToBytes(eviction.weightedSize().getAsLong());
+    }
+
+    /**
+     * Estimate a the fill ratio, which is a value between 0 (empty cache) and 1 (full cache).
+     * It is effectively {@code getCurrentSizeBytes() / getMaxSizeBytes()}.
+     * @return a current fill ratio snapshot, or NaN if a fill ratio could not be calculated.
+     * @implNote This is not clipped to be strictly between 0 and 1, to assist with debugging
+     *         (in case the cache temporarily exceeds its requested maximum size, before tiles have been evicted).
+     */
+    public double getFillRatio() {
+        var eviction = this.cache.synchronous().policy().eviction().orElse(null);
+        if (eviction == null || eviction.weightedSize().isEmpty())
+            return Double.NaN;
+        return (double)eviction.weightedSize().getAsLong() / eviction.getMaximum();
+    }
+
+    /**
+     * Get a tile if it is currently present in the cache, without fetching the tile otherwise.
+     * @param request the request to search for
+     * @return the tile, or null if it is either not found or has a value of null
+     */
     public T getIfPresent(final RegionRequest request) {
         var future = cache.getIfPresent(request);
         return future == null ? null : future.getNow(null);
     }
 
-    public ConcurrentMap<RegionRequest, T> getCache() {
+    /**
+     * Get a concurrent map view of this cache.
+     * <p>
+     * <b>Important!</b> This must not be modified from within any computation that is also updating the cache.
+     * For example, it is not possible to request a large region from the cache, which then splits the request into
+     * smaller regions that are themselves added to the cache.
+     * It is generally better to avoid relying upon the map, in favor of working with the main cache methods.
+     * @return a view of the cache as a concurrent map
+     */
+    public ConcurrentMap<RegionRequest, T> asMap() {
         return cache.synchronous().asMap();
     }
 
-    public long getCacheSize() {
+    /**
+     * Get an estimate of the number of tiles currently stored within the cache.
+     * Note that this can include empty tiles, if these are returned by the {@link ImageServer}.
+     * It is often more useful to call {@link #getCurrentSizeBytes()} or {@link #getFillRatio()}.
+     * @return an estimate of the number of tiles in the cache
+     */
+    public long getTileCount() {
         return cache.synchronous().estimatedSize();
     }
 
-    public Set<RegionRequest> getKeys() {
-        return cache.synchronous().asMap().keySet();
+    /**
+     * Query if the map currently contains a specific key.
+     * <p>
+     * This can be used to check if a {@code null} returned by {@link #getIfPresent(RegionRequest)} indicates
+     * an empty tile or that the tile was not cached (under the assumption the corresponding cache entry has not
+     * changed between calls to each method).
+     * @param request the key to check
+     * @return true if the map contains the key, false otherwise
+     */
+    public boolean containsKey(final RegionRequest request) {
+        return cache.synchronous().asMap().containsKey(request);
     }
 
     /**
@@ -152,12 +241,12 @@ public class GenericImageCache<T> {
 
 
     /**
-     * Submit an image tile request, returning a future that can be used to get the tile.
+     * Submit an image tile request, returning a completable future that can be used to get the tile.
      * @param server
      * @param request
      * @return
      */
-    public Future<T> requestImageTile(final ImageServer<T> server, final RegionRequest request) {
+    public CompletableFuture<T> requestImageTile(final ImageServer<T> server, final RegionRequest request) {
         return isClosed ? cache.getIfPresent(request) : cache.get(request, r -> readTile(server, r));
     }
 
@@ -188,13 +277,13 @@ public class GenericImageCache<T> {
 
     /**
      * Clear the cache and optionally stop any pending requests.
-     * @param cancelRunning cancel any tasks that are currently fetching tiles
+     * @param cancelPending cancel any tasks that are currently fetching tiles
      */
-    public synchronized void clearCache(final boolean cancelRunning) {
-        if (cancelRunning) {
+    public synchronized void clearCache(final boolean cancelPending) {
+        if (cancelPending) {
             var map = cache.asMap();
             for (var future : map.values()) {
-                future.cancel(cancelRunning);
+                future.cancel(cancelPending);
             }
         }
         cache.synchronous().invalidateAll();
@@ -215,30 +304,49 @@ public class GenericImageCache<T> {
         cache.synchronous().cleanUp();
     }
 
+    /**
+     * Remove all entries from the cache that have the specified server path in their requests.
+     * @param serverPath the value of {@link RegionRequest#getPath()}.
+     */
     public synchronized void clearCacheForServer(final String serverPath) {
         clearCache(r -> Objects.equals(serverPath, r.getPath()));
     }
 
+    /**
+     * Remove all entries from the cache that overlap with a specified region.
+     * This makes use of {@link RegionRequest#overlapsRequest(RegionRequest)}.
+     * @param request the region
+     */
     public void clearCacheForRequestOverlap(final RegionRequest request) {
         clearCache(r -> r.overlapsRequest(request));
     }
 
-
+    /**
+     * Close the cache. This attempts an orderly shutdown of the associated thread pool,
+     * clears all tiles. and cancels any pending tiles.
+     */
     public void close() {
+        closeImpl();
+        Runtime.getRuntime().removeShutdownHook(shutdownHook);
+    }
+
+    private void closeImpl() {
         // Try to cancel all workers
         isClosed = true;
         clearCache();
-        pool.shutdown();
-        try {
-            if (!pool.awaitTermination(10, TimeUnit.SECONDS)) {
-                logger.warn("Timed out waiting for pool to shut down");
-                var futures = pool.shutdownNow();
-                if (!futures.isEmpty()) {
-                    logger.warn("Number of shut down tasks in pool: {}", futures.size());
+        if (!pool.isShutdown()) {
+            pool.shutdown();
+            try {
+                if (!pool.awaitTermination(10, TimeUnit.SECONDS)) {
+                    logger.warn("Timed out waiting for pool to shut down");
+                    var futures = pool.shutdownNow();
+                    if (!futures.isEmpty()) {
+                        logger.warn("Number of shut down tasks in pool: {}", futures.size());
                     }
+                }
+            } catch (InterruptedException e) {
+                logger.warn("Interrupted while waiting for pool to shutdown");
             }
-        } catch (InterruptedException e) {
-            logger.warn("Interrupted while waiting for pool to shutdown");
         }
     }
 

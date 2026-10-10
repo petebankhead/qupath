@@ -42,7 +42,7 @@ public class ImageRegionStoreFactory {
 
 	static {
 		initTileCacheSizeBytes(ImageCache.getSharedInstance());
-		ImageServerProvider.setCache(ImageCache.getSharedInstance().getCache(), BufferedImage.class);
+		ImageServerProvider.setCache(ImageCache.getSharedInstance().asMap(), BufferedImage.class);
 	}
 
 	/**
@@ -88,7 +88,7 @@ public class ImageRegionStoreFactory {
 		}
 		long tileCacheSize = Math.round(maxAvailable * (percentage / 100.0));
 		logger.info(String.format("Setting tile cache size to %.2f MB (%.1f%% max memory)", tileCacheSize/(1024.*1024.), percentage));
-		cache.setMaxSize(tileCacheSize);
+		cache.setMaxSizeBytes(tileCacheSize);
 	}
 	
 }

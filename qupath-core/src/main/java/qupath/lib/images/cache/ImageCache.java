@@ -2,6 +2,7 @@ package qupath.lib.images.cache;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import qupath.lib.common.ThreadTools;
 
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBuffer;
@@ -16,8 +17,8 @@ public class ImageCache extends GenericImageCache<BufferedImage> {
 
     private static final ImageCache INSTANCE = create(getDefaultMaxSizeBytes());
 
-    private ImageCache(long maxSizeBytes) {
-        super(ImageCache::approxBufferedImageSize, maxSizeBytes);
+    private ImageCache(int parallelism, long maxSizeBytes) {
+        super(ImageCache::approxBufferedImageSize, maxSizeBytes, parallelism);
     }
 
     /**
@@ -30,7 +31,7 @@ public class ImageCache extends GenericImageCache<BufferedImage> {
      * @return a new image cache
      */
     public static ImageCache create(long maxSizeBytes) {
-        return new ImageCache(maxSizeBytes);
+        return new ImageCache(getDefaultParallelism(), maxSizeBytes);
     }
 
     /**
@@ -67,6 +68,11 @@ public class ImageCache extends GenericImageCache<BufferedImage> {
             return 0;
         DataBuffer data = img.getRaster().getDataBuffer();
         return (long)data.getSize() * (long)(DataBuffer.getDataTypeSize(data.getDataType())/8) * data.getNumBanks();
+    }
+
+
+    private static int getDefaultParallelism() {
+        return Math.max(4, ThreadTools.getParallelism() * 2);
     }
 
 }

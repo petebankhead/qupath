@@ -131,7 +131,7 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	public T getClosestCachedThumbnail(ImageServer<T> server, int zPosition, int tPosition) {
 		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
 		var dist = new PlaneDistance(request.getZ(), request.getT());
-		return cache.getKeys().stream().filter(r -> sameRegionIgnoringPlane(request, r))
+		return cache.asMap().keySet().stream().filter(r -> sameRegionIgnoringPlane(request, r))
 				.sorted(Comparator.comparingDouble(dist::distance))
 				.map(this::getIfPresent)
 				.filter(Objects::nonNull)
@@ -163,11 +163,11 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 
 	
 	public ConcurrentMap<RegionRequest, T> getCache() {
-		return cache.getCache();
+		return cache.asMap();
 	}
 
 	public long getCacheSize() {
-		return cache.getCacheSize();
+		return cache.getTileCount();
 	}
 
 
