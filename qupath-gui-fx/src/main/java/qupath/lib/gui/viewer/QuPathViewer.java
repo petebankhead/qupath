@@ -1540,16 +1540,18 @@ public class QuPathViewer implements PathObjectHierarchyListener, PathObjectSele
 				// This helps avoid making requests for too many (non-thumbnail) tiles when we're quickly browsing
 				// through a stack.
 				var imgThumbnailClosest = regionStore.getClosestCachedThumbnail(server, z, t);
-				if (imageDisplay != null) {
-					imgThumbnailClosest = imageDisplay.applyTransforms(imgThumbnailClosest, null);
+				if (imgThumbnailClosest != null) {
+					if (imageDisplay != null) {
+						imgThumbnailClosest = imageDisplay.applyTransforms(imgThumbnailClosest, null);
+					}
+					gBuffered.drawImage(imgThumbnailClosest, 0, 0, getServerWidth(), getServerHeight(), null);
+					gBuffered.dispose();
+					var gammaOp = getGammaOp();
+					if (gammaOp != null) {
+						gammaOp.filter(imgBuffer.getRaster(), imgBuffer.getRaster());
+					}
+					return false;
 				}
-				gBuffered.drawImage(imgThumbnailClosest, 0, 0, getServerWidth(), getServerHeight(), null);
-				gBuffered.dispose();
-				var gammaOp = getGammaOp();
-				if (gammaOp != null) {
-					gammaOp.filter(imgBuffer.getRaster(), imgBuffer.getRaster());
-				}
-				return false;
 			}
 		}
 		// Set the thumbnail to the best one we have (which enables the image overview to update)
