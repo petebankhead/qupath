@@ -86,7 +86,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				// We expect slightly better viewer performance when rapidly zooming/panning
 				// if we prioritize the most recent requests.
 				var next = requestQueue.takeLast();
-				getCache().requestImageTile(next.server(), next.request());
+				getCache().requestImageTile(next.request(), next.server());
 			}
 		} catch (InterruptedException e) {
 			logger.warn("Request submission interrupted", e);
@@ -107,7 +107,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				continue;
 			}
 
-			Future<BufferedImage> future = getCache().requestImageTile(server, request);
+			Future<BufferedImage> future = getCache().requestImageTile(request, server);
 
 			// If we have an image, paint it & record coordinates
 			if (future.isDone()) {

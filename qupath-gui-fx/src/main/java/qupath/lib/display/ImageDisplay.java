@@ -51,7 +51,6 @@ import qupath.lib.images.ImageData;
 import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
-import qupath.lib.images.servers.ImageServerProvider;
 import qupath.lib.images.servers.PixelType;
 import qupath.lib.regions.RegionRequest;
 
@@ -796,7 +795,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 				server.nZSlices()/2, server.nTimepoints()/2);
 		var cache = ImageCache.getSharedInstance();
 		try {
-			map.put(request, cache.requestImageTile(server, request).get());
+			map.put(request, cache.requestImageTile(request, server).get());
 			// Before v0.6.0 we tried to read all z-slices and time points - but this could be much too expensive
 			// (and also require too much memory)
 			return map;

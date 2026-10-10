@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.BufferedImageTools;
 import qupath.lib.color.ColorModelFactory;
+import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.regions.RegionRequest;
 
@@ -157,7 +158,7 @@ public abstract class AbstractTileableImageServer extends AbstractImageServer<Bu
 		var request = tileRequest.getRegionRequest();
 		if (emptyTiles.contains(tileRequest))
 			return getEmptyTile(tileRequest.getTileWidth(), tileRequest.getTileHeight());
-		
+
 		var cache = getCache();
 		if (cache != null) {
 			var img = cache.getOrDefault(request, null);
@@ -173,6 +174,8 @@ public abstract class AbstractTileableImageServer extends AbstractImageServer<Bu
 			emptyTiles.add(tileRequest);
 			return getEmptyTile(img.getWidth(), img.getHeight(), true);
 		}
+		// Try to ensure
+		ImageCache.getSharedInstance().put(request, img);
 		return img;
 	}
 	
@@ -296,14 +299,14 @@ public abstract class AbstractTileableImageServer extends AbstractImageServer<Bu
 						if (raster == null) {
 							raster = imgTile.getRaster().createCompatibleWritableRaster(tileWidth, tileHeight);
 							colorModel = imgTile.getColorModel();
-							alphaPremultiplied = imgTile.isAlphaPremultiplied();							
+							alphaPremultiplied = imgTile.isAlphaPremultiplied();
 						}
 						// Insert the tile into the raster
 						if (dx >= raster.getWidth() ||
 								dy >= raster.getHeight()
 								)
 							continue;
-						
+
 						copyPixels(imgTile.getRaster(), dx, dy, raster);
 					}
 				}

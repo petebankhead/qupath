@@ -19,10 +19,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -45,15 +46,15 @@ public class GenericImageCache<T> {
 
     private boolean isClosed = false;
 
-    private final ExecutorService pool;
+    private final ThreadPoolExecutor pool;
 
     protected GenericImageCache(final SizeEstimator<T> sizeEstimator, final long maxSizeBytes, final int parallelism) {
         threadName = getThreadNames();
-        pool = Executors.newFixedThreadPool(Math.max(4, parallelism),
+        pool = (ThreadPoolExecutor)Executors.newFixedThreadPool(Math.max(4, parallelism),
                 ThreadTools.createThreadFactory(threadName, true));
 
         // Because Caffeine uses integer weights, and we sometimes have *very* large images, we convert our size estimates KB
-        Weigher<RegionRequest, T> weigher = (var r, var t) -> (int)Long.min(Integer.MAX_VALUE, bytesToKB(sizeEstimator.getApproxImageSize(t)));
+        Weigher<RegionRequest, T> weigher = (var _, var t) -> (int)Long.min(Integer.MAX_VALUE, bytesToKB(sizeEstimator.getApproxImageSize(t)));
         long maxWeight = bytesToKB(Long.max(LOWEST_MAX_SIZE_BYTES, maxSizeBytes));
         this.cache = Caffeine.newBuilder()
                 .weigher(weigher)
@@ -266,13 +267,34 @@ public class GenericImageCache<T> {
 
 
     /**
-     * Submit an image tile request, returning a completable future that can be used to get the tile.
-     * @param server
-     * @param request
-     * @return
+     * Submit an image tile request for an image server, returning a completable future that can be used to get the tile.
+     *
+     * @param request the request; note that {@link RegionRequest#getPath()} should make {@link ImageServer#getPath()}
+     *                and uniquely distinguish the server providing these tiles.
+     *                If the server should be required to return <i>different</i> tiles, then its path needs to change.
+     * @param server  the server that can provide the tile
+     * @return a completable future that can be queries for the tile
      */
-    public CompletableFuture<T> requestImageTile(final ImageServer<T> server, final RegionRequest request) {
-        return isClosed ? cache.getIfPresent(request) : cache.get(request, r -> readTile(server, r));
+    public CompletableFuture<T> requestImageTile(final RegionRequest request, final ImageServer<T> server) {
+        return requestImageTile(request, r -> readTile(server, r));
+    }
+
+    /**
+     * Submit an image tile request using an arbitrary function, returning a completable future that can be used to get the tile.
+     * <p>
+     * This exists to allow tiles to be cached without necessarily creating an {@link ImageServer}, for example
+     * to apply (possibly expensive) transforms to an image.
+     *
+     * @param request the request; note that {@link RegionRequest#getPath()} must be unique for the function, similar to
+     *                how it should be unique for an {@link ImageServer}.
+     * @param function the function used to compute the tile
+     * @return a completable future that can be queries for the tile
+     */
+    public CompletableFuture<T> requestImageTile(final RegionRequest request, Function<RegionRequest, T> function) {
+        if (isClosed) {
+            return cache.getIfPresent(request);
+        }
+        return cache.get(request, function);
     }
 
     private T readTile(ImageServer<T> server, RegionRequest request) {
@@ -373,6 +395,19 @@ public class GenericImageCache<T> {
                 logger.warn("Interrupted while waiting for pool to shutdown");
             }
         }
+    }
+
+    /**
+     * Put the tile in the cache, replacing any existing entry.
+     * @param request the request, which is used as a key
+     * @param tile the tile to put
+     */
+    public void put(final RegionRequest request, final T tile) {
+        var map = asMap();
+        if (map.containsKey(request)) {
+            return;
+        }
+        cache.put(request, CompletableFuture.completedFuture(tile));
     }
 
 }

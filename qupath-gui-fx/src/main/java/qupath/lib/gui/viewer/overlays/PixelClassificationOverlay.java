@@ -480,7 +480,7 @@ public class PixelClassificationOverlay extends AbstractImageOverlay  {
                 var hierarchy = imageData == null ? null : imageData.getHierarchy();
                 try {
 					// Since v0.8.0, we must request the tile via the cache - the ImageServer can't cache it otherwise
-					ImageCache.getSharedInstance().requestImageTile(classifierServer, tile.getRegionRequest()).get();
+					ImageCache.getSharedInstance().requestImageTile(tile.getRegionRequest(), classifierServer).get();
 
                 	repaintAllViewers();
                     var channelType = classifierServer.getMetadata().getChannelType();

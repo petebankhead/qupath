@@ -168,14 +168,14 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	 */
 	public T getOrRequestThumbnail(ImageServer<T> server, int zPosition, int tPosition) {
 		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
-		var future = cache.requestImageTile(server, request);
+		var future = cache.requestImageTile(request, server);
 		return future.isDone() ? future.resultNow() : null; // TODO: Consider possible failures
 	}
 
 	@Override
 	public T getThumbnail(ImageServer<T> server, int zPosition, int tPosition, boolean addToCache) {
 		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
-		var future = cache.requestImageTile(server, request);
+		var future = cache.requestImageTile(request, server);
 		try {
 			return future.get();
 		} catch (Exception e) {
