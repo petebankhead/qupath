@@ -268,7 +268,7 @@ class QuPathViewerUtils {
         RegionRequest request = ImageRegionStoreHelpers.getTileRequest(server, xx, yy, viewer.getDownsampleFactor(),
                 z, t);
         if (request != null) {
-            BufferedImage img = regionStore.getCachedTile(server, request);
+            BufferedImage img = regionStore.getCache().getIfPresent(request);
             int xi = 0, yi = 0;
             if (img == null) {
                 // Try getting a value from the thumbnail for the whole image

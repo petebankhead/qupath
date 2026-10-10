@@ -23,8 +23,8 @@
 
 package qupath.lib.gui.images.stores;
 
+import qupath.lib.images.cache.GenericImageCache;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.regions.RegionRequest;
 
 /**
  * Interface to define a store for image tiles.
@@ -37,14 +37,8 @@ interface ImageRegionStore<T> {
 
 	T getCachedThumbnail(ImageServer<T> server, int zPosition, int tPosition);
 
-	T getCachedTile(ImageServer<T> server, RegionRequest request);
-
 	T getThumbnail(ImageServer<T> server, int zPosition, int tPosition, boolean addToCache);
 
-	void clearCacheForServer(ImageServer<T> server);
-
-	void clearCacheForRequestOverlap(RegionRequest request);
-
-	void close();
+	GenericImageCache<T> getCache();
 
 }

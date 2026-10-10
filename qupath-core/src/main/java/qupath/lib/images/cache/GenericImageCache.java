@@ -145,6 +145,31 @@ public class GenericImageCache<T> {
     }
 
     /**
+     * Set the cache size as a percentage of the maximum available memory.
+     * If this is outside the range 10-90%, it will be clipped to be within that range.
+     * @param percentage the percentage of RAM to use for caching; this should be between 10 and 90.
+     */
+    public void setMaxSizeByPercent(double percentage) {
+        // Try to compute a sensible value...
+        Runtime rt = Runtime.getRuntime();
+        long maxAvailable = rt.maxMemory(); // Max available memory
+        if (maxAvailable == Long.MAX_VALUE) {
+            logger.warn("No inherent maximum memory set - for caching purposes, will assume 64 GB");
+            maxAvailable = 64L * 1024L * 1024L * 1024L;
+        }
+        if (percentage < 10) {
+            logger.warn("At least 10% of available memory needs to be used for tile caching (you requested {}%)", percentage);
+            percentage = 10;
+        } else if (percentage > 90) {
+            logger.warn("No more than 90% of available memory can be used for tile caching (you requested {}%)", percentage);
+            percentage = 90;
+        }
+        long tileCacheSize = Math.round(maxAvailable * (percentage / 100.0));
+        logger.info(String.format("Setting tile cache size to %.2f MB (%.1f%% max memory)", tileCacheSize/(1024.*1024.), percentage));
+        setMaxSizeBytes(tileCacheSize);
+    }
+
+    /**
      * Get a (snapshot) estimate of the current cache size, in terms of bytes.
      * The cache will evict entries when necessary, in an effort to stop this exceeding {@link #getMaxSizeBytes()}.
      * @return the current cache size, or -1 if the size could not be calculated.

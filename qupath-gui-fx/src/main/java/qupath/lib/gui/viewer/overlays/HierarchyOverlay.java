@@ -478,7 +478,7 @@ public class HierarchyOverlay extends AbstractOverlay {
 	 */
 	public void clearCachedOverlay() {
 		if (regionStore != null && overlayServer != null)
-			regionStore.clearCacheForServer(overlayServer);
+			regionStore.getCache().clearCacheForServer(overlayServer.getPath());
 	}
 	
 	/**
@@ -487,7 +487,7 @@ public class HierarchyOverlay extends AbstractOverlay {
 	 */
 	public void clearCachedOverlayForRegion(ImageRegion region) {
 		if (regionStore != null && overlayServer != null)
-			regionStore.clearCacheForRequestOverlap(RegionRequest.createInstance(overlayServer.getPath(), 1, region));
+			regionStore.getCache().clearCacheForRequestOverlap(RegionRequest.createInstance(overlayServer.getPath(), 1, region));
 	}
 
 	

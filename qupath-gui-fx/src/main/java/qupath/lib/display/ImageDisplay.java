@@ -950,8 +950,7 @@ public class ImageDisplay extends AbstractImageRenderer {
 		// If we don't have anything, search the main cache
 		if (images.isEmpty()) {
 			double downsample = server.getDownsampleForResolution(server.nResolutions()-1);
-			var cache = ImageServerProvider.getCache(BufferedImage.class);
-			cache.entrySet()
+			ImageCache.getSharedInstance().asMap().entrySet()
 					.stream()
 					.filter(e -> e.getKey().getPath().equals(server.getPath()) &&
 							e.getKey().getDownsample() == downsample)

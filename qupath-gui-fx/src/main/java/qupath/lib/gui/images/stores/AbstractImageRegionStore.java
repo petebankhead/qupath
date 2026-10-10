@@ -32,10 +32,7 @@ import qupath.lib.images.servers.ImageServer;
 import qupath.lib.regions.RegionRequest;
 
 import java.util.Comparator;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Future;
 
 
 /**
@@ -161,46 +158,6 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 				r1.getWidth() == r2.getWidth() && r1.getHeight() == r2.getHeight();
 	}
 
-	
-	public ConcurrentMap<RegionRequest, T> getCache() {
-		return cache.asMap();
-	}
-
-	public long getCacheSize() {
-		return cache.getTileCount();
-	}
-
-
-	@Override
-	public T getCachedTile(ImageServer<T> server, RegionRequest request) {
-		return getIfPresent(request);
-	}	
-	
-	/**
-	 * Get a map of all cached tiles pertaining to a specific ImageServer.
-	 * @param server
-	 * @return
-	 */
-	public Map<RegionRequest, T> getCachedTilesForServer(ImageServer<T> server) {
-		return cache.getCachedTilesForServer(server.getPath());
-	}	
-	
-	
-	private static boolean isPyramidalImageServer(ImageServer<?> server) {
-		return server.nResolutions() > 1;
-	}
-	
-
-	/**
-	 * Submit an image tile request, returning a future that can be used to get the tile.
-	 * @param server
-	 * @param request
-	 * @return
-	 */
-	protected Future<T> requestImageTile(final ImageServer<T> server, final RegionRequest request) {
-		return cache.requestImageTile(server, request);
-	}
-
 
 	/**
 	 * Get a thumbnail image if it is cached, otherwise request it and return null.
@@ -211,14 +168,14 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 	 */
 	public T getOrRequestThumbnail(ImageServer<T> server, int zPosition, int tPosition) {
 		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
-		var future = requestImageTile(server, request);
+		var future = cache.requestImageTile(server, request);
 		return future.isDone() ? future.resultNow() : null; // TODO: Consider possible failures
 	}
 
 	@Override
 	public T getThumbnail(ImageServer<T> server, int zPosition, int tPosition, boolean addToCache) {
 		RegionRequest request = getThumbnailRequest(server, zPosition, tPosition);
-		var future = requestImageTile(server, request);
+		var future = cache.requestImageTile(server, request);
 		try {
 			return future.get();
 		} catch (Exception e) {
@@ -226,43 +183,13 @@ abstract class AbstractImageRegionStore<T> implements ImageRegionStore<T> {
 			return null;
 		}
 	}
-	
-	
-	/**
-	 * Clear the cache, including thumbnails, and cancel any pending requests.
-	 */
-	public void clearCache() {
-		cache.clearCache();
-	}
-	
-	
-	/**
-	 * Clear the cache, optionally including thumbnails and stopping any pending requests.
-	 * 
-	 * @param stopWaiting cancel any tasks that are currently fetching tiles
-	 */
-	public synchronized void clearCache(final boolean stopWaiting) {
-		cache.clearCache(stopWaiting);
-	}
-	
-	
+
+
+
 	@Override
-	public synchronized void clearCacheForServer(final ImageServer<T> server) {
-		cache.clearCacheForServer(server.getPath());
-	}
-	
-	@Override
-	public synchronized void clearCacheForRequestOverlap(final RegionRequest request) {
-		cache.clearCacheForRequestOverlap(request);
+	public GenericImageCache<T> getCache() {
+		return cache;
 	}
 
-	
-	/* (non-Javadoc)
-	 * @see qupath.lib.images.stores.ImageRegionStore#close()
-	 */
-	@Override
-	public void close() {
-		cache.close();
-	}
 	
 }

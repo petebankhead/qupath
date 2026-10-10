@@ -17,7 +17,7 @@ public class ImageCache extends GenericImageCache<BufferedImage> {
 
     private static final ImageCache INSTANCE = create(getDefaultMaxSizeBytes());
 
-    private ImageCache(int parallelism, long maxSizeBytes) {
+    private ImageCache(long maxSizeBytes, int parallelism) {
         super(ImageCache::approxBufferedImageSize, maxSizeBytes, parallelism);
     }
 
@@ -31,7 +31,21 @@ public class ImageCache extends GenericImageCache<BufferedImage> {
      * @return a new image cache
      */
     public static ImageCache create(long maxSizeBytes) {
-        return new ImageCache(getDefaultParallelism(), maxSizeBytes);
+        return new ImageCache(maxSizeBytes, getDefaultParallelism());
+    }
+
+    /**
+     * Create a new image cache.
+     * <p>
+     * Note that creating a new cache is almost always unnecessary, and memory requirements are better
+     * handled by use of {@link #getSharedInstance()}.
+     *
+     * @param maxSizeBytes maximize total bytes the cache should make available for pixel data.
+     * @param parallelism number of parallel threads to use for tile requests
+     * @return a new image cache
+     */
+    public static ImageCache create(long maxSizeBytes, int parallelism) {
+        return new ImageCache(maxSizeBytes, parallelism);
     }
 
     /**

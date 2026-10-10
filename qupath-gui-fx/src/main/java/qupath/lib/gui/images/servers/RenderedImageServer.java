@@ -2,7 +2,7 @@
  * #%L
  * This file is part of QuPath.
  * %%
- * Copyright (C) 2018 - 2024 QuPath developers, The University of Edinburgh
+ * Copyright (C) 2018 - 2026 QuPath developers, The University of Edinburgh
  * %%
  * QuPath is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -70,7 +70,6 @@ public class RenderedImageServer extends AbstractTileableImageServer implements 
 	private final double overlayOpacity;
 	private final Color backgroundColor;
 	private final ImageServerMetadata metadata;
-	private final boolean dedicatedStore;
 	private final LookupOp gammaOp;
 	
 	private RenderedImageServer(
@@ -85,13 +84,7 @@ public class RenderedImageServer extends AbstractTileableImageServer implements 
 	) {
 		super();
 
-		if (store == null) {
-			this.store = ImageRegionStoreFactory.createImageRegionStore(1024*1024*512L);
-			this.dedicatedStore = true;
-		} else {
-			this.store = store;
-			this.dedicatedStore = false;
-		}
+		this.store = store == null ? ImageRegionStoreFactory.getSharedInstance() : store;
 		this.overlayOpacity = overlayOpacity;
 		if (overlayLayers != null)
 			this.overlayLayers.addAll(overlayLayers);
@@ -420,11 +413,4 @@ public class RenderedImageServer extends AbstractTileableImageServer implements 
 		return UUID.randomUUID().toString();
 	}
 
-	@Override
-	public void close() throws Exception {
-		super.close();
-		if (dedicatedStore) {
-			store.close();
-		}
-	}
 }

@@ -86,7 +86,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				// We expect slightly better viewer performance when rapidly zooming/panning
 				// if we prioritize the most recent requests.
 				var next = requestQueue.takeLast();
-				requestImageTile(next.server(), next.request());
+				getCache().requestImageTile(next.server(), next.request());
 			}
 		} catch (InterruptedException e) {
 			logger.warn("Request submission interrupted", e);
@@ -107,7 +107,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 				continue;
 			}
 
-			Future<BufferedImage> future = requestImageTile(server, request);
+			Future<BufferedImage> future = getCache().requestImageTile(server, request);
 
 			// If we have an image, paint it & record coordinates
 			if (future.isDone()) {
@@ -252,7 +252,7 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 					// Apply transforms, creating & caching new temp images
 					RegionRequest requestCache = RegionRequest.createInstance(displayCachePath, request.getDownsample(), request);
 					var imgTile = img;
-					imgTemp = getCache().computeIfAbsent(requestCache, r -> toRGB(imgTile, imageDisplay));
+					imgTemp = getCache().asMap().computeIfAbsent(requestCache, _ -> toRGB(imgTile, imageDisplay));
 				} else {
 					// Apply transforms, trying to reuse temp image
 					// Note: this assumes pixels can't be transparent
@@ -286,12 +286,6 @@ public class DefaultImageRegionStore extends AbstractImageRegionStore<BufferedIm
 			g2d.dispose();
 			return imgTemp;
 		}
-	}
-
-
-	@Override
-	public void close() {
-		super.close();
 	}
 
 

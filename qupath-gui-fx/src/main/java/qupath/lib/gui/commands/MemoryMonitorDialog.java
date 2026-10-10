@@ -49,6 +49,7 @@ import qupath.fx.utils.FXUtils;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.prefs.PathPrefs;
+import qupath.lib.images.cache.ImageCache;
 
 import java.text.MessageFormat;
 
@@ -166,7 +167,7 @@ class MemoryMonitorDialog {
 		btnClearCache.setOnAction(e -> {
 			try {
 				logger.info("Clearing cache...");
-				qupath.getViewer().getImageRegionStore().clearCache();
+				ImageCache.getSharedInstance().clearCache();
 				System.gc();
 			} catch (Exception e2) {
 				logger.error("Error clearing cache", e2);
@@ -356,7 +357,7 @@ class MemoryMonitorDialog {
 			long maxMemory = runtime.maxMemory();
 			long usedMemory = totalMemory - runtime.freeMemory();
 			long undoRedoSizeBytes = qupath.getUndoRedoManager().totalBytes();
-			long cachedTiles = qupath.getViewer().getImageRegionStore().getCache().size();
+			long cachedTiles = qupath.getViewer().getImageRegionStore().getCache().getTileCount();
 			return new MemorySnapshot(
 					System.currentTimeMillis(),
 					totalMemory,

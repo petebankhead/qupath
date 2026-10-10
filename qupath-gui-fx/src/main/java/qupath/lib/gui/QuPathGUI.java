@@ -129,6 +129,7 @@ import qupath.lib.gui.viewer.tools.PathTool;
 import qupath.lib.gui.viewer.tools.PathTools;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.ImageData.ImageType;
+import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerBuilder.ServerBuilder;
 import qupath.lib.images.servers.ImageServerBuilder.UriImageSupport;
@@ -921,10 +922,10 @@ public class QuPathGUI {
 	
 	
 	private void initializeImageTileCache() {
-		PathPrefs.tileCachePercentageProperty().addListener((v, o, n) -> {
-			imageRegionStore.clearCache();
+		PathPrefs.tileCachePercentageProperty().subscribe(n -> {
+			if (n != null)
+				ImageCache.getSharedInstance().setMaxSizeByPercent(n.doubleValue());
 		});
-		ImageServerProvider.setCache(imageRegionStore.getCache(), BufferedImage.class);
 		// Turn off the use of ImageIODiskCache (it causes some trouble)
 		ImageIO.setUseCache(false);
 	}
@@ -1164,9 +1165,8 @@ public class QuPathGUI {
 			}
 		}
 
-		// Close the region store to stop any painting requests
-		if (imageRegionStore != null)
-			imageRegionStore.close();
+		// Stop caching tiles
+		ImageCache.getSharedInstance().close();
 
 		// Save the PathClasses
 		pathClassManager.savePathClassesToPreferences();
