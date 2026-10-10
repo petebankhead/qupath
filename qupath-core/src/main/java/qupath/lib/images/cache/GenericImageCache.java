@@ -1,10 +1,12 @@
 package qupath.lib.images.cache;
 
 import com.github.benmanes.caffeine.cache.AsyncCache;
+import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Policy;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.Weigher;
+import org.apache.commons.math3.stat.descriptive.SynchronizedSummaryStatistics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.common.ThreadTools;
@@ -44,6 +46,8 @@ public class GenericImageCache<T> {
     private final String threadName;
     private final AsyncCache<RegionRequest, T> cache;
 
+    private final Cache<String, LatencyStatistics> latencyCache;
+
     private boolean isClosed = false;
 
     private final ThreadPoolExecutor pool;
@@ -66,6 +70,10 @@ public class GenericImageCache<T> {
                 .executor(pool)
                 .initialCapacity(1024)
                 .buildAsync();
+
+        this.latencyCache = Caffeine.newBuilder()
+                .initialCapacity(1024)
+                .build();
 
         shutdownHook = new Thread(this::closeImpl);
         Runtime.getRuntime().addShutdownHook(shutdownHook);
@@ -290,12 +298,35 @@ public class GenericImageCache<T> {
      * @param function the function used to compute the tile
      * @return a completable future that can be queries for the tile
      */
-    public CompletableFuture<T> requestImageTile(final RegionRequest request, Function<RegionRequest, T> function) {
+    public CompletableFuture<T> requestImageTile(final RegionRequest request, final Function<RegionRequest, T> function) {
         if (isClosed) {
             return cache.getIfPresent(request);
         }
-        return cache.get(request, function);
+        return cache.get(request, r -> requestWithLatency(r, function));
     }
+
+    /**
+     * Get statistics about the time taken for each successful (non-null) tile request,
+     * expressed using the mean read time per pixel.
+     * @param path the path used for the region requests (usually equivalent to {@link ImageServer#getPath()})
+     * @return the statistics
+     */
+    public LatencyStatistics getLatencyStatistics(String path) {
+        return latencyCache.get(path, _ -> new LatencyStatistics());
+    }
+
+    private T requestWithLatency(final RegionRequest request, final Function<RegionRequest, T> function) {
+        long startTime = System.nanoTime();
+        var img = function.apply(request);
+        long endTime = System.nanoTime();
+        if (img != null) {
+            double scale = 1.0/(request.getDownsample() * request.getDownsample());
+            double nPixels = scale * request.getWidth() * request.getHeight();
+            getLatencyStatistics(request.getPath()).addNanos((endTime - startTime) / nPixels);
+        }
+        return img;
+    }
+
 
     private T readTile(ImageServer<T> server, RegionRequest request) {
         if (isClosed) {
@@ -409,5 +440,78 @@ public class GenericImageCache<T> {
         }
         cache.put(request, CompletableFuture.completedFuture(tile));
     }
+
+    /**
+     * Helper class to record the time taken to read pixels.
+     * <p>
+     * Statistics are provided as 'nanoseconds per pixel', where a 'pixel' includes all associated channels
+     * (i.e. 10ns per pixel for a 5 channel image would mean that all 5 values are read in approximately 10ns).
+     * <p>
+     * An alternative (perhaps more intuitive, although less precise) interpretation would be
+     * 'milliseconds per 1000 x 1000 pixel region'.
+     * <p>
+     * This interpretation is chosen to normalize results across image, independent of tile size.
+     * This is also helpful if you want to benchmark the impact of tile size on latency.
+     */
+    public static class LatencyStatistics {
+
+        private final SynchronizedSummaryStatistics stats = new SynchronizedSummaryStatistics();
+
+        void addNanos(double nanosPerPixel) {
+            stats.addValue(nanosPerPixel);
+        }
+
+        /**
+         * Get the mean time per pixel, in nanoseconds.
+         * @return the mean
+         */
+        public double getMean() {
+            return stats.getMean();
+        }
+
+        /**
+         * Get the time per pixel, in nanoseconds, calculated from the tile that took
+         * the longest time to read (normalized by tile size).
+         * @return the maximum
+         */
+        public double getMax() {
+            return stats.getMax();
+        }
+
+        /**
+         * Get the time per pixel, in nanoseconds, calculated from the tile that took
+         * the shortest time to read (normalized by tile size)..
+         * @return the minimum
+         */
+        public double getMin() {
+            return stats.getMin();
+        }
+
+        /**
+         * Get the standard deviation of read time per pixel, in nanoseconds, calculated
+         * from the read times for individual tiles.
+         * @return the standard deviation
+         */
+        public double getStandardDeviation() {
+            return stats.getStandardDeviation();
+        }
+
+        /**
+         * Get the total number of observations (i.e. tiles that were successfully read,
+         * for which there is a latency measurement).
+         */
+        public void getN() {
+            stats.getN();
+        }
+
+        /**
+         * Reset the statistics.
+         */
+        public void clear() {
+            stats.clear();
+        }
+
+    }
+
 
 }
