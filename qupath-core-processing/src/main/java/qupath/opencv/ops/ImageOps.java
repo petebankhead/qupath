@@ -1138,6 +1138,29 @@ public class ImageOps {
 					new RotatedFilterFeatureOp.GaussianDerivative(sigmaLength, 0),
 					nRotations, projections);
 		}
+
+		/**
+		 * Apply a ridge-enhancing filter rotated at different orientations, subtract the output from an
+		 * orthogonal filter, then project the result on to one or more outputs.
+		 *
+		 * @param sigmaWidth sigma value for the estimated ridge width; a second order Gaussian derivative would be calculated
+		 * @param sigmaLength sigma value for the filter length; this is usually &gt; sigmaWidth and relates to the ridge tortuosity
+		 *                    (for ridges with infrequent changes in orientations, a higher value may be used)
+		 * @param nRotations number of rotations to calculate (typically 8-12)
+		 * @param projections optional array of projections.
+		 *                    If not set, all projections will be used.
+		 * @return
+		 */
+		public static ImageOp rotatedRidgeOrthogonalSubtract(double sigmaWidth, double sigmaLength, int nRotations, RidgeProjections... projections) {
+			return new OrthogonalSubtractionRotatedFilterFeatureOp(
+					new RotatedFilterFeatureOp.GaussianDerivative(sigmaWidth, 2),
+					new RotatedFilterFeatureOp.GaussianDerivative(sigmaLength, 0),
+					nRotations, projections);
+		}
+
+		public static ImageOp rotatedRidgeOrthogonalSubtract(double sigmaWidth, RidgeProjections... projections) {
+			return rotatedRidgeOrthogonalSubtract(sigmaWidth, sigmaWidth * 4,12, projections);
+		}
 		
 		/**
 		 * Apply a 2D maximum filter.
@@ -1313,7 +1336,7 @@ public class ImageOps {
 		@OpType("rotated-ridge")
 		static class RotatedFilterFeatureOp extends PaddedOp {
 
-			private record GaussianDerivative(double sigma, int order) {}
+			protected record GaussianDerivative(double sigma, int order) {}
 
 			private GaussianDerivative filterWidth;
 			private GaussianDerivative filterLength;
@@ -1328,6 +1351,10 @@ public class ImageOps {
 					throw new IllegalArgumentException("nRotations must be > 1");
 				this.nRotations = nRotations;
 				this.projections = projections.length == 0 ? List.of(RidgeProjections.values()) : List.of(projections);
+			}
+
+			protected List<RidgeProjections> getProjections() {
+				return projections;
 			}
 
 			private static GaussianDerivative validateFilter(GaussianDerivative filter) {
@@ -1389,7 +1416,7 @@ public class ImageOps {
 					return a;
 			}
 
-			private List<Mat> getKernels() {
+			protected List<Mat> getKernels() {
 				if (kernels == null || kernels.size() < nRotations || kernels.stream().anyMatch(m -> m.isNull())) {
 					synchronized (this) {
 						if (kernels == null) {
@@ -1479,9 +1506,94 @@ public class ImageOps {
 			}
 
 		}
-		
-		
-		@OpType("gaussian")
+
+
+		@OpType("rotated-ridge-orthogonal-subtract")
+		static class OrthogonalSubtractionRotatedFilterFeatureOp extends RotatedFilterFeatureOp {
+
+			OrthogonalSubtractionRotatedFilterFeatureOp(GaussianDerivative filterWidth, GaussianDerivative filterLength, int nRotations, RidgeProjections... projections) {
+				super(filterWidth, filterLength, nRotations, projections);
+				if (nRotations % 2 != 0) {
+					throw new IllegalArgumentException("N rotations must be multiple of 2");
+				}
+			}
+
+
+			@Override
+			public List<Mat> transformPadded(Mat input) {
+				var outputType = input.depth() == opencv_core.CV_64F ? input.type() : opencv_core.CV_32FC(OpenCVTools.typeToChannels(input.type()));
+				var projections = getProjections();
+
+				// Preallocate output
+				List<Mat> output = new ArrayList<>(projections.size());
+				List<Mat> outputSubtraction = new ArrayList<>(projections.size());
+				for (var proj : projections) {
+					Scalar fill = switch(proj) {
+						case MIN -> Scalar.all(Double.POSITIVE_INFINITY);
+						case MAX -> Scalar.all(Double.NEGATIVE_INFINITY);
+						case MAX_ABS -> Scalar.all(0.0);
+					};
+					var temp = new Mat(input.rows(), input.cols(), outputType, fill);
+					temp.retainReference();
+					output.add(temp);
+					outputSubtraction.add(temp.clone());
+					fill.close();
+				}
+
+				// Calculate all projections
+				List<Mat> allProjections = new ArrayList<>();
+				var kernels = getKernels();
+				for (var kernel: kernels) {
+					var temp = new Mat();
+					opencv_imgproc.filter2D(input, temp, outputType, kernel);
+					allProjections.add(temp);
+				}
+
+				// Calculate output
+				int nProjections = allProjections.size();
+				try (var mask = new Mat()) {
+					for (int i = 0; i < nProjections; i++) {
+						int indOrthogonal = (i + nProjections / 2) % nProjections;
+						var mainProjection = allProjections.get(i);
+						var orthogonalProjection = allProjections.get(indOrthogonal);
+
+						int ind = 0;
+						for (var proj : projections) {
+							Mat tempOutput = output.get(ind);
+							switch (proj) {
+								case MIN -> {
+									mask.put(opencv_core.lessThan(mainProjection, tempOutput));
+								}
+								case MAX -> {
+									mask.put(opencv_core.greaterThan(mainProjection, tempOutput));
+								}
+								case MAX_ABS -> {
+									mask.put(opencv_core.greaterThan(
+											opencv_core.abs(mainProjection).asMat(),
+											opencv_core.abs(tempOutput).asMat())
+									);
+								}
+							}
+							mainProjection.copyTo(tempOutput, mask);
+							orthogonalProjection.copyTo(outputSubtraction.get(ind), mask);
+							ind++;
+						}
+					}
+				}
+				// Do the final subtraction
+				for (int i = 0; i < output.size(); i++) {
+					opencv_core.subtract(output.get(i), outputSubtraction.get(i), output.get(i));
+					outputSubtraction.get(i).close();
+				}
+
+				return List.copyOf(output);
+			}
+
+		}
+
+
+
+			@OpType("gaussian")
 		static class GaussianFilterOp extends PaddedOp {
 			
 			private double sigmaX, sigmaY;
