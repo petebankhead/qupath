@@ -30,6 +30,7 @@ import org.locationtech.jts.operation.overlayng.UnaryUnionNG;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -111,6 +112,7 @@ public class FastPolygonUnion {
         var groupsToMerge = new ArrayList<List<Geometry>>();
         var toKeep = new ArrayList<Geometry>();
         var visited = new HashSet<Integer>();
+        var set = new IntSet(n);
         for (int i = 0; i < n; i++) {
             if (matrix.getAdjacentCount(i) == 0) {
                 // Nothing to merge, keep unchanged
@@ -122,7 +124,10 @@ public class FastPolygonUnion {
             } else {
                 // Generate a new group for merging
                 List<Geometry> temp = new ArrayList<>();
-                for (Integer ind : matrix.getAdjacencyGroup(i)) {
+                set.reset();
+                matrix.getAdjacencyGroup(i, set);
+                for (int tempInd = 0; tempInd < set.size(); tempInd++) {
+                    int ind = set.get(tempInd);
                     temp.add(allPolygons.get(ind));
                     if (!visited.add(ind))
                         logger.warn("Polygon added more than once!");
@@ -210,12 +215,10 @@ public class FastPolygonUnion {
      */
     private static class AdjacencyMatrix {
 
-        private final List<BitSet> bits = new ArrayList<>();
+        private final BooleanMatrix bits;
 
         private AdjacencyMatrix(int n) {
-            for (int i = 0; i < n; i++) {
-                bits.add(new BitSet(n));
-            }
+            bits = new BooleanMatrix(n);
         }
 
         /**
@@ -226,11 +229,10 @@ public class FastPolygonUnion {
          *         flagged as adjacent.
          */
         public boolean setAdjacent(int i, int j) {
-            if (bits.get(i).get(j))
+            if (bits.get(i, j))
                 return false;
             synchronized (this) {
-                bits.get(i).set(j);
-                bits.get(j).set(i);
+                bits.setSymmetric(i, j);
             }
             return true;
         }
@@ -239,12 +241,11 @@ public class FastPolygonUnion {
          * Get indices for all entries that are directly or indirectly adjacent,
          * i.e. polygons that may need to be merged.
          * @param i
-         * @return
+         * @param group
          */
-        public Set<Integer> getAdjacencyGroup(int i) {
-            var set = new HashSet<Integer>();
-            accumulateAdjacencyGroup(i, set);
-            return set;
+        public void getAdjacencyGroup(int i, IntSet group) {
+            group.reset();
+            accumulateAdjacencyGroup(i, group);
         }
 
         /**
@@ -253,10 +254,12 @@ public class FastPolygonUnion {
          * @param i
          * @param group
          */
-        private void accumulateAdjacencyGroup(int i, Set<Integer> group) {
+        private void accumulateAdjacencyGroup(int i, IntSet group) {
             if (group.add(i)) {
-                for (int j : bits.get(i).stream().toArray()) {
-                    accumulateAdjacencyGroup(j, group);
+                for (int j = 0; j < bits.n; j++) {
+                    if (bits.get(i, j)) {
+                        accumulateAdjacencyGroup(j, group);
+                    }
                 }
             }
         }
@@ -267,7 +270,7 @@ public class FastPolygonUnion {
          * @return
          */
         public int getAdjacentCount(int i) {
-            return bits.get(i).cardinality();
+            return bits.rowSum(i);
         }
 
         /**
@@ -277,7 +280,90 @@ public class FastPolygonUnion {
          * @return
          */
         public boolean isAdjacent(int i, int j) {
-            return bits.get(i).get(j);
+            return bits.get(i, j);
+        }
+
+    }
+
+    private static class BooleanMatrix {
+
+        private final BitSet bits;
+        private final int n;
+
+        BooleanMatrix(int n) {
+            this.n = n;
+            this.bits = new BitSet(Math.toIntExact((long)n * n)); // Need to throw exception if can't use int indices
+        }
+
+        synchronized void set(int i, int j) {
+            bits.set(i * n + j);
+        }
+
+        synchronized void setSymmetric(int i, int j) {
+            set(i, j);
+            set(j, i);
+        }
+
+        synchronized boolean get(int i, int j) {
+            return bits.get(i * n + j);
+        }
+
+        synchronized int rowSum(int i) {
+            int sum = 0;
+            for (int ind = i * n; ind < i * n + n; ind++) {
+                if (bits.get(ind))
+                    sum++;
+            }
+            return sum;
+        }
+
+
+    }
+
+    private static class IntSet {
+
+        private final int[] array;
+        private int size = 0;
+
+        IntSet(int size) {
+            // Size must be large enough for all possible indices, so we don't need to resize
+            array = new int[size];
+        }
+
+        synchronized boolean add(int value) {
+            int ind = Arrays.binarySearch(array, 0, size, value);
+            if (ind >= 0) {
+                // Already contained
+                return false;
+            } else {
+                // Insert
+                ind = -(ind + 1);
+                for (int i = size; i > ind; i--) {
+                    array[i] = array[i-1];
+                }
+                array[ind] = value;
+                size++;
+                return true;
+            }
+        }
+
+        synchronized int get(int ind) {
+            if (ind < 0 || ind >= size) {
+                throw new IndexOutOfBoundsException("Index: " + ind + ", Size: " + size);
+            }
+            return array[ind];
+        }
+
+        synchronized void reset() {
+            size = 0;
+        }
+
+        int size() {
+            return size;
+        }
+
+        synchronized int[] toArray() {
+            return Arrays.copyOf(array, size);
         }
 
     }
