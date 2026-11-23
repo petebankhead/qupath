@@ -4,6 +4,7 @@ import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.lazy.interfaces.LazyValue;
 import qupath.lib.lazy.objects.PathObjectLazyValues;
 import qupath.lib.objects.PathObject;
+import qupath.opencv.ml.pixel.DefaultPixelClassificationMeasurementManager;
 import qupath.opencv.ml.pixel.PixelClassificationMeasurementManager;
 
 import java.util.ArrayList;
@@ -21,7 +22,7 @@ class LivePixelClassificationValueFactory implements PathObjectValueFactory {
             var pixelClassifier = ObservableMeasurementTableData.getPixelLayer(wrapper.getImageData());
             if (pixelClassifier != null) {
                 if (pixelClassifier.getMetadata().getChannelType() == ImageServerMetadata.ChannelType.CLASSIFICATION || pixelClassifier.getMetadata().getChannelType() == ImageServerMetadata.ChannelType.PROBABILITY) {
-                    var pixelManager = new PixelClassificationMeasurementManager(pixelClassifier);
+                    PixelClassificationMeasurementManager pixelManager = new DefaultPixelClassificationMeasurementManager(pixelClassifier);
                     for (String name : pixelManager.getMeasurementNames()) {
                         measurements.add(PathObjectLazyValues.createLivePixelClassificationMeasurement(pixelManager, name));
                     }

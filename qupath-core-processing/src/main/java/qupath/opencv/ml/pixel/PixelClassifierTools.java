@@ -549,13 +549,13 @@ public class PixelClassifierTools {
 	}
 	
 	/**
-	 * Create a {@link PixelClassificationMeasurementManager} that can be used to generate measurements from an {@link ImageServer} where pixels provide 
+	 * Create a {@link PixelClassificationMeasurementManager} that can be used to generate measurements from an {@link ImageServer} where pixels provide
 	 * classification or probability information.
 	 * @param classifierServer the classification image server
 	 * @return the {@link PixelClassificationMeasurementManager}
 	 */
 	public static PixelClassificationMeasurementManager createMeasurementManager(ImageServer<BufferedImage> classifierServer) {
-		return new PixelClassificationMeasurementManager(classifierServer);
+		return new DefaultPixelClassificationMeasurementManager(classifierServer);
 	}
 	
 	
@@ -580,7 +580,7 @@ public class PixelClassifierTools {
 	}
 	
 	/**
-	 * Add measurements to specified objects from a {@link PixelClassificationMeasurementManager}.
+	 * Add measurements to specified objects from a {@link DefaultPixelClassificationMeasurementManager}.
 	 * 
 	 * @param objectsToMeasure the objects to measure.
 	 * @param manager the manager used to generate measurements
