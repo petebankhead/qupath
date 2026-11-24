@@ -29,6 +29,7 @@ import qupath.lib.analysis.images.ContourTracing.ChannelThreshold;
 import qupath.lib.classifiers.pixel.PixelClassificationImageServer;
 import qupath.lib.classifiers.pixel.PixelClassifier;
 import qupath.lib.images.ImageData;
+import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
@@ -555,7 +556,8 @@ public class PixelClassifierTools {
 	 * @return the {@link PixelClassificationMeasurementManager}
 	 */
 	public static PixelClassificationMeasurementManager createMeasurementManager(ImageServer<BufferedImage> classifierServer) {
-		return new DefaultPixelClassificationMeasurementManager(classifierServer);
+		return new AnotherMeasurementManager(ImageCache.getSharedInstance(), classifierServer);
+//		return new DefaultPixelClassificationMeasurementManager(classifierServer);
 	}
 	
 	

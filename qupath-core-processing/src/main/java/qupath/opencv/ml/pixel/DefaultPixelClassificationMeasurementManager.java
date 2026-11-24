@@ -175,7 +175,7 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	 * @see #getCachedMeasurementValue(ROI, String)
 	 */
 	public Number getCachedMeasurementValue(ROI roi, String name) {
-		var ml = getMeasurementList(roi, null);
+		var ml = getMeasurementList(roi, true);
 		if (ml == null)
 			return null;
 		else
@@ -190,7 +190,7 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	 * @see #getMeasurementValue(ROI, String)
 	 */
 	public Number getMeasurementValue(ROI roi, String name) {
-		var ml = getMeasurementList(roi, getDefaultPool());
+		var ml = getMeasurementList(roi, false);
 		if (ml == null)
 			return null;
 		else
@@ -220,69 +220,27 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 				measurementID += ": ";
 		}
 
-		// This is where things get complicated...
-		// If we have a lot of small objects, we want to parallelize at the object level.
-		// If we have few large objects, we want to parallelize at the tile request level.
-		// If we parallelize heavily at both levels, we risk problems with memory use, or regions having to wait a long
-		// time to be able to complete their tile requests.
-		// The awkward workaround here is to use two thread pools, with some guesses about sensible sizes.
-		// TODO: Possible use for virtual threads?
-		int maxParallelism = calculatePreferredParallelism();
-		int nObjectThreads = 1;
-		int nTileThreads = maxParallelism;
-		if (objectsToMeasure.size() > 1 && maxParallelism > 2) {
-			if (objectsToMeasure.size() > maxParallelism) {
-				// Many objects - expected to be small
-				nObjectThreads = maxParallelism - 1;
-				nTileThreads = 2; // May not be used if all objects are single-tiled
-			} else {
-				// Few objects - may well be large
-				nObjectThreads = 2;
-				nTileThreads = maxParallelism - 1;
-			}
-		}
-		logger.debug("Measuring {} objects (object threads={}, tile threads={})",
-				objectsToMeasure.size(), nObjectThreads, nTileThreads);
-
-		var factoryObjects = ThreadTools.createThreadFactory("pixel-classification-objects", true, Thread.NORM_PRIORITY+1);
-		var factoryTiles = ThreadTools.createThreadFactory("pixel-classification-tiles", true, Thread.NORM_PRIORITY);
-
-		try (ExecutorService poolTiles = Executors.newFixedThreadPool(nTileThreads, factoryTiles)) {
-			try (ExecutorService poolObjects = Executors.newFixedThreadPool(nObjectThreads, factoryObjects)) {
-				String measurementIdFinal = measurementID;
-				for (var pathObject : objectsToMeasure) {
-					poolObjects.submit(() -> measureObject(pathObject, measurementIdFinal, poolTiles));
-				}
-			} catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-		}
-
 		// The simpler (slower) sequential version of the above
-//		int n = objectsToMeasure.size();
-//		int i = 0;
-//		for (var pathObject : objectsToMeasure) {
-//			i++;
-//			if (n < 100 || n % 100 == 0)
-//				logger.debug("Measured {}/{}", i, n);
-//			measureObject(pathObject, measurementID, pool);
-//		}
+		int n = objectsToMeasure.size();
+		int i = 0;
+		for (var pathObject : objectsToMeasure) {
+			i++;
+			if (n < 100 || n % 100 == 0)
+				logger.debug("Measured {}/{}", i, n);
+			measureObject(pathObject, measurementID);
+		}
 		return true;
 	}
 
 
-	private void measureObject(PathObject pathObject, String measurementID, ExecutorService pool) {
+	private void measureObject(PathObject pathObject, String measurementID) {
 		try (var ml = pathObject.getMeasurementList()) {
-			var map = getMeasurementListAsMap(pathObject.getROI(), pool);
+			var mlNew = getMeasurementList(pathObject.getROI(), false);
 			var measurementNames = getMeasurementNames();
-			if (map.isEmpty() || measurementNames.isEmpty())
+			if (mlNew.isEmpty() || measurementNames.isEmpty())
 				logger.warn("Map or measurements names are empty!");
 			for (String name : measurementNames) {
-				Number value = map.getOrDefault(name, null);
-				if (value == null)
-					ml.put(measurementID + name, Double.NaN);
-				else
-					ml.put(measurementID + name, value.doubleValue());
+				ml.put(measurementID + name, mlNew.getOrDefault(name, Double.NaN));
 			}
 		}
 		// We really want to lock objects so we don't end up with wrong measurements
@@ -295,22 +253,11 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 		return ForkJoinPool.commonPool();
 	}
 
-	private Map<String, Number> getMeasurementListAsMap(ROI roi, ExecutorService pool) {
-		var ml = getMeasurementList(roi, pool);
-		return ml == null ? Collections.emptyMap() : Collections.unmodifiableMap(ml.asMap());
-	}
-
-	private MeasurementList getMeasurementList(ROI roi, ExecutorService pool) {
+	private MeasurementList getMeasurementList(ROI roi, boolean cachedOnly) {
 		if (roi == null)
 			return null;
 		var map = measuredROIs.computeIfAbsent(classifierServer, s -> new ConcurrentHashMap<>());
-		var ml = map.getOrDefault(roi, null);
-		if (ml == null) {
-			ml = calculateMeasurements(roi, pool);
-			if (ml != null)
-				map.put(roi, ml);
-		}
-		return ml;
+		return map.computeIfAbsent(roi, r -> calculateMeasurements(r, cachedOnly));
 	}
 
 
@@ -362,14 +309,10 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	 * Calculate measurements for a specified ROI if possible.
 	 * 
 	 * @param roi the ROI defining the region to measure
-	 * @param pool a pool to request tiles; if null, only cached tiles will be used and null returned
-	 *             if the measurement can't be determined from cached tiles alone.
+	 * @param cachedOnly if true, add measurements only if they can be be determined from cached tiles.
 	 * @return
 	 */
-	private MeasurementList calculateMeasurements(final ROI roi, final ExecutorService pool) {
-
-		// Only use cached tiles if we aren't give a pool
-		boolean cachedOnly = pool == null;
+	private MeasurementList calculateMeasurements(final ROI roi, final boolean cachedOnly) {
 
         Map<Integer, PathClass> classificationLabels = classifierServer.getMetadata().getClassificationLabels();
         long[] counts = null;
@@ -421,12 +364,8 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 			// Preserve tiles in a local cache, to avoid risk that they could
 			// be cleared from the main tile cache before we use them
 			tilesToRequest.add(request);
-			if (tile != null)
+			if (tile != null) {
 				localCache.put(request, tile);
-			else if (cachedOnly) {
-				// We don't have a tile that we need - return
-				logger.trace("No cached tile for {} - returning now", tile);
-				return null;
 			} else
 				missingTiles.add(request);
 		}
@@ -434,19 +373,12 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 		// If we need non-cached tiles, create a thread pool to request them
 		Map<TileRequest, Future<BufferedImage>> requestMap = new HashMap<>();
 		if (!missingTiles.isEmpty()) {
-			// If we have a single tile, using a pool is likely to be *slower*, since it may take much longer for the
-			// tile to return... while in the meantime this thread just waits
-			boolean requestInPool = missingTiles.size() > 1;
 			for (TileRequest request : missingTiles) {
-				if (requestInPool)
-					requestMap.put(request, pool.submit(() -> classifierServer.readRegion(request.getRegionRequest())));
-				else {
-					try {
-						localCache.put(request, classifierServer.readRegion(request.getRegionRequest()));
-					} catch (IOException e) {
-						logger.error("Error reading tile " + request, e);
-						return null;
-					}
+				try {
+					localCache.put(request, classifierServer.readRegion(request.getRegionRequest()));
+				} catch (IOException e) {
+					logger.error("Error reading tile {}", request, e);
+					return null;
 				}
 			}
 		}
@@ -615,7 +547,7 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	 * guess.
 	 * @return
 	 */
-	protected int calculatePreferredParallelism() {
+	private static int calculatePreferredParallelism() {
 		int poolSize = getPoolSizeProp();
 		if (poolSize > 0)
 			return poolSize;
@@ -634,7 +566,7 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 		return GeneralTools.clipValue(nThreads, minSize, maxSize);
 	}
 
-	protected int getPoolSizeProp() {
+	private static int getPoolSizeProp() {
 		String prop = System.getProperty("pixel.classification.pool.size");
 		if (prop != null) {
 			try {
