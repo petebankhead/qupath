@@ -31,6 +31,7 @@ import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
 import qupath.lib.images.servers.PixelCalibration;
 import qupath.lib.images.servers.TileRequest;
+import qupath.lib.lazy.interfaces.LazyNumericValue;
 import qupath.lib.measurements.MeasurementList;
 import qupath.lib.measurements.MeasurementList.MeasurementListType;
 import qupath.lib.measurements.MeasurementListFactory;
@@ -115,17 +116,6 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
         	pixelArea = requestedDownsample * requestedDownsample;
             pixelAreaUnits = "px^2";
         }
-        
-//        if (cal.hasPixelSizeMicrons()) {
-//	        pixelArea = (cal.getPixelWidthMicrons() * requestedDownsample) * (cal.getPixelHeightMicrons() * requestedDownsample);
-//	        pixelAreaUnits = GeneralTools.micrometerSymbol() + "^2";
-//	        double scale = requestedDownsample / 1000.0;
-//	        pixelArea = (cal.getPixelWidthMicrons() * scale) * (cal.getPixelHeightMicrons() * scale);
-//	        pixelAreaUnits = "mm^2";
-//        } else {
-//        	pixelArea = requestedDownsample * requestedDownsample;
-//            pixelAreaUnits = "px^2";
-//        }
 		
 		// Handle root object if we just have a single plane
 		if (classifierServer.nZSlices() == 1 || classifierServer.nTimepoints() == 1)
@@ -215,7 +205,7 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	 * @return true if measurements were added, false otherwise
 	 * @since v0.5.0
 	 */
-	public static boolean addMeasurements(Collection<? extends PathObject> objectsToMeasure, String measurementID) {
+	public boolean addMeasurements(Collection<? extends PathObject> objectsToMeasure, String measurementID) {
 
 		if (objectsToMeasure.isEmpty())
 			return false;
@@ -256,24 +246,16 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 
 		var factoryObjects = ThreadTools.createThreadFactory("pixel-classification-objects", true, Thread.NORM_PRIORITY+1);
 		var factoryTiles = ThreadTools.createThreadFactory("pixel-classification-tiles", true, Thread.NORM_PRIORITY);
-		ExecutorService poolObjects = Executors.newFixedThreadPool(nObjectThreads, factoryObjects);
-		ExecutorService poolTiles = Executors.newFixedThreadPool(nTileThreads, factoryTiles);
 
-		String measurementIdFinal = measurementID;
-		List<Future<?>> tasks = new ArrayList<>();
-		for (var pathObject : objectsToMeasure) {
-			tasks.add(poolObjects.submit(() -> measureObject(pathObject, measurementIdFinal, poolTiles)));
-		}
-		poolObjects.shutdown();
-		try {
-			// Not necessary - but it lets us see if there has been an exception
-			for (var t : tasks) {
-				t.get();
+		try (ExecutorService poolTiles = Executors.newFixedThreadPool(nTileThreads, factoryTiles)) {
+			try (ExecutorService poolObjects = Executors.newFixedThreadPool(nObjectThreads, factoryObjects)) {
+				String measurementIdFinal = measurementID;
+				for (var pathObject : objectsToMeasure) {
+					poolObjects.submit(() -> measureObject(pathObject, measurementIdFinal, poolTiles));
+				}
+			} catch (Exception e) {
+				throw new RuntimeException(e);
 			}
-		} catch (Exception e) {
-			throw new RuntimeException(e);
-		} finally {
-			poolTiles.shutdown();
 		}
 
 		// The simpler (slower) sequential version of the above
@@ -309,7 +291,7 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	}
 
 
-	private ExecutorService getDefaultPool() {
+	private static ExecutorService getDefaultPool() {
 		return ForkJoinPool.commonPool();
 	}
 
@@ -380,8 +362,8 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	 * Calculate measurements for a specified ROI if possible.
 	 * 
 	 * @param roi the ROI defining the region to measure
-	 * @param pool a pool to request tiles; if null, only cached tiles will be used and null return if the measurement
-	 *             can't be determined from cached tiles alone.
+	 * @param pool a pool to request tiles; if null, only cached tiles will be used and null returned
+	 *             if the measurement can't be determined from cached tiles alone.
 	 * @return
 	 */
 	private MeasurementList calculateMeasurements(final ROI roi, final ExecutorService pool) {
@@ -489,7 +471,7 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	        	try {
 					tile = requestMap.get(region).get();
 				} catch (Exception e) {
-					logger.error("Error requesting tile " + region, e);
+                    logger.error("Error requesting tile {}", region, e);
 				}
         	}
         	// We failed to get a required tile - return
@@ -530,7 +512,7 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	        		if (roi.isLine()) {
 	        			float fDownsample = (float)region.getDownsample();
 	        			if (stroke == null || stroke.getLineWidth() != fDownsample)
-	        				stroke = new BasicStroke((float)fDownsample);
+	        				stroke = new BasicStroke(fDownsample);
 	        			g2d.setStroke(stroke);
 	        			g2d.draw(shape);
 	        		} else if (roi.isArea())
@@ -572,7 +554,6 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	        			}
 	        		}
 	        		if (!anyPoints) {
-//	        			logger.trace("Skipping - just no point");
 	        			continue;
 	        		}
 	        	}
@@ -711,7 +692,7 @@ public class DefaultPixelClassificationMeasurementManager implements PixelClassi
 	    		if (pathClass == null || ignored.contains(pathClass))
 	    			continue;
 	    		int c = entry.getKey();
-	    		long temp = counts == null || c >= counts.length ? 0L : counts[c];
+	    		long temp = c >= counts.length ? 0L : counts[c];
 				totalWithoutIgnored += temp;
 	    		pathClassTotals.put(pathClass, pathClassTotals.getOrDefault(pathClass, 0L) + temp);
 	    	}

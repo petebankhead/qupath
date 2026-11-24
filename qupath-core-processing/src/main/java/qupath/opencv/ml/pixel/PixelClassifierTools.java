@@ -588,7 +588,12 @@ public class PixelClassifierTools {
 	 * @return true if measurements were added, false otherwise
 	 */
 	public static boolean addMeasurements(Collection<? extends PathObject> objectsToMeasure, PixelClassificationMeasurementManager manager, String measurementID) {
-		return manager.addMeasurements(objectsToMeasure, measurementID);
+		if (manager instanceof DefaultPixelClassificationMeasurementManager defaultManager) {
+			return defaultManager.addMeasurements(objectsToMeasure, measurementID);
+		} else {
+			// TODO: Address measurement managers
+			throw new RuntimeException("Can't add measurements to non-default measurement manager yet!");
+		}
 	}
 	
 
