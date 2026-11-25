@@ -1,6 +1,7 @@
 package qupath.opencv.ml.pixel.measurements;
 
 import qupath.lib.objects.classes.PathClass;
+import qupath.lib.objects.classes.PathClassTools;
 
 import java.awt.image.WritableRaster;
 import java.util.LinkedHashMap;
@@ -32,12 +33,16 @@ class ClassifiedPixelCounter implements PixelCounter {
         }
 
         Map<PathClass, Long> counts = new LinkedHashMap<>();
+        long nonIgnoreCounts = 0L;
         for (int i = 0; i < pathClasses.size(); i++) {
             long localCount = rawCounts[i];
-            counts.compute(pathClasses.get(i), (_, val) -> val == null ? localCount : val + localCount);
+            var pathClass = pathClasses.get(i);
+            if (!PathClassTools.isIgnoredClass(pathClass))
+                nonIgnoreCounts += localCount;
+            counts.compute(pathClass, (_, val) -> val == null ? localCount : val + localCount);
         }
 
-        return ClassifiedPixelCounts.create(counts, total);
+        return ClassifiedPixelCounts.create(counts, total, nonIgnoreCounts);
     }
 
 }

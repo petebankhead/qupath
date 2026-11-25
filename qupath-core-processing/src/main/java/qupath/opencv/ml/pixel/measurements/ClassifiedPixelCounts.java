@@ -11,22 +11,30 @@ import java.util.Set;
 
 public class ClassifiedPixelCounts {
 
-    public static final ClassifiedPixelCounts EMPTY = create(Map.of(), 0L);
+    public static final ClassifiedPixelCounts EMPTY = create(Map.of(), 0L, 0L);
 
     private final Map<PathClass, Long> counts;
     private final long totalCount;
+    private final long nonIgnoreCount;
 
-    private ClassifiedPixelCounts(Map<PathClass, Long> counts, long totalCount) {
+    private ClassifiedPixelCounts(Map<PathClass, Long> counts, long totalCount, long nonIgnoreCount) {
         this.counts = Map.copyOf(counts);
         this.totalCount = totalCount;
+        this.nonIgnoreCount = nonIgnoreCount;
+        if (nonIgnoreCount > totalCount)
+            throw new IllegalArgumentException("Non-ignored count " + nonIgnoreCount + " > total count " + totalCount);
     }
 
-    public static ClassifiedPixelCounts create(Map<PathClass, Long> counts, long totalCount) {
-        return new ClassifiedPixelCounts(counts, totalCount);
+    public static ClassifiedPixelCounts create(Map<PathClass, Long> counts, long totalCount, long nonIgnoreCount) {
+        return new ClassifiedPixelCounts(counts, totalCount, nonIgnoreCount);
     }
 
     public long getTotalCount() {
         return totalCount;
+    }
+
+    public long getNonIgnoredCount() {
+        return nonIgnoreCount;
     }
 
     public long getCountsForSetContains(String name) {
@@ -69,13 +77,15 @@ public class ClassifiedPixelCounts {
         }
         var map = new LinkedHashMap<PathClass, Long>();
         long total = 0L;
+        long nonIgnored = 0L;
         for (var otherCounts : counts) {
             for (var entry : otherCounts.counts.entrySet()) {
                 map.compute(entry.getKey(), (_, c) -> c == null ? entry.getValue() : c + entry.getValue());
             }
             total += otherCounts.getTotalCount();
+            nonIgnored += otherCounts.getNonIgnoredCount();
         }
-        return new ClassifiedPixelCounts(map, total);
+        return new ClassifiedPixelCounts(map, total, nonIgnored);
     }
 
 }

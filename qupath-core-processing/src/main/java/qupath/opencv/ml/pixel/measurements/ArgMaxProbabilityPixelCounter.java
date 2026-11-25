@@ -1,6 +1,7 @@
 package qupath.opencv.ml.pixel.measurements;
 
 import qupath.lib.objects.classes.PathClass;
+import qupath.lib.objects.classes.PathClassTools;
 
 import java.awt.image.WritableRaster;
 import java.util.LinkedHashMap;
@@ -22,6 +23,7 @@ class ArgMaxProbabilityPixelCounter implements PixelCounter {
         Map<PathClass, Long> counts = new LinkedHashMap<>();
         double[] values = null;
         long total = 0L;
+        long nonIgnoredTotal = 0L;
         for (int y = 0; y < raster.getHeight(); y++) {
             for (int x = 0; x < raster.getWidth(); x++) {
                 if (predicate.test(x, y)) {
@@ -31,12 +33,15 @@ class ArgMaxProbabilityPixelCounter implements PixelCounter {
                     values = raster.getPixel(x, y, values);
                     int ind = argMax(values);
                     if (ind >= 0) {
-                        counts.compute(pathClasses.get(ind), (_, val) -> val == null ? 1 : val + 1);
+                        var pathClass = pathClasses.get(ind);
+                        if (!PathClassTools.isIgnoredClass(pathClass))
+                            nonIgnoredTotal++;
+                        counts.compute(pathClass, (_, val) -> val == null ? 1 : val + 1);
                     }
                 }
             }
         }
-        return ClassifiedPixelCounts.create(counts, total);
+        return ClassifiedPixelCounts.create(counts, total, nonIgnoredTotal);
     }
 
     private static int argMax(double[] values) {

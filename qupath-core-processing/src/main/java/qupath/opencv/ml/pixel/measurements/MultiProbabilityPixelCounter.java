@@ -27,6 +27,7 @@ class MultiProbabilityPixelCounter implements PixelCounter {
         double[] values = null;
         var accumulator = new PathClassAccumulator(pathClasses.size());
         long total = 0L;
+        long nonIgnoredTotal = 0L;
         for (int y = 0; y < raster.getHeight(); y++) {
             for (int x = 0; x < raster.getWidth(); x++) {
                 if (predicate.test(x, y)) {
@@ -42,12 +43,14 @@ class MultiProbabilityPixelCounter implements PixelCounter {
                     }
                     var result = accumulator.get();
                     if (result != null) {
+                        if (!PathClassTools.isIgnoredClass(result))
+                            nonIgnoredTotal++;
                         counts.compute(result, (_, val) -> val == null ? 1 : val + 1);
                     }
                 }
             }
         }
-        return ClassifiedPixelCounts.create(counts, total);
+        return ClassifiedPixelCounts.create(counts, total, nonIgnoredTotal);
     }
 
     private static final class PathClassAccumulator {
