@@ -41,7 +41,12 @@ public class AnotherMeasurementManager implements PixelClassificationMeasurement
     private double countsToArea(PixelClassifierMeasurements.PixelCounts counts, String className) {
         if (counts == null)
             return Double.NaN;
-        var n = counts.getCountsForSetContains(className);
+        var pathClass = PathClass.fromString(className);
+        long n;
+        if (pathClass.isDerivedClass())
+            n = counts.getCountsForClassSetMatches(pathClass.toSet());
+        else
+            n = counts.getCountsForSetContains(className);
         return n * server.getMetadata().getPixelCalibration().getPixelWidth().doubleValue()
                 * server.getMetadata().getPixelCalibration().getPixelHeight().doubleValue();
     }

@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.function.DoublePredicate;
@@ -150,7 +149,7 @@ public class PixelClassifierMeasurements {
             requests.put(tile, img);
         }
         if (requests.isEmpty())
-            return new PixelCounts(Map.of());
+            return PixelCounts.EMPTY;
         List<PixelCounts> allCounts = new ArrayList<>();
         for (var tile : requests.keySet()) {
             allCounts.add(
@@ -218,9 +217,11 @@ public class PixelClassifierMeasurements {
             assert raster.getNumBands() == 1;
 
             long[] rawCounts = new long[pathClasses.size()];
+            long total = 0L;
             for (int y = 0; y < raster.getHeight(); y++) {
                 for (int x = 0; x < raster.getWidth(); x++) {
                     if (predicate.test(x, y)) {
+                        total++;
                         int sample = raster.getSample(x, y, 0);
                         rawCounts[sample]++;
                     }
@@ -233,7 +234,7 @@ public class PixelClassifierMeasurements {
                 counts.compute(pathClasses.get(i), (_, val) -> val == null ? localCount : val + localCount);
             }
 
-            return new PixelCounts(counts);
+            return new PixelCounts(counts, total);
         }
 
     }
@@ -252,9 +253,11 @@ public class PixelClassifierMeasurements {
 
             Map<PathClass, Long> counts = new LinkedHashMap<>();
             double[] values = null;
+            long total = 0L;
             for (int y = 0; y < raster.getHeight(); y++) {
                 for (int x = 0; x < raster.getWidth(); x++) {
                     if (predicate.test(x, y)) {
+                        total++;
                         // We want to update the counts for the PathClass that merges all the names from the
                         // individual positive bands (channels)
                         values = raster.getPixel(x, y, values);
@@ -265,7 +268,7 @@ public class PixelClassifierMeasurements {
                     }
                 }
             }
-            return new PixelCounts(counts);
+            return new PixelCounts(counts, total);
         }
 
         private static int argMax(double[] values) {
@@ -300,9 +303,11 @@ public class PixelClassifierMeasurements {
             Map<PathClass, Long> counts = new LinkedHashMap<>();
             double[] values = null;
             var accumulator = new PathClassAccumulator(pathClasses.size());
+            long total = 0L;
             for (int y = 0; y < raster.getHeight(); y++) {
                 for (int x = 0; x < raster.getWidth(); x++) {
                     if (predicate.test(x, y)) {
+                        total++;
                         // We want to update the counts for the PathClass that merges all the names from the
                         // individual positive bands (channels)
                         values = raster.getPixel(x, y, values);
@@ -319,7 +324,7 @@ public class PixelClassifierMeasurements {
                     }
                 }
             }
-            return new PixelCounts(counts);
+            return new PixelCounts(counts, total);
         }
 
     }
@@ -364,7 +369,7 @@ public class PixelClassifierMeasurements {
     @FunctionalInterface
     public interface MaskPredicate {
 
-        MaskPredicate ALWAYS_TRUE = (x, y) -> true;
+        MaskPredicate ALWAYS_TRUE = (_, _) -> true;
 
         static MaskPredicate fromDoubleRaster(Raster raster, double falseValue) {
             return (x, y) -> raster.getSampleDouble(x, y, 0) != falseValue;
@@ -380,10 +385,18 @@ public class PixelClassifierMeasurements {
 
     public static class PixelCounts {
 
-        private final Map<PathClass, Long> counts;
+        public static final PixelCounts EMPTY = new PixelCounts(Map.of(), 0L);
 
-        PixelCounts(Map<PathClass, Long> counts) {
+        private final Map<PathClass, Long> counts;
+        private final long totalCount;
+
+        PixelCounts(Map<PathClass, Long> counts, long totalCount) {
             this.counts = Map.copyOf(counts);
+            this.totalCount = totalCount;
+        }
+
+        public long getTotalCount() {
+            return totalCount;
         }
 
         public long getCountsForSetContains(String name) {
@@ -421,17 +434,19 @@ public class PixelClassifierMeasurements {
 
     private static PixelCounts sum(PixelCounts... counts) {
         if (counts.length == 0)
-            return new PixelCounts(Map.of());
+            return PixelCounts.EMPTY;
         else if (counts.length == 1) {
             return counts[0];
         }
         var map = new LinkedHashMap<PathClass, Long>();
+        long total = 0L;
         for (var otherCounts : counts) {
             for (var entry : otherCounts.counts.entrySet()) {
                 map.compute(entry.getKey(), (_, c) -> c == null ? entry.getValue() : c + entry.getValue());
+                total += otherCounts.getTotalCount();
             }
         }
-        return new PixelCounts(map);
+        return new PixelCounts(map, total);
     }
 
 
