@@ -72,8 +72,8 @@ public class ClassifiedPixelCounts {
         for (var otherCounts : counts) {
             for (var entry : otherCounts.counts.entrySet()) {
                 map.compute(entry.getKey(), (_, c) -> c == null ? entry.getValue() : c + entry.getValue());
-                total += otherCounts.getTotalCount();
             }
+            total += otherCounts.getTotalCount();
         }
         return new ClassifiedPixelCounts(map, total);
     }
