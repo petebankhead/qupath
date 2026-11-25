@@ -14,7 +14,7 @@ public class DefaultPathObjectValueFactoryBuilder {
     private boolean includeMeasurementList = true;
     private boolean includePixelClassification = true;
 
-    private List<PathObjectValueFactory> extras = new ArrayList<>();
+    private final List<PathObjectValueFactory> extras = new ArrayList<>();
 
     public DefaultPathObjectValueFactoryBuilder includeImage(boolean doInclude) {
         this.includeImage = doInclude;

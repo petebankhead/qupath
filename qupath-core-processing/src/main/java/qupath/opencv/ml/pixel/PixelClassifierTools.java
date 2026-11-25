@@ -33,6 +33,7 @@ import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.images.servers.ImageServerMetadata.ChannelType;
+import qupath.lib.lazy.interfaces.LazyNumericValue;
 import qupath.lib.objects.DefaultPathObjectComparator;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjectTools;
@@ -46,6 +47,8 @@ import qupath.lib.regions.RegionRequest;
 import qupath.lib.roi.GeometryTools;
 import qupath.lib.roi.interfaces.ROI;
 import qupath.opencv.ml.pixel.PixelClassifiers.ClassifierFunction;
+import qupath.opencv.ml.pixel.measurements.DefaultPixelClassifierMeasurements;
+import qupath.opencv.ml.pixel.measurements.PixelMeasurements;
 
 import java.awt.image.BufferedImage;
 import java.awt.image.ColorModel;
@@ -540,23 +543,23 @@ public class PixelClassifierTools {
 
 
 	/**
-	 * Create a {@link PixelClassificationMeasurementManager} that can be used to generate measurements from applying a pixel classifier to an image.
+	 * Create a {@link PixelMeasurements} that can be used to generate measurements from applying a pixel classifier to an image.
 	 * @param imageData the image to which the classifier should be applied
 	 * @param classifier the pixel classifier
-	 * @return the {@link PixelClassificationMeasurementManager}
+	 * @return the {@link PixelMeasurements}
 	 */
-	public static PixelClassificationMeasurementManager createMeasurementManager(ImageData<BufferedImage> imageData, PixelClassifier classifier) {
+	public static PixelMeasurements createMeasurementManager(ImageData<BufferedImage> imageData, PixelClassifier classifier) {
 		return createMeasurementManager(createPixelClassificationServer(imageData, classifier));
 	}
 	
 	/**
-	 * Create a {@link PixelClassificationMeasurementManager} that can be used to generate measurements from an {@link ImageServer} where pixels provide
+	 * Create a {@link PixelMeasurements} that can be used to generate measurements from an {@link ImageServer} where pixels provide
 	 * classification or probability information.
 	 * @param classifierServer the classification image server
-	 * @return the {@link PixelClassificationMeasurementManager}
+	 * @return the {@link PixelMeasurements}
 	 */
-	public static PixelClassificationMeasurementManager createMeasurementManager(ImageServer<BufferedImage> classifierServer) {
-		return new AnotherMeasurementManager(ImageCache.getSharedInstance(), classifierServer);
+	public static PixelMeasurements createMeasurementManager(ImageServer<BufferedImage> classifierServer) {
+		return new DefaultPixelClassifierMeasurements(ImageCache.getSharedInstance(), classifierServer);
 //		return new DefaultPixelClassificationMeasurementManager(classifierServer);
 	}
 	
@@ -582,20 +585,34 @@ public class PixelClassifierTools {
 	}
 	
 	/**
-	 * Add measurements to specified objects from a {@link DefaultPixelClassificationMeasurementManager}.
+	 * Add measurements to specified objects from a pixel classifier.
 	 * 
 	 * @param objectsToMeasure the objects to measure.
 	 * @param manager the manager used to generate measurements
 	 * @param measurementID identifier that is prepended to measurement names, to make these identifiable later (optional; may be null)
 	 * @return true if measurements were added, false otherwise
 	 */
-	public static boolean addMeasurements(Collection<? extends PathObject> objectsToMeasure, PixelClassificationMeasurementManager manager, String measurementID) {
-		if (manager instanceof DefaultPixelClassificationMeasurementManager defaultManager) {
-			return defaultManager.addMeasurements(objectsToMeasure, measurementID);
-		} else {
-			// TODO: Address measurement managers
-			throw new RuntimeException("Can't add measurements to non-default measurement manager yet!");
+	public static boolean addMeasurements(Collection<? extends PathObject> objectsToMeasure, PixelMeasurements manager, String measurementID) {
+		var measurements = manager.getMeasurements();
+		if (objectsToMeasure.isEmpty() || measurements.isEmpty())
+			return false;
+		objectsToMeasure.parallelStream().forEach(p -> addMeasurements(p, measurements));
+		return true;
+	}
+
+	private static void addMeasurements(PathObject pathObject, List<? extends LazyNumericValue<PathObject>> measurements) {
+		boolean changes = false;
+		try (var ml = pathObject.getMeasurementList()) {
+			for (var measurement : measurements) {
+				var val = measurement.getValue(pathObject);
+				if (val != null) {
+					changes = true;
+					ml.put(measurement.getName(), val.doubleValue());
+				}
+			}
 		}
+		if (changes)
+			pathObject.setLocked(true); // Don't make it too easy to edit the object and potentially lose the values
 	}
 	
 

@@ -1,9 +1,8 @@
-package qupath.opencv.ml.pixel;
+package qupath.opencv.ml.pixel.measurements;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.BufferedImageTools;
-import qupath.lib.geom.Point2;
 import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.PixelType;
@@ -28,11 +27,10 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.function.DoublePredicate;
-import java.util.stream.Collectors;
 
-public class PixelClassifierMeasurements {
+public class PixelClassifierCounts {
 
-    private static final Logger logger = LoggerFactory.getLogger(PixelClassifierMeasurements.class);
+    private static final Logger logger = LoggerFactory.getLogger(PixelClassifierCounts.class);
 
     private static final int MAX_LABELS = 512;
 
@@ -41,11 +39,11 @@ public class PixelClassifierMeasurements {
 
     private final PixelCounter counter;
 
-    private final Map<TileRequest, PixelCounts> fullTileCounts = new ConcurrentHashMap<>();
-    private final Map<ROI, PixelCounts> roiTileCounts = new ConcurrentHashMap<>();
-    private final Map<String, PixelCounts> fullImageCounts = new ConcurrentHashMap<>();
+    private final Map<TileRequest, ClassifiedPixelCounts> fullTileCounts = new ConcurrentHashMap<>();
+    private final Map<ROI, ClassifiedPixelCounts> roiTileCounts = new ConcurrentHashMap<>();
+    private final Map<String, ClassifiedPixelCounts> fullImageCounts = new ConcurrentHashMap<>();
 
-    public PixelClassifierMeasurements(ImageCache cache, ImageServer<BufferedImage> server, Map<Integer, PathClass> labels) {
+    public PixelClassifierCounts(ImageCache cache, ImageServer<BufferedImage> server, Map<Integer, PathClass> labels) {
         Objects.requireNonNull(cache);
         Objects.requireNonNull(server);
         this.cache = cache;
@@ -98,7 +96,7 @@ public class PixelClassifierMeasurements {
     }
 
 
-    public PixelCounts getCachedCounts(ROI roi) {
+    public ClassifiedPixelCounts getCachedCounts(ROI roi) {
         if (roi == null) {
             return fullImageCounts.computeIfAbsent(server.getPath(), _ -> calculateForFullImage(false));
         } else {
@@ -106,7 +104,7 @@ public class PixelClassifierMeasurements {
         }
     }
 
-    public PixelCounts getCounts(ROI roi) {
+    public ClassifiedPixelCounts getCounts(ROI roi) {
         if (roi == null) {
             return fullImageCounts.computeIfAbsent(server.getPath(), _ -> calculateForFullImage(true));
         } else {
@@ -114,27 +112,27 @@ public class PixelClassifierMeasurements {
         }
     }
 
-    public PixelCounts getCachedCounts() {
+    public ClassifiedPixelCounts getCachedCounts() {
         return getCachedCounts(null);
     }
 
-    public PixelCounts getCounts() {
+    public ClassifiedPixelCounts getCounts() {
         return getCounts(null);
     }
 
 
-    private PixelCounts calculateForFullImage(boolean requestMissingTiles) {
+    private ClassifiedPixelCounts calculateForFullImage(boolean requestMissingTiles) {
         var tiles = server.getTileRequestManager().getTileRequestsForLevel(0);
-        List<PixelCounts> counts = new ArrayList<>();
+        List<ClassifiedPixelCounts> counts = new ArrayList<>();
         for (var tile : tiles) {
             var count = fullTileCounts.computeIfAbsent(tile, t -> calculateForTile(t, requestMissingTiles));
             if (!requestMissingTiles && count == null)
                 return null;
         }
-        return sum(counts);
+        return ClassifiedPixelCounts.sum(counts);
     }
 
-    private PixelCounts calculateForROI(ROI roi, boolean requestMissingTiles) {
+    private ClassifiedPixelCounts calculateForROI(ROI roi, boolean requestMissingTiles) {
         try {
             return calculateForROIImpl(roi, requestMissingTiles);
         } catch (Exception e) {
@@ -143,7 +141,7 @@ public class PixelClassifierMeasurements {
         }
     }
 
-    private PixelCounts calculateForROIImpl(ROI roi, boolean requestMissingTiles) throws ExecutionException, InterruptedException {
+    private ClassifiedPixelCounts calculateForROIImpl(ROI roi, boolean requestMissingTiles) throws ExecutionException, InterruptedException {
         Map<TileRequest, BufferedImage> requests = new LinkedHashMap<>();
         // Check for tiles, and stop early if we don't have everything that we need
         for (var tile : getTileRequests(roi)) {
@@ -153,8 +151,8 @@ public class PixelClassifierMeasurements {
             requests.put(tile, img);
         }
         if (requests.isEmpty())
-            return PixelCounts.EMPTY;
-        List<PixelCounts> allCounts = new ArrayList<>();
+            return ClassifiedPixelCounts.EMPTY;
+        List<ClassifiedPixelCounts> allCounts = new ArrayList<>();
         for (var tile : requests.keySet()) {
             var mask = createMaskPredicate(roi, tile);
             if (mask.equals(MaskPredicate.ALWAYS_FALSE))
@@ -168,7 +166,7 @@ public class PixelClassifierMeasurements {
                     )
             );
         }
-        return sum(allCounts);
+        return ClassifiedPixelCounts.sum(allCounts);
     }
 
     private static MaskPredicate createMaskPredicate(ROI roi, TileRequest tile) {
@@ -212,7 +210,7 @@ public class PixelClassifierMeasurements {
         );
     }
 
-    private PixelCounts calculateForTile(TileRequest tile, boolean requestMissingTiles) {
+    private ClassifiedPixelCounts calculateForTile(TileRequest tile, boolean requestMissingTiles) {
         try {
             return calculateForTileImpl(tile, requestMissingTiles);
         } catch (Exception e) {
@@ -221,7 +219,7 @@ public class PixelClassifierMeasurements {
         }
     }
 
-    private PixelCounts calculateForTileImpl(TileRequest tile, boolean requestMissingTiles) throws ExecutionException, InterruptedException {
+    private ClassifiedPixelCounts calculateForTileImpl(TileRequest tile, boolean requestMissingTiles) throws ExecutionException, InterruptedException {
         var request = tile.getRegionRequest();
         var img = requestMissingTiles ? cache.requestImageTile(request, server).get() : cache.getIfPresent(request);
         if (img == null)
@@ -248,7 +246,7 @@ public class PixelClassifierMeasurements {
 
     private interface PixelCounter {
 
-        PixelCounts getCounts(WritableRaster raster, MaskPredicate predicate);
+        ClassifiedPixelCounts getCounts(WritableRaster raster, MaskPredicate predicate);
 
     }
 
@@ -261,7 +259,7 @@ public class PixelClassifierMeasurements {
         }
 
         @Override
-        public PixelCounts getCounts(WritableRaster raster, MaskPredicate predicate) {
+        public ClassifiedPixelCounts getCounts(WritableRaster raster, MaskPredicate predicate) {
             assert raster.getNumBands() == 1;
 
             long[] rawCounts = new long[pathClasses.size()];
@@ -282,7 +280,7 @@ public class PixelClassifierMeasurements {
                 counts.compute(pathClasses.get(i), (_, val) -> val == null ? localCount : val + localCount);
             }
 
-            return new PixelCounts(counts, total);
+            return ClassifiedPixelCounts.create(counts, total);
         }
 
     }
@@ -296,7 +294,7 @@ public class PixelClassifierMeasurements {
         }
 
         @Override
-        public PixelCounts getCounts(WritableRaster raster, MaskPredicate predicate) {
+        public ClassifiedPixelCounts getCounts(WritableRaster raster, MaskPredicate predicate) {
             assert raster.getNumBands() == pathClasses.size();
 
             Map<PathClass, Long> counts = new LinkedHashMap<>();
@@ -316,7 +314,7 @@ public class PixelClassifierMeasurements {
                     }
                 }
             }
-            return new PixelCounts(counts, total);
+            return ClassifiedPixelCounts.create(counts, total);
         }
 
         private static int argMax(double[] values) {
@@ -345,7 +343,7 @@ public class PixelClassifierMeasurements {
         }
 
         @Override
-        public PixelCounts getCounts(WritableRaster raster, MaskPredicate predicate) {
+        public ClassifiedPixelCounts getCounts(WritableRaster raster, MaskPredicate predicate) {
             assert raster.getNumBands() == pathClasses.size();
 
             Map<PathClass, Long> counts = new LinkedHashMap<>();
@@ -372,7 +370,7 @@ public class PixelClassifierMeasurements {
                     }
                 }
             }
-            return new PixelCounts(counts, total);
+            return ClassifiedPixelCounts.create(counts, total);
         }
 
     }
@@ -433,72 +431,6 @@ public class PixelClassifierMeasurements {
 
         boolean test(int x, int y);
 
-    }
-
-    public static class PixelCounts {
-
-        public static final PixelCounts EMPTY = new PixelCounts(Map.of(), 0L);
-
-        private final Map<PathClass, Long> counts;
-        private final long totalCount;
-
-        PixelCounts(Map<PathClass, Long> counts, long totalCount) {
-            this.counts = Map.copyOf(counts);
-            this.totalCount = totalCount;
-        }
-
-        public long getTotalCount() {
-            return totalCount;
-        }
-
-        public long getCountsForSetContains(String name) {
-            long total = 0L;
-            for (var entry : counts.entrySet()) {
-                if (PathClassTools.containsName(entry.getKey(), name))
-                    total += entry.getValue();
-            }
-            return total;
-        }
-
-        public long getCountsForUnclassified() {
-            return counts.getOrDefault(PathClass.NULL_CLASS, 0L);
-        }
-
-        public long getCountsForExactClass(PathClass pathClass) {
-            return counts.getOrDefault(pathClass, 0L);
-        }
-
-        public long getCountsForClassSetMatches(Set<String> names) {
-            Objects.requireNonNull(names);
-            long total = 0L;
-            for (var entry : counts.entrySet()) {
-                if (names.equals(entry.getKey().toSet()))
-                    total += entry.getValue();
-            }
-            return total;
-        }
-
-    }
-
-    private static PixelCounts sum(Collection<? extends PixelCounts> counts) {
-        return sum(counts.toArray(PixelCounts[]::new));
-    }
-
-    private static PixelCounts sum(PixelCounts... counts) {
-        if (counts.length == 0)
-            return PixelCounts.EMPTY;
-        else if (counts.length == 1) {
-            return counts[0];
-        }
-        var map = new LinkedHashMap<PathClass, Long>();
-        long total = 0L;
-        for (var otherCounts : counts) {
-            for (var entry : otherCounts.counts.entrySet()) {
-                map.compute(entry.getKey(), (_, c) -> c == null ? entry.getValue() : c + entry.getValue());
-                total += otherCounts.getTotalCount();
-            }
-        }
-        return new PixelCounts(map, total);
     }
 
 

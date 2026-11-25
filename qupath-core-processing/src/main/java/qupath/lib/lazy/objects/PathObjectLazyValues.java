@@ -10,7 +10,6 @@ import qupath.lib.lazy.interfaces.LazyValue;
 import qupath.lib.objects.PathDetectionObject;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.classes.PathClass;
-import qupath.opencv.ml.pixel.PixelClassificationMeasurementManager;
 
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -146,17 +145,6 @@ public class PathObjectLazyValues {
      */
     public static LazyNumericValue<PathObject> createDetectionCountMeasurement(ImageData<?> imageData) {
         return new ObjectTypeCountValue(imageData, PathDetectionObject.class);
-    }
-
-
-    /**
-     * Create a measurement for displaying live measurements from a pixel classifier.
-     * @param manager
-     * @param name
-     * @return
-     */
-    public static LazyNumericValue<PathObject> createLivePixelClassificationMeasurement(PixelClassificationMeasurementManager manager, String name) {
-        return new PixelClassifierValue(manager, name);
     }
 
 
