@@ -8,14 +8,12 @@ import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.PixelType;
 import qupath.lib.images.servers.TileRequest;
 import qupath.lib.objects.classes.PathClass;
-import qupath.lib.objects.classes.PathClassTools;
 import qupath.lib.regions.RegionRequest;
 import qupath.lib.roi.interfaces.ROI;
 
 import java.awt.Shape;
 import java.awt.image.BufferedImage;
 import java.awt.image.Raster;
-import java.awt.image.WritableRaster;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -242,175 +240,6 @@ public class PixelClassifierCounts {
         }
     }
 
-
-
-    private interface PixelCounter {
-
-        ClassifiedPixelCounts getCounts(WritableRaster raster, MaskPredicate predicate);
-
-    }
-
-    private static class ClassifiedPixelCounter implements PixelCounter {
-
-        private final List<PathClass> pathClasses;
-
-        private ClassifiedPixelCounter(List<PathClass> pathClasses) {
-            this.pathClasses = List.copyOf(pathClasses);
-        }
-
-        @Override
-        public ClassifiedPixelCounts getCounts(WritableRaster raster, MaskPredicate predicate) {
-            assert raster.getNumBands() == 1;
-
-            long[] rawCounts = new long[pathClasses.size()];
-            long total = 0L;
-            for (int y = 0; y < raster.getHeight(); y++) {
-                for (int x = 0; x < raster.getWidth(); x++) {
-                    if (predicate.test(x, y)) {
-                        total++;
-                        int sample = raster.getSample(x, y, 0);
-                        rawCounts[sample]++;
-                    }
-                }
-            }
-
-            Map<PathClass, Long> counts = new LinkedHashMap<>();
-            for (int i = 0; i < pathClasses.size(); i++) {
-                long localCount = rawCounts[i];
-                counts.compute(pathClasses.get(i), (_, val) -> val == null ? localCount : val + localCount);
-            }
-
-            return ClassifiedPixelCounts.create(counts, total);
-        }
-
-    }
-
-    private static class ArgMaxProbabilityPixelCounter implements PixelCounter {
-
-        private final List<PathClass> pathClasses;
-
-        private ArgMaxProbabilityPixelCounter(List<PathClass> pathClasses) {
-            this.pathClasses = List.copyOf(pathClasses);
-        }
-
-        @Override
-        public ClassifiedPixelCounts getCounts(WritableRaster raster, MaskPredicate predicate) {
-            assert raster.getNumBands() == pathClasses.size();
-
-            Map<PathClass, Long> counts = new LinkedHashMap<>();
-            double[] values = null;
-            long total = 0L;
-            for (int y = 0; y < raster.getHeight(); y++) {
-                for (int x = 0; x < raster.getWidth(); x++) {
-                    if (predicate.test(x, y)) {
-                        total++;
-                        // We want to update the counts for the PathClass that merges all the names from the
-                        // individual positive bands (channels)
-                        values = raster.getPixel(x, y, values);
-                        int ind = argMax(values);
-                        if (ind >= 0) {
-                            counts.compute(pathClasses.get(ind), (_, val) -> val == null ? 1 : val + 1);
-                        }
-                    }
-                }
-            }
-            return ClassifiedPixelCounts.create(counts, total);
-        }
-
-        private static int argMax(double[] values) {
-            int ind = -1;
-            double maxValue = Double.NEGATIVE_INFINITY;
-            for (int i = 0; i < values.length; i++) {
-                double val = values[i];
-                if (val > maxValue) {
-                    ind = i;
-                    maxValue = val;
-                }
-            }
-            return ind;
-        }
-
-    }
-
-    private static class MultiProbabilityPixelCounter implements PixelCounter {
-
-        private final List<PathClass> pathClasses;
-        private final DoublePredicate positivePredicate;
-
-        private MultiProbabilityPixelCounter(List<PathClass> pathClasses, DoublePredicate positivePredicate) {
-            this.pathClasses = List.copyOf(pathClasses);
-            this.positivePredicate = positivePredicate;
-        }
-
-        @Override
-        public ClassifiedPixelCounts getCounts(WritableRaster raster, MaskPredicate predicate) {
-            assert raster.getNumBands() == pathClasses.size();
-
-            Map<PathClass, Long> counts = new LinkedHashMap<>();
-            double[] values = null;
-            var accumulator = new PathClassAccumulator(pathClasses.size());
-            long total = 0L;
-            for (int y = 0; y < raster.getHeight(); y++) {
-                for (int x = 0; x < raster.getWidth(); x++) {
-                    if (predicate.test(x, y)) {
-                        total++;
-                        // We want to update the counts for the PathClass that merges all the names from the
-                        // individual positive bands (channels)
-                        values = raster.getPixel(x, y, values);
-                        accumulator.reset();
-                        for (int b = 0; b < values.length; b++) {
-                            if (positivePredicate.test(values[b])) {
-                                accumulator.add(pathClasses.get(b));
-                            }
-                        }
-                        var result = accumulator.get();
-                        if (result != null) {
-                            counts.compute(result, (_, val) -> val == null ? 1 : val + 1);
-                        }
-                    }
-                }
-            }
-            return ClassifiedPixelCounts.create(counts, total);
-        }
-
-    }
-
-
-
-    private static final class PathClassAccumulator {
-
-        private final PathClass[] pathClasses;
-        private int size = 0;
-
-        PathClassAccumulator(int n) {
-            this.pathClasses = new PathClass[n];
-        }
-
-        void reset() {
-            size = 0;
-        }
-
-        void add(PathClass pathClass) {
-            pathClasses[size++] = pathClass;
-        }
-
-        PathClass get() {
-            if (size == 0)
-                return null;
-            else if (size == 1)
-                return pathClasses[0];
-            else if (size == 2) {
-                return PathClassTools.mergeClasses(pathClasses[0], pathClasses[1]);
-            } else {
-                PathClass output = pathClasses[0];
-                for (int i = 1; i < pathClasses.length; i++) {
-                    output = PathClassTools.mergeClasses(output, pathClasses[i]);
-                }
-                return output;
-            }
-        }
-
-    }
 
     private record SimplePoint(int x, int y) {}
 
