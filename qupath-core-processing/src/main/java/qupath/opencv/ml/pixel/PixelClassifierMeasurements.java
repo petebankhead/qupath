@@ -3,6 +3,7 @@ package qupath.opencv.ml.pixel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qupath.lib.awt.common.BufferedImageTools;
+import qupath.lib.geom.Point2;
 import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.images.servers.PixelType;
@@ -12,11 +13,13 @@ import qupath.lib.objects.classes.PathClassTools;
 import qupath.lib.regions.RegionRequest;
 import qupath.lib.roi.interfaces.ROI;
 
+import java.awt.Shape;
 import java.awt.image.BufferedImage;
 import java.awt.image.Raster;
 import java.awt.image.WritableRaster;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +28,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.function.DoublePredicate;
+import java.util.stream.Collectors;
 
 public class PixelClassifierMeasurements {
 
@@ -152,14 +156,60 @@ public class PixelClassifierMeasurements {
             return PixelCounts.EMPTY;
         List<PixelCounts> allCounts = new ArrayList<>();
         for (var tile : requests.keySet()) {
+            var mask = createMaskPredicate(roi, tile);
+            if (mask.equals(MaskPredicate.ALWAYS_FALSE))
+                continue;
+            // TODO: If ALWAYS_TRUE, we can reuse the full tiles counts
+            // if (mask.equals(MaskPredicate.ALWAYS_TRUE))
             allCounts.add(
                     counter.getCounts(
                             cache.requestImageTile(tile.getRegionRequest(), server).get().getRaster(),
-                            MaskPredicate.fromIntRaster(createMask(tile, roi).getRaster(), 0)
+                            mask
                     )
             );
         }
         return sum(allCounts);
+    }
+
+    private static MaskPredicate createMaskPredicate(ROI roi, TileRequest tile) {
+        if (roi.isPoint()) {
+            Set<SimplePoint> simplePoints = new HashSet<>();
+            var region = tile.getRegionRequest();
+            for (var p : roi.getAllPoints()) {
+                int x = (int)Math.floor((p.getX() - region.getX()) / region.getDownsample());
+                int y = (int)Math.floor((p.getY() - region.getY()) / region.getDownsample());
+                if (x >= 0 && y >= 0 && x < tile.getTileWidth() && y < tile.getTileHeight()) {
+                    simplePoints.add(new SimplePoint(x, y));
+                }
+            }
+            if (simplePoints.isEmpty())
+                return MaskPredicate.ALWAYS_FALSE;
+            else
+                return (x, y) -> simplePoints.contains(new SimplePoint(x, y));
+        } else {
+            var shape = roi.getShape();
+            if (completelyContainsTile(shape, tile, 2.0)) {
+                return MaskPredicate.ALWAYS_TRUE;
+            }
+            return MaskPredicate.fromIntRaster(createMask(tile, roi).getRaster(), 0);
+        }
+    }
+
+    /**
+     * Check if a ROI shape completely contains tile. This should err on the side of caution and
+     * only return true if it is very confident that all pixels of the tile are inside the shape.
+     * @param shape
+     * @param tile
+     * @param padding pad the tile to make the estimate more conservative (and deal with non-zero stroke thickness for shape masks)
+     * @return
+     */
+    private static boolean completelyContainsTile(Shape shape, TileRequest tile, double padding) {
+        return shape.contains(
+                tile.getImageX()-padding,
+                tile.getImageY()-padding,
+                tile.getImageWidth()+padding*2,
+                tile.getImageHeight()+padding*2
+        );
     }
 
     private PixelCounts calculateForTile(TileRequest tile, boolean requestMissingTiles) {
@@ -183,8 +233,6 @@ public class PixelClassifierMeasurements {
     private static BufferedImage createMask(TileRequest tile, ROI roi) {
         return BufferedImageTools.createROIMask(tile.getTileWidth(), tile.getTileHeight(), roi, tile.getRegionRequest());
     }
-
-
 
 
     private Collection<TileRequest> getTileRequests(ROI roi) {
@@ -366,10 +414,14 @@ public class PixelClassifierMeasurements {
 
     }
 
+    private record SimplePoint(int x, int y) {}
+
     @FunctionalInterface
     public interface MaskPredicate {
 
         MaskPredicate ALWAYS_TRUE = (_, _) -> true;
+
+        MaskPredicate ALWAYS_FALSE = (_, _) -> false;
 
         static MaskPredicate fromDoubleRaster(Raster raster, double falseValue) {
             return (x, y) -> raster.getSampleDouble(x, y, 0) != falseValue;

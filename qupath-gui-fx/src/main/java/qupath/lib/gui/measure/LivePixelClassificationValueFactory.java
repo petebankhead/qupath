@@ -25,9 +25,7 @@ class LivePixelClassificationValueFactory implements PathObjectValueFactory {
             if (pixelClassifier != null) {
                 if (pixelClassifier.getMetadata().getChannelType() == ImageServerMetadata.ChannelType.CLASSIFICATION || pixelClassifier.getMetadata().getChannelType() == ImageServerMetadata.ChannelType.PROBABILITY) {
                     PixelClassificationMeasurementManager pixelManager = new AnotherMeasurementManager(ImageCache.getSharedInstance(), pixelClassifier);
-                    for (String name : pixelManager.getMeasurementNames()) {
-                        measurements.add(PathObjectLazyValues.createLivePixelClassificationMeasurement(pixelManager, name));
-                    }
+                    measurements.addAll(pixelManager.getCachedMeasurements());
                 }
             }
         }
