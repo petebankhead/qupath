@@ -35,6 +35,8 @@ import qupath.lib.gui.localization.QuPathResources;
 import qupath.lib.gui.prefs.PathPrefs;
 import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
+import qupath.lib.lazy.factories.PathObjectListWrapper;
+import qupath.lib.lazy.factories.PathObjectValueFactory;
 import qupath.lib.lazy.interfaces.LazyValue;
 import qupath.lib.lazy.objects.MeasurementListValue;
 import qupath.lib.lazy.objects.PathObjectLazyValues;

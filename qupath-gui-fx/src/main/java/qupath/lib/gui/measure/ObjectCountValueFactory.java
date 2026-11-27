@@ -1,6 +1,8 @@
 package qupath.lib.gui.measure;
 
 import qupath.lib.gui.prefs.PathPrefs;
+import qupath.lib.lazy.factories.PathObjectListWrapper;
+import qupath.lib.lazy.factories.PathObjectValueFactory;
 import qupath.lib.lazy.interfaces.LazyValue;
 import qupath.lib.lazy.objects.PathObjectLazyValues;
 import qupath.lib.objects.PathDetectionObject;

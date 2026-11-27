@@ -1,5 +1,12 @@
 package qupath.lib.gui.measure;
 
+import qupath.lib.lazy.factories.ImageNameValueFactory;
+import qupath.lib.lazy.factories.MeasurementListValueFactory;
+import qupath.lib.lazy.factories.MetadataValueFactory;
+import qupath.lib.lazy.factories.ObjectPropertyValueFactory;
+import qupath.lib.lazy.factories.PathObjectValueFactory;
+import qupath.lib.lazy.factories.RoiPropertyValueFactory;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;

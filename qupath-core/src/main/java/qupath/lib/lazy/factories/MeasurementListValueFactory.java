@@ -1,4 +1,4 @@
-package qupath.lib.gui.measure;
+package qupath.lib.lazy.factories;
 
 import qupath.lib.lazy.interfaces.LazyValue;
 import qupath.lib.lazy.objects.PathObjectLazyValues;
@@ -10,14 +10,14 @@ import java.util.List;
 /**
  * Measurements that only extract metadata from objects.
  */
-public class MetadataValueFactory implements PathObjectValueFactory {
+public class MeasurementListValueFactory implements PathObjectValueFactory {
 
     @Override
     public List<LazyValue<PathObject, ?>> createValues(PathObjectListWrapper wrapper) {
         var list = new ArrayList<LazyValue<PathObject, ?>>();
-        wrapper.getMetadataNames()
+        wrapper.getFeatureNames()
                 .stream()
-                .map(PathObjectLazyValues::createMetadataMeasurement)
+                .map(PathObjectLazyValues::createMeasurementListMeasurement)
                 .forEach(list::add);
         return list;
     }

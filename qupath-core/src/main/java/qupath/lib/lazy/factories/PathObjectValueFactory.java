@@ -1,4 +1,4 @@
-package qupath.lib.gui.measure;
+package qupath.lib.lazy.factories;
 
 import qupath.lib.lazy.interfaces.LazyValue;
 import qupath.lib.objects.PathObject;

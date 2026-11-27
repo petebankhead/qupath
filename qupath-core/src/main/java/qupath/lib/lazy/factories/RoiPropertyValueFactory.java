@@ -1,4 +1,4 @@
-package qupath.lib.gui.measure;
+package qupath.lib.lazy.factories;
 
 import qupath.lib.lazy.interfaces.LazyValue;
 import qupath.lib.lazy.objects.PathObjectLazyValues;
@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-class RoiPropertyValueFactory implements PathObjectValueFactory {
+public class RoiPropertyValueFactory implements PathObjectValueFactory {
 
     @Override
     public List<LazyValue<PathObject, ?>> createValues(PathObjectListWrapper wrapper) {

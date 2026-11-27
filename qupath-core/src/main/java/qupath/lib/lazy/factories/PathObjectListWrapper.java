@@ -1,4 +1,4 @@
-package qupath.lib.gui.measure;
+package qupath.lib.lazy.factories;
 
 import qupath.lib.images.ImageData;
 import qupath.lib.objects.PathAnnotationObject;
@@ -164,60 +164,60 @@ public class PathObjectListWrapper {
         this.metadataNames = Collections.unmodifiableSequencedSet(metadataNames);
     }
 
-    ImageData<?> getImageData() {
+    public ImageData<?> getImageData() {
         return imageData;
     }
 
-    List<PathObject> getPathObjects() {
+    public List<PathObject> getPathObjects() {
         return pathObjects;
     }
 
-    Set<String> getFeatureNames() {
+    public Set<String> getFeatureNames() {
         return featureNames;
     }
 
-    Set<String> getMetadataNames() {
+    public Set<String> getMetadataNames() {
         return metadataNames;
     }
 
-    boolean containsDetections() {
+    public boolean containsDetections() {
         return containsDetections;
     }
 
-    boolean containsAnnotations() {
+    public boolean containsAnnotations() {
         return containsAnnotations;
     }
 
-    boolean containsAnnotationsOrDetections() {
+    public boolean containsAnnotationsOrDetections() {
         return containsAnnotations || containsDetections;
     }
 
-    boolean containsAnnotationsTmaCores() {
+    public boolean containsAnnotationsTmaCores() {
         return containsAnnotations || containsTMACores;
     }
 
-    boolean containsRootOnly() {
+    public boolean containsRootOnly() {
         return containsRoot && !containsAnnotations && !containsDetections && !containsTMACores &&
                 pathObjects.stream().allMatch(PathObject::isRootObject);
     }
 
-    boolean containsTMACores() {
+    public boolean containsTMACores() {
         return containsTMACores;
     }
 
-    boolean containsROIs() {
+    public boolean containsROIs() {
         return containsROIs;
     }
 
-    boolean containsRoot() {
+    public boolean containsRoot() {
         return containsRoot;
     }
 
-    boolean containsMultiT() {
+    public boolean containsMultiT() {
         return containsMultiT;
     }
 
-    boolean containsMultiZ() {
+    public boolean containsMultiZ() {
         return containsMultiZ;
     }
 

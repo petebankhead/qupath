@@ -1,4 +1,4 @@
-package qupath.lib.gui.measure;
+package qupath.lib.lazy.factories;
 
 import qupath.lib.lazy.interfaces.LazyValue;
 import qupath.lib.lazy.objects.PathObjectLazyValues;
@@ -6,7 +6,7 @@ import qupath.lib.objects.PathObject;
 
 import java.util.List;
 
-class ImageNameValueFactory implements PathObjectValueFactory {
+public class ImageNameValueFactory implements PathObjectValueFactory {
 
     @Override
     public List<LazyValue<PathObject, ?>> createValues(PathObjectListWrapper wrapper) {

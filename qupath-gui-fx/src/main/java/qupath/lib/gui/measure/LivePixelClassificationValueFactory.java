@@ -1,6 +1,8 @@
 package qupath.lib.gui.measure;
 
 import qupath.lib.images.cache.ImageCache;
+import qupath.lib.lazy.factories.PathObjectListWrapper;
+import qupath.lib.lazy.factories.PathObjectValueFactory;
 import qupath.lib.lazy.interfaces.LazyValue;
 import qupath.lib.objects.PathObject;
 import qupath.opencv.ml.pixel.measurements.DefaultPixelClassifierMeasurements;
