@@ -2,7 +2,6 @@ package qupath.opencv.ml.pixel.measurements;
 
 import qupath.lib.images.cache.ImageCache;
 import qupath.lib.images.servers.ImageServer;
-import qupath.lib.images.servers.ImageServerMetadata;
 import qupath.lib.lazy.interfaces.LazyNumericValue;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.classes.PathClass;
@@ -11,6 +10,7 @@ import qupath.lib.objects.classes.PathClassTools;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public class DefaultPixelClassifierMeasurements implements PixelMeasurements {
 
@@ -44,19 +44,19 @@ public class DefaultPixelClassifierMeasurements implements PixelMeasurements {
         for (var pathClass : metadata.getClassificationLabels().values()) {
             if (PathClassTools.isIgnoredClass(pathClass)) {
                 ignoredClasses.add(pathClass);
-                continue;
+            } else {
+                nonIgnoredClasses.add(pathClass);
+                if (pathClass.isDerivedClass())
+                    derivedClasses.add(pathClass);
+                else
+                    normalClasses.add(pathClass);
             }
-            nonIgnoredClasses.add(pathClass);
-            if (pathClass.isDerivedClass())
-                derivedClasses.add(pathClass);
-            else
-                normalClasses.add(pathClass);
 
             cachedMeasurements.add(
-                    new ExactClassArea(pathClass, true, pixelArea, pixelUnit)
+                    new ExactClassArea(classifierCounts, pathClass, true, pixelArea, pixelUnit)
             );
             fullMeasurements.add(
-                    new ExactClassArea(pathClass, false, pixelArea, pixelUnit)
+                    new ExactClassArea(classifierCounts, pathClass, false, pixelArea, pixelUnit)
             );
         }
 
@@ -64,23 +64,23 @@ public class DefaultPixelClassifierMeasurements implements PixelMeasurements {
 //                || (metadata.getChannelType() == ImageServerMetadata.ChannelType.MULTICLASS_PROBABILITY && metadata.getClassificationLabels().values().stream().distinct().count() > 1);
 
         if (!ignoredClasses.isEmpty() && nonIgnoredClasses.size() > 1) {
-            cachedMeasurements.add(new QuantifiedROIArea(true, pixelArea, pixelUnit));
-            fullMeasurements.add(new QuantifiedROIArea(false, pixelArea, pixelUnit));
+            cachedMeasurements.add(new QuantifiedROIArea(classifierCounts, true, pixelArea, pixelUnit));
+            fullMeasurements.add(new QuantifiedROIArea(classifierCounts, false, pixelArea, pixelUnit));
         }
 
-        cachedMeasurements.add(new TotalROIArea(true, pixelArea, pixelUnit));
-        fullMeasurements.add(new TotalROIArea(false, pixelArea, pixelUnit));
+        cachedMeasurements.add(new TotalROIArea(classifierCounts, true, pixelArea, pixelUnit));
+        fullMeasurements.add(new TotalROIArea(classifierCounts, false, pixelArea, pixelUnit));
 
         if (!ignoredClasses.isEmpty() && nonIgnoredClasses.size() > 1) {
             for (var pathClass : nonIgnoredClasses) {
-                cachedMeasurements.add(new QuantifiedPercentageArea(pathClass, true));
-                fullMeasurements.add(new QuantifiedPercentageArea(pathClass, false));
+                cachedMeasurements.add(new QuantifiedPercentageArea(classifierCounts, pathClass, true));
+                fullMeasurements.add(new QuantifiedPercentageArea(classifierCounts, pathClass, false));
             }
         }
 
-        for (var pathClass : nonIgnoredClasses) {
-            cachedMeasurements.add(new TotalPercentageArea(pathClass, true));
-            fullMeasurements.add(new TotalPercentageArea(pathClass, false));
+        for (var pathClass : metadata.getClassificationLabels().values()) {
+            cachedMeasurements.add(new TotalPercentageArea(classifierCounts, pathClass, true));
+            fullMeasurements.add(new TotalPercentageArea(classifierCounts, pathClass, false));
         }
 
         // TODO: Handle multiclass
@@ -100,13 +100,17 @@ public class DefaultPixelClassifierMeasurements implements PixelMeasurements {
 
 
 
-    abstract class AbstractLiveMeasurement implements LazyNumericValue<PathObject> {
+    abstract static class AbstractLiveMeasurement implements LazyNumericValue<PathObject> {
 
+        private final PixelClassifierCounts classifierCounts;
         private final String name;
         private final boolean live;
         private final String helpText;
 
-        AbstractLiveMeasurement(String name, boolean live, String helpText) {
+        AbstractLiveMeasurement(PixelClassifierCounts classifierCounts, String name, boolean live, String helpText) {
+            Objects.requireNonNull(classifierCounts);
+            Objects.requireNonNull(name);
+            this.classifierCounts = classifierCounts;
             this.name = name;
             this.live = live;
             this.helpText = helpText;
@@ -138,12 +142,12 @@ public class DefaultPixelClassifierMeasurements implements PixelMeasurements {
 
     }
 
-    class QuantifiedROIArea extends AbstractLiveMeasurement {
+    static class QuantifiedROIArea extends AbstractLiveMeasurement {
 
         private final double pixelArea;
 
-        QuantifiedROIArea(boolean live, double pixelArea, String pixelUnit) {
-            super("Quantified area (" + pixelUnit + ")", live, "Total rasterized ROI area, minus 'ignored' pixels (this is based on pixel counts, so might differ from the exact area based on geometry)");
+        QuantifiedROIArea(PixelClassifierCounts counts, boolean live, double pixelArea, String pixelUnit) {
+            super(counts, "Quantified area (" + pixelUnit + ")", live, "Total rasterized ROI area, minus 'ignored' pixels (this is based on pixel counts, so might differ from the exact area based on geometry)");
             this.pixelArea = pixelArea;
         }
 
@@ -154,12 +158,12 @@ public class DefaultPixelClassifierMeasurements implements PixelMeasurements {
 
     }
 
-    class TotalROIArea extends AbstractLiveMeasurement {
+    static class TotalROIArea extends AbstractLiveMeasurement {
 
         private final double pixelArea;
 
-        TotalROIArea(boolean live, double pixelArea, String pixelUnit) {
-            super("Total area (" + pixelUnit + ")", live, "Total rasterized ROI area (this is based on pixel counts, so might differ from the exact area based on geometry)");
+        TotalROIArea(PixelClassifierCounts counts, boolean live, double pixelArea, String pixelUnit) {
+            super(counts, "Total area (" + pixelUnit + ")", live, "Total rasterized ROI area (this is based on pixel counts, so might differ from the exact area based on geometry)");
             this.pixelArea = pixelArea;
         }
 
@@ -170,13 +174,13 @@ public class DefaultPixelClassifierMeasurements implements PixelMeasurements {
 
     }
 
-    class ExactClassArea extends AbstractLiveMeasurement {
+    static class ExactClassArea extends AbstractLiveMeasurement {
 
         private final PathClass pathClass;
         private final double pixelArea;
 
-        ExactClassArea(PathClass pathClass, boolean live, double pixelArea, String pixelUnit) {
-            super(pathClass + " area (" + pixelUnit + ")", live, "Area of " + pathClass);
+        ExactClassArea(PixelClassifierCounts counts, PathClass pathClass, boolean live, double pixelArea, String pixelUnit) {
+            super(counts, pathClass + " area (" + pixelUnit + ")", live, "Area of " + pathClass);
             this.pathClass = pathClass;
             this.pixelArea = pixelArea;
         }
@@ -188,12 +192,12 @@ public class DefaultPixelClassifierMeasurements implements PixelMeasurements {
 
     }
 
-    class QuantifiedPercentageArea extends AbstractLiveMeasurement {
+    static class QuantifiedPercentageArea extends AbstractLiveMeasurement {
 
         private final PathClass pathClass;
 
-        QuantifiedPercentageArea(PathClass pathClass, boolean live) {
-            super(pathClass + " % quantified area", live, "Percentage of quantified area classified as " + pathClass);
+        QuantifiedPercentageArea(PixelClassifierCounts counts, PathClass pathClass, boolean live) {
+            super(counts, pathClass + " % quantified area", live, "Percentage of quantified area classified as " + pathClass);
             this.pathClass = pathClass;
         }
 
@@ -204,12 +208,12 @@ public class DefaultPixelClassifierMeasurements implements PixelMeasurements {
 
     }
 
-    class TotalPercentageArea extends AbstractLiveMeasurement {
+    static class TotalPercentageArea extends AbstractLiveMeasurement {
 
         private final PathClass pathClass;
 
-        TotalPercentageArea(PathClass pathClass, boolean live) {
-            super(pathClass + " % total area", live, "Percentage of total area classified as " + pathClass);
+        TotalPercentageArea(PixelClassifierCounts counts, PathClass pathClass, boolean live) {
+            super(counts, pathClass + " % total area", live, "Percentage of total area classified as " + pathClass);
             this.pathClass = pathClass;
         }
 
